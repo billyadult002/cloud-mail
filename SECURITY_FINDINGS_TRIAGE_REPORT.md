@@ -52,6 +52,7 @@ Format: Finding → Source Evidence → Reachability → Reproduction → Severi
 - **Severity**: Low (performance + reliability; no correctness or security impact — output is governed by the second query).
 - **Recommended action**: **delete line 80** (remove the superseded `workspace_mailboxes` query). Not a fallback and not a merge — the second query is authoritative and the surrounding folder logic already standardizes on `workspace_account_bindings`.
 - **Verdict: CONFIRMED_REACHABLE** (redundant dead query; intent = keep line 81).
+- **Status update (2026-07-16): CODE_FIXED_STAGING_VERIFIED** — `workspace_mailboxes` query removed from `applyCanonicalStates`; single `workspace_account_bindings` canonical query remains; tests 7/7. Commit `2234b7bf`, tag `v2026.07-f2-f5-reliability`, staging Worker `d473b56f`. **Not production-deployed** (held for post-UCS-acceptance mission). See `CANONICAL_QUERY_AND_ACCOUNT_RELIABILITY_REPAIR_REPORT.md`.
 
 ### F3 — `login-service.logout` token integrity + TTL
 
@@ -88,6 +89,7 @@ Format: Finding → Source Evidence → Reachability → Reproduction → Severi
 - **Severity**: Low (reliability/API-contract: 500 instead of 404; no data exposure — ownership is still enforced for existing rows).
 - **Recommended action**: in `delete`, add `if (!accountRow) throw new BizError(t('noUserAccount'), 404);` before deref; remove dead `let a = null` in `setAllReceive`. Standardize not-found→404, foreign→403.
 - **Verdict: CONFIRMED_REACHABLE** (reliability contract; `setAllReceive` deref sub-claim = NOT_REPRODUCED — already guarded).
+- **Status update (2026-07-16): CODE_FIXED_STAGING_VERIFIED** — `account.delete` now guards not-found (`BizError(...,404)`) before any `accountRow` field access; foreign/owned behavior unchanged; dead `let a = null` removed from `setAllReceive` (deref sub-claim NOT_REPRODUCED). Tests 7/7. Commit `2234b7bf`, tag `v2026.07-f2-f5-reliability`, staging Worker `d473b56f`. **Not production-deployed** (held for post-UCS-acceptance mission).
 
 ### F6 — iOS Keychain accessibility class
 

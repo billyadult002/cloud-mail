@@ -17,7 +17,8 @@ Related standard: `docs/ADR-DEPLOYMENT-PROVENANCE-STANDARD.md`
 
 | Worker Version | Env | Deployed (UTC) | Git commit | Tag | Notes |
 |----------------|-----|----------------|-----------|-----|-------|
-| `b3283329-37f4-45ef-ae75-b89186e72e11` | **staging** | 2026-07-16 (14:4x) | `3ab120b60c39957e8d7051284a99efac2b1c7cd3` | `v2026.07-ucs-hwm-v3` | UCS HWM **V3 rematerialization** latch (composite `(created_at,id)`, flag-gated, default off). Staging only. |
+| `d473b56f-079c-4c96-a801-00778c646e5d` | **staging** | 2026-07-16 20:12:21 | `2234b7bf371209cce61af97676e54362d582d3c6` | `v2026.07-f2-f5-reliability` | **F2/F5 reliability** (canonical query dedup + account.delete not-found). Staging only; production held for post-UCS mission. Health 200. |
+| `b3283329-37f4-45ef-ae75-b89186e72e11` | staging | 2026-07-16 (14:4x) | `3ab120b60c39957e8d7051284a99efac2b1c7cd3` | `v2026.07-ucs-hwm-v3` | UCS HWM **V3 rematerialization** latch (composite `(created_at,id)`, flag-gated, default off). Staging only. |
 | `500395a9-f485-47d4-bf13-952ca33ab93c` | staging | 2026-07-16 14:23:50 | `5a40b0b2bee4919af852da7b03dbb2ccadb5fb91` | `v2026.07-ucs-hwm` | UCS high-watermark **backfill** completion (flag-gated, default off). Staging only; production untouched. Rollback ref `d0396317`. |
 | `525681a1-36c5-4b52-be3f-9a6be445a641` | production | 2026-07-16 19:22:20 | `0b5dd1d3583c3d2824d020ee7d6a5eadf1207f49` | `v2026.07-ucs-hwm-v3-enabled` | **HWM ENABLED for W2** (`UCS_HWM_COMPLETION_ENABLED="true"`). Current active. Verdict PRODUCTION_CONVERGENCE_IN_PROGRESS. Rollback → `dbcf4c70`/`d05ffd3e`. |
 | `dbcf4c70-7936-4887-902d-7ec4aa868830` | production | 2026-07-16 19:15:59 | `3ab120b60c39957e8d7051284a99efac2b1c7cd3` | `v2026.07-ucs-hwm-v3` | HWM code, flag OFF (behavior-identical). Health 200. Flag-off rollback ref. |

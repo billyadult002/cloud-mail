@@ -66,11 +66,19 @@ V14/A13/E15/ADR-8.
 Gates (E17): `npm run test:unit` (send-contract + `node --check` all `src`) pass; related regression
 (F1/F3/HWM + F2/F5) 33/33; `git diff --check` clean.
 
-## Provenance (E18 / E19) — filled after staging deploy
+## Provenance (E18 / E19)
 
-- Implementation commit: see `git log` (this report + code + tests committed together).
-- Annotated tag: `v2026.07-f2-f5-reliability`.
-- Staging Worker Version / deploy time / health: see the staging section below (updated post-deploy).
+- Implementation commit: `2234b7bf371209cce61af97676e54362d582d3c6`.
+- Annotated tag: `v2026.07-f2-f5-reliability` (points to the implementation commit, V23).
+- Staging deploy: Worker `d473b56f-079c-4c96-a801-00778c646e5d` @ 2026-07-16 20:12:21 UTC.
+- Staging health: `GET /api/setting/websiteConfig` → HTTP 200 transport, body `code=501 数据库未初始化`
+  — the staging D1 is un-seeded; this confirms the Worker builds/boots/routes with the F2/F5 change
+  (V24/V25). Per V26, this un-seeded state is not a code failure, and HTTP 200 alone is not treated as
+  F2/F5 business acceptance — the authoritative behavioral evidence is the 7/7 regression suite.
+- Binding isolation (E20): staging D1 `cloud-mail-staging` (`acf160ae…`) is separate from production
+  `cloud-mail` (`4c05f52d…`).
+- Production non-interference (read-only, `rows_written=0`): Worker remains `525681a1`,
+  `UCS_HWM_COMPLETION_ENABLED="true"`, `projection_read_enabled=0` — before and after staging deploy.
 
 ## Audit answers
 

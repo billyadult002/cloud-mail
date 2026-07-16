@@ -100,6 +100,7 @@ Format: Finding → Source Evidence → Reachability → Reproduction → Severi
 - **Severity**: Low–Medium, threat-model dependent (session token + broker secret recoverable from an encrypted backup on a new device).
 - **Recommended action**: product decision on `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` (or `WhenUnlockedThisDeviceOnly` for the token), with a **real-iPhone acceptance pass** — changing accessibility rewrites items and must be validated on device, not simulator.
 - **Verdict: REQUIRES_PRODUCT_DECISION** (confirmed attribute; hardening gated on product + real-device acceptance).
+- **Status update (2026-07-16): F6_DESIGN_COMPLETE** — product decision made: S1 token & S2 device reference → `AfterFirstUnlockThisDeviceOnly`; S3 broker pair ID & S4 broker secret → `WhenUnlockedThisDeviceOnly` (all device-bound, excluded from backup restore). Atomic `SecItemUpdate` idempotent migration + versioned hook, fail-closed status handling, real-iPhone backup/restore acceptance. **Not implemented / not deployed.** See `IOS_KEYCHAIN_HARDENING_DESIGN_REPORT.md` and `docs/ADR-IOS-KEYCHAIN-DEVICE-BOUND-HARDENING.md`.
 
 ---
 

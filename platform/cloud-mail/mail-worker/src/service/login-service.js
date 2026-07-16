@@ -286,13 +286,37 @@ const loginService = {
 	},
 
 	async logout(c, userId) {
-		const token =userContext.getToken(c);
+		// F3 fix: await the token (getToken is async — an unawaited Promise never
+		// matched, so the old findIndex always returned -1 and splice(-1,1) evicted
+		// the LAST active session). Guard null authInfo, only remove the matched
+		// token, and preserve the 30-day TTL on write.
+		const token = await userContext.getToken(c);
 		const authInfo = await c.env.kv.get(KvConst.AUTH_INFO + userId, { type: 'json' });
-		const index = authInfo.tokens.findIndex(item => item === token);
-		authInfo.tokens.splice(index, 1);
-		await c.env.kv.put(KvConst.AUTH_INFO + userId, JSON.stringify(authInfo));
+		const { authInfo: next, removed } = removeSessionToken(authInfo, token);
+		if (!removed) return;
+		await c.env.kv.put(
+			KvConst.AUTH_INFO + userId,
+			JSON.stringify(next),
+			{ expirationTtl: constant.TOKEN_EXPIRE }
+		);
 	}
 
 };
+
+// Pure session-token removal used by logout. Never throws on a null/malformed
+// record and never removes a non-matching token (no splice(-1)).
+// Returns { authInfo, removed }: removed=false means nothing was changed and the
+// caller should not rewrite KV (which would otherwise reset/strip the TTL).
+export function removeSessionToken(authInfo, token) {
+	if (!authInfo || !Array.isArray(authInfo.tokens)) {
+		return { authInfo: null, removed: false };
+	}
+	const index = authInfo.tokens.findIndex(item => item === token);
+	if (index < 0) {
+		return { authInfo, removed: false };
+	}
+	authInfo.tokens.splice(index, 1);
+	return { authInfo, removed: true };
+}
 
 export default loginService;

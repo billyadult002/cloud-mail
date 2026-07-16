@@ -1,5 +1,11 @@
 # NEXORA Provider-Agnostic Communication OS + Goal-Driven Enterprise OS
 
+## 2026-07-16 19:37 UTC — UCS HWM V3 native convergence observation (verdict: PRODUCTION_CONVERGENCE_IN_PROGRESS)
+
+- Read-only (rows_written=0). Worker `525681a1`, `UCS_HWM_COMPLETION_ENABLED=true`, projection reads 0% (epoch 1). Backfill READY-latched hw=cursor=3807; membership READY; V3 watermark immutable `2026-07-16 19:23:13|conversation:623f0b8a-…`, cursor 03:09:30→03:15:11 monotonic, gen 117→128, proc 574→629 — native scheduler, UNOWNED between runs, no manual actions.
+- Native parity now executing at frozen hw=3807 (E11 met) but passed=0 on all surfaces: missing 0 (attachments 5), extra 0, contentMismatch=1350, unexplained=1658. Integrity clean: duplicates=0, orphans=0, unresolved_failures=0. `unexplained` driver = outbox_le_w=1655.
+- Two ≤W long-poles to parity PASS, both draining natively: V3 rematerialization (contentMismatch, ~hours) and ≤W ingest-outbox drain (~1655 at ~2/min ⇒ ~14h). New >W mail excluded. FULL_PRODUCTION_PASS NOT declared; real-iPhone/cutover gates unreachable until parity PASS. Evidence updated in UCS_HWM_V3_CONVERGENCE_EVIDENCE.md / _PARITY_ACCEPTANCE.md / _FINAL_PRODUCTION_ACCEPTANCE.md.
+
 ## 2026-07-16 19:27 UTC — UCS HWM V3 controlled production activation (verdict: PRODUCTION_CONVERGENCE_IN_PROGRESS)
 
 - Deployed high-watermark code + enabled `UCS_HWM_COMPLETION_ENABLED="true"` for W2 in a paused/unowned window. Two-step: Worker `dbcf4c70` (code, flag off, health 200) → Worker `525681a1` (flag on, value confirmed in bindings). Code commit `3ab120b` / tag `v2026.07-ucs-hwm-v3`; enablement commit `0b5dd1d3` / tag `v2026.07-ucs-hwm-v3-enabled`. Rollback refs `dbcf4c70` (flag-off) / `d05ffd3e` (F3). Crons/bindings unchanged.

@@ -51,6 +51,18 @@ progress must never be recorded as a pass.)
 19. How to disable/rollback? Flag `="false"`+redeploy, or `wrangler rollback dbcf4c70`/`d05ffd3e`. No data edits.
 20. FULL_PRODUCTION_PASS justified by complete evidence? **No — not yet.**
 
+## Update — 19:37:43 UTC observation (verdict unchanged: IN_PROGRESS)
+
+- Worker still `525681a1`, flag on, reads 0%. Backfill READY-latched hw=3807; membership READY;
+  V3 watermark immutable (`2026-07-16 19:23:13|conversation:623f0b8a-…`), cursor advanced
+  03:09:30→03:15:11, gen 117→128, proc 574→629 — native.
+- **Parity is now executing natively** (E11 met) at frozen hw=3807 but **passed=0**:
+  contentMismatch=1350, unexplained=1658. Integrity clean: duplicates=0, orphans=0, failures=0.
+- **Two long-poles to passed=1** (both ≤W, draining natively): V3 rematerialization
+  (contentMismatch, ~hours) and ≤W ingest-outbox drain (outbox_le_w=1655, ~2/min ⇒ ~14 h).
+- No manual UCS mutation; rollback (flag-off / Worker `dbcf4c70`/`d05ffd3e`) remains available.
+- Real-iPhone + cutover gates remain unreachable (require parity PASS first; and a physical device).
+
 ## Follow-up to reach FULL_PRODUCTION_PASS
 
 Observe (read-only) until V3 latches READY and a `conversation_projection_parity` row shows

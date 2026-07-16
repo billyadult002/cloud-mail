@@ -53,8 +53,34 @@ ORDER BY rowid DESC;
 -- quarantine: checkpoint quarantined_count deltas
 ```
 
+## First native parity execution captured (19:37:43 UTC, read-only)
+
+Parity is already running natively (backfill+membership READY). Latest per-surface rows at
+evaluated `high_watermark=3807`:
+
+| metric | value |
+|--------|-------|
+| missing | 0 (attachments surface: 5) |
+| extra | 0 |
+| contentMismatch | **1350** |
+| unexplained | **1658** (outbox_le_w 1655 + failures 0) |
+| duplicates | 0 |
+| orphans | 0 |
+| unresolved failures | 0 |
+| passed | **0** (all surfaces) |
+
+This satisfies E11 (first native parity execution) and V15/E13 (same frozen `hw=3807` snapshot),
+and confirms A11 (native control path, no injection). It is **not** a PASS.
+
+## Two remaining gates to `passed=1`
+
+1. **contentMismatch → 0**: V3 must finish re-materializing all ≤W aggregates to the current
+   materializer version (~5/min; hours).
+2. **unexplained → 0**: the ≤W ingest-outbox (1655) must drain via native `processIngestOutbox`
+   (~2/min; ~14 h). Slower long-pole.
+
 ## Current verdict
 
-Parity **not yet passed**; do not assert PASS. Re-run this acceptance after V3 READY latch. Until
-then, `contentMismatch`/`missing` are expected > 0 and any parity row with `passed=0` is the
-*expected in-progress* state, not a failure of the design.
+Parity **not yet passed** (passed=0). Do not assert PASS. `contentMismatch`/`unexplained` > 0 is
+the *expected in-progress* state, not a design failure. Re-run this acceptance after both long-poles
+reach 0 and V3 is READY-latched.

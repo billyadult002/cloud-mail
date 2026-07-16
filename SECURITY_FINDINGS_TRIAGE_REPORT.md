@@ -64,6 +64,7 @@ Format: Finding → Source Evidence → Reachability → Reproduction → Severi
 - **Severity**: Medium (session integrity: an unrelated device can be logged out; TTL contract regression; unhandled 500 on null).
 - **Recommended action**: guard `if (!authInfo) return;`; only splice when `index > -1`; re-apply `{ expirationTtl: TOKEN_EXPIRE }` on the put. Add the multi-case unit test above.
 - **Verdict: CONFIRMED_REACHABLE**.
+- **Status update (2026-07-16):** FIXED_DEPLOYED — `login-service.logout` now awaits `getToken` (an unawaited async Promise had made `findIndex` always `-1`, so every logout evicted the last session), guards null authInfo, removes only the matched token via pure `removeSessionToken`, and writes with `expirationTtl=TOKEN_EXPIRE`. Test `logout-session-integrity.test.mjs` 10/10. Commit `e78ba127…`, tag `v2026.07-f3-logout`, prod Worker `d05ffd3e-724f-4c43-ba7a-3229d6cda9f1` (health OK). See `LOGOUT_SESSION_INTEGRITY_REPAIR_REPORT.md`.
 
 ### F4 — Password hashing: single-round SHA-256 + non-constant-time compare
 

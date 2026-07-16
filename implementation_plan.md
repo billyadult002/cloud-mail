@@ -1,5 +1,10 @@
 # NEXORA Communication OS + Goal-Driven OS Continuous Plan
 
+## UCS HWM V3 production activation — 2026-07-16 19:27 UTC
+
+- HWM completion enabled in production for W2 (Worker `525681a1`, tag `v2026.07-ucs-hwm-v3-enabled`). Backfill READY-latched at hw=3807; V3 composite watermark `2026-07-16 19:23:13|conversation:623f0b8a…` frozen; V3 natively re-materializing ≤W. Verdict PRODUCTION_CONVERGENCE_IN_PROGRESS; reads 0%; FULL_PRODUCTION_PASS not declared.
+- Next (read-only follow-up): observe V3 → READY latch, native parity → PASS with all integrity metrics 0, then evaluate a separate authorized projection-read cutover (gray-scale % + target build + real-iPhone). Rollback = flag `="false"`+redeploy or `wrangler rollback dbcf4c70`/`d05ffd3e`.
+
 ## Atomic primary-category contract — Maker loop 1/5 (2026-07-13)
 
 1. Discovery completed: direct current-`Category` head writes are in sender-bulk and UCS backfill. The prior sender-bulk sequence committed head/snapshot before independent projection materialization, creating the production orphan-Facet failure window.
@@ -547,3 +552,22 @@ Evaluator finding: reject the existing implementation. Beyond hard-coded UI and 
 1. **Discovery/evaluation complete:** exact-key remote D1 sampling proves the supplied generation `243` / count `789` fact belongs to W1 (`...:1:1`), while W2 (`...:1:2`) remains `78/387`.
 2. **Verdict:** **MONITOR_FIELD_OR_EPOCH_MISMATCH**. The W1 claim and lease expiry cannot prove a W2 rematerializer boundary or W2 zero-progress cycle.
 3. **Remaining gate:** no persisted runtime step exists after `10:31:36 UTC`; current evidence cannot distinguish platform cron non-delivery from handler non-entry. Continue SELECT-only observation and wait for native evidence; do not alter runtime state or run parity.
+
+## Scheduled-runtime recovery loop — 2026-07-16 13:32 UTC
+
+1. **Generator:** add an identity-only monitor contract and exact four-key query shape; update the monitor automation to fail on missing or ambiguous W2 evidence rather than selecting an unscoped checkpoint.
+2. **Checker:** syntax, 6 monitor-isolation regressions, and 10 UCS scheduler contracts pass. A remote, SELECT-only production sample confirms `rows_written=0`.
+3. **Production outcome:** new 100%-routed Worker `101308e4-0faf-4ecc-897d-6fd47753a012` has normal minute-runtime telemetry from 13:27 through 13:31. Each W2 result is explicitly workspace 2 with claimed/processed/failed `true/5/0`; Gmail also succeeded. W2 is now generation `84`, processed `415`, cursor advanced from the 78/387 baseline.
+4. **Verdict:** `TRANSIENT_PLATFORM_GAP_RECOVERED`. A platform trigger receipt is not available, so the historical pre-entry cause remains unobservable; observed post-recovery cycles prove handler/orchestration/runtime activity. Continue bounded native convergence only—W2 is not ready and parity remains forbidden.
+
+## Convergence interruption observation — 2026-07-16 13:38 UTC
+
+1. **Discovery:** exact W2 read-only samples show one more durable bounded batch (`84/415`, cursor advanced) after the five telemetry-linked cycles, then an unchanged `running` record with lease expired at `13:37:26 UTC`.
+2. **Evaluator:** no runtime telemetry is persisted after W2 audit `2453` at `13:31:33 UTC`; no observation supports a manual or competing writer. This is not a ready, stable, or parity-eligible condition.
+3. **Stop condition:** await native expired-lease reclaim through the existing minute cron and monitor. Do not release/reset the lease, invoke the scheduler/rematerializer, or run parity. Current V3 and outbox gates remain materially open.
+
+## Completion-blocker RCA — 2026-07-16 13:58 UTC
+
+1. **Evidence:** the native scheduler reclaimed the expired W2 lease, advanced to `97/480`, and cleanly released; repeated scheduled audit records prove current W2 V3 processing and Gmail telemetry.
+2. **Decision:** no unique historical generation-84 interruption cause remains in retained production evidence. Do not modify production runtime state to address an unproven component.
+3. **Next:** continue native, exact-identity, read-only convergence monitoring; completion/parity remain blocked by non-ready and nonzero outbox gates.

@@ -19,7 +19,9 @@ Related standard: `docs/ADR-DEPLOYMENT-PROVENANCE-STANDARD.md`
 |----------------|-----|----------------|-----------|-----|-------|
 | `b3283329-37f4-45ef-ae75-b89186e72e11` | **staging** | 2026-07-16 (14:4x) | `3ab120b60c39957e8d7051284a99efac2b1c7cd3` | `v2026.07-ucs-hwm-v3` | UCS HWM **V3 rematerialization** latch (composite `(created_at,id)`, flag-gated, default off). Staging only. |
 | `500395a9-f485-47d4-bf13-952ca33ab93c` | staging | 2026-07-16 14:23:50 | `5a40b0b2bee4919af852da7b03dbb2ccadb5fb91` | `v2026.07-ucs-hwm` | UCS high-watermark **backfill** completion (flag-gated, default off). Staging only; production untouched. Rollback ref `d0396317`. |
-| `d05ffd3e-724f-4c43-ba7a-3229d6cda9f1` | production | 2026-07-16 13:42:22 | `e78ba127b2d0860ad5ec3398152444b744fc2b1e` | `v2026.07-f3-logout` | **F3 fix** (logout session integrity + TTL). Current active in production. |
+| `525681a1-36c5-4b52-be3f-9a6be445a641` | production | 2026-07-16 19:22:20 | `0b5dd1d3583c3d2824d020ee7d6a5eadf1207f49` | `v2026.07-ucs-hwm-v3-enabled` | **HWM ENABLED for W2** (`UCS_HWM_COMPLETION_ENABLED="true"`). Current active. Verdict PRODUCTION_CONVERGENCE_IN_PROGRESS. Rollback → `dbcf4c70`/`d05ffd3e`. |
+| `dbcf4c70-7936-4887-902d-7ec4aa868830` | production | 2026-07-16 19:15:59 | `3ab120b60c39957e8d7051284a99efac2b1c7cd3` | `v2026.07-ucs-hwm-v3` | HWM code, flag OFF (behavior-identical). Health 200. Flag-off rollback ref. |
+| `d05ffd3e-724f-4c43-ba7a-3229d6cda9f1` | production | 2026-07-16 13:42:22 | `e78ba127b2d0860ad5ec3398152444b744fc2b1e` | `v2026.07-f3-logout` | **F3 fix** (logout session integrity + TTL). Pre-HWM rollback ref. |
 | `101308e4-0faf-4ecc-897d-6fd47753a012` | production | 2026-07-16 13:25:50 | `18f7f25b64df81c3aa61248fd711760972de0539` | `v2026.07-baseline` | **F1 fix** (addUser parameterization). Baseline src == deployed src. Rollback ref for F3. |
 | `338018fc-7c51-4740-80e4-fc0388357441` | production | 2026-07-16 01:42:08 | — (pre-baseline) | — | Rollback reference only; predates VCS. |
 | `d0396317-00f3-4596-8caf-91f8dadda860` | staging | 2026-07-05 04:45:59 | — (pre-baseline) | — | Pre-F1; staging not yet updated. |
@@ -28,8 +30,10 @@ Related standard: `docs/ADR-DEPLOYMENT-PROVENANCE-STANDARD.md`
 
 | Release Tag | Commit | Production Worker Version | Status |
 |-------------|--------|---------------------------|--------|
-| `v2026.07-ucs-hwm` | `5a40b0b2…` | staging `500395a9-…` (prod pending) | Staging-verified; flag default off |
-| `v2026.07-f3-logout` | `e78ba127…` | `d05ffd3e-724f-4c43-ba7a-3229d6cda9f1` | **Active in production** |
+| `v2026.07-ucs-hwm-v3-enabled` | `0b5dd1d3…` | `525681a1-…` | **Active in production** (HWM enabled, convergence in progress) |
+| `v2026.07-ucs-hwm-v3` | `3ab120b…` | `dbcf4c70-…` (flag off) | Deployed to prod flag-off; flag-off rollback ref |
+| `v2026.07-ucs-hwm` | `5a40b0b2…` | staging `500395a9-…` | Backfill HWM; superseded by -v3 |
+| `v2026.07-f3-logout` | `e78ba127…` | `d05ffd3e-724f-4c43-ba7a-3229d6cda9f1` | Pre-HWM rollback ref |
 | `v2026.07-baseline` | `18f7f25…` | `101308e4-0faf-4ecc-897d-6fd47753a012` | Superseded (F3 rollback ref) |
 
 ## Deployment registration standard (A6 / A7)

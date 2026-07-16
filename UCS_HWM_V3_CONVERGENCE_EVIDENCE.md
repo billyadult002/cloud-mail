@@ -38,6 +38,30 @@ Parity PASS requires BOTH to reach 0, each draining natively under the 10 ms CPU
 
 No corruption, no manual action; both backlogs are strictly ≤W and converging monotonically.
 
+## Convergence ledger — full columns (read-only, rows_written=0)
+
+Worker `525681a1`, flag `UCS_HWM_COMPLETION_ENABLED=true`, `projection_read_enabled=0` throughout.
+
+| UTC | pipe | state | lease | gen | proc | high_watermark | cursor | contentMismatch | outbox_le_w | unexplained | missing | dup | orphan | failures | quar | passed |
+|-----|------|-------|-------|-----|------|----------------|--------|-----------------|-------------|-------------|---------|-----|--------|----------|------|--------|
+| 19:37:43 | V3 | paused | unowned | 128 | 629 | `…19:23:13\|623f0b8a` | cts 2026-07-13 03:15:11 | 1350 | 1655 | 1658 | 5(att)/0 | 0 | 0 | 0 | v3=0 bf=24 | 0 |
+| 19:43:25/53 | V3 | paused | unowned | 132 | 649 | `…19:23:13\|623f0b8a` (unchanged) | cts 2026-07-13 03:20:14 | **1336** | **1650** | **1650** | (n/a this pull) | 0 | 0 | 0 | v3=0 bf=24 | 0 |
+
+Backfill both times: `ready / unowned / hw=3807 / cursor=3807 / quar=24`. Membership: `ready / unowned`.
+
+## Trend & scope analysis (E10/E11/E12/E13)
+
+- **contentMismatch 1350 → 1336** (monotonic ↓) — consistent with V3 re-materializing ≤W aggregates
+  (proc 629→649, cursor 03:15:11→03:20:14). E10/V9/V20-trend satisfied.
+- **outbox_le_w 1655 → 1650** (monotonic ↓) — native `processIngestOutbox` drain. E11/V10/V22-trend.
+  Observed drain rate this window is low (~1/min), so the ≤W outbox is the dominant long-pole.
+- **Scope split (E12/V11):** at 19:43 `outbox_global=1677 = outbox_le_w 1650 + outbox_future_gt_w 27`.
+  The 27 are new emails with `email_id>3807` — future-epoch data, correctly **excluded** from the
+  frozen snapshot and NOT counted in `unexplained`.
+- **unexplained 1650 == outbox_le_w 1650 + failures 0** (E13/V13) — unexplained is exclusively the
+  same ≤W snapshot's outbox+failures; no >W leakage.
+- Integrity flat: duplicates=0, orphans=0, unresolved_failures=0 across observations (V14–V17).
+
 ## Evidence claims
 
 - **E7 backfill READY:** state=ready at cursor==hw==3807; latched across two observations, not

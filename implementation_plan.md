@@ -3,6 +3,7 @@
 ## UCS HWM V3 production activation — 2026-07-16 19:27 UTC
 
 - HWM completion enabled in production for W2 (Worker `525681a1`, tag `v2026.07-ucs-hwm-v3-enabled`). Backfill READY-latched at hw=3807; V3 composite watermark `2026-07-16 19:23:13|conversation:623f0b8a…` frozen; V3 natively re-materializing ≤W. Verdict PRODUCTION_CONVERGENCE_IN_PROGRESS; reads 0%; FULL_PRODUCTION_PASS not declared.
+- 19:43 UTC read-only observation: monotonic convergence (contentMismatch 1350→1336, outbox_le_w 1655→1650), integrity 0, watermark immutable, all native; parity passed=0. New >W mail (27) correctly excluded. Dominant long-pole = ≤W ingest-outbox drain (~1/min). Verdict PRODUCTION_CONVERGENCE_IN_PROGRESS.
 - Next (read-only follow-up): observe V3 → READY latch, native parity → PASS with all integrity metrics 0, then evaluate a separate authorized projection-read cutover (gray-scale % + target build + real-iPhone). Rollback = flag `="false"`+redeploy or `wrangler rollback dbcf4c70`/`d05ffd3e`.
 
 ## Atomic primary-category contract — Maker loop 1/5 (2026-07-13)

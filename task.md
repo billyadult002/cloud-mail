@@ -1,5 +1,11 @@
 # NEXORA Provider-Agnostic Communication OS + Goal-Driven Enterprise OS
 
+## 2026-07-16 19:43 UTC — UCS HWM V3 native convergence + parity trend (verdict: PRODUCTION_CONVERGENCE_IN_PROGRESS)
+
+- Read-only (rows_written=0). Worker `525681a1`, flag true, projection reads 0% (epoch 1). Backfill READY hw=cursor=3807; membership READY; V3 watermark immutable `2026-07-16 19:23:13|conversation:623f0b8a-…`, cursor 03:15:11→03:20:14 monotonic, gen 128→132, proc 629→649 — native, unowned between runs.
+- Monotonic convergence: contentMismatch 1350→1336, outbox_le_w 1655→1650, unexplained 1650 (== outbox_le_w + failures 0). Parity native, passed=0 (all surfaces, hw=3807). Integrity: duplicates=0, orphans=0, unresolved_failures=0.
+- Frozen-snapshot semantics proven: outbox_global 1677 = outbox_le_w 1650 + future(email_id>3807) 27 → new >W mail excluded from current epoch. Backfill historical quarantine=24 is a monotonic lifetime counter (not current unresolved); does not block acceptance (unresolved_failures=0). Dominant long-pole = ≤W ingest-outbox drain (~1/min observed). No manual UCS mutation; rollback available. FULL_PRODUCTION_PASS not declared; cutover/real-iPhone not in scope this Mission.
+
 ## 2026-07-16 19:37 UTC — UCS HWM V3 native convergence observation (verdict: PRODUCTION_CONVERGENCE_IN_PROGRESS)
 
 - Read-only (rows_written=0). Worker `525681a1`, `UCS_HWM_COMPLETION_ENABLED=true`, projection reads 0% (epoch 1). Backfill READY-latched hw=cursor=3807; membership READY; V3 watermark immutable `2026-07-16 19:23:13|conversation:623f0b8a-…`, cursor 03:09:30→03:15:11 monotonic, gen 117→128, proc 574→629 — native scheduler, UNOWNED between runs, no manual actions.

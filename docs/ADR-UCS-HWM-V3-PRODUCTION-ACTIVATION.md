@@ -48,7 +48,17 @@ metrics 0 under continuous ingest, all backend gates green, and — for a projec
 gray-scale %, target Build, and real-iPhone acceptance verified. None of these are satisfied yet;
 the current verdict is PRODUCTION_CONVERGENCE_IN_PROGRESS.
 
+## ADR-5 addendum — backfill historical quarantine=24
+
+`quarantined_count` is a monotonic lifetime counter (runtime only increments it, never decrements).
+backfill=24 is 24 historical quarantine events across the pipeline's life, not 24 currently
+unresolved rows. Current acceptance is governed by `unresolved_failures=0`
+(`conversation_pipeline_failures.resolved_at IS NULL`) and parity `missing`/`contentMismatch`.
+It does not block the frozen-snapshot acceptance and is disclosed, not hidden.
+
 ## Decision
 
-Keep the flag enabled and let the native scheduler converge V3 ≤W; collect parity evidence in a
-follow-up. Do not enable projection reads. Do not declare FULL_PRODUCTION_PASS.
+Keep the flag enabled and let the native scheduler converge V3 ≤W and drain the ≤W ingest outbox
+(the dominant long-pole); collect parity evidence in bounded follow-ups. Do not enable projection
+reads. Do not declare FULL_PRODUCTION_PASS. Verdict as of 19:43 UTC: PRODUCTION_CONVERGENCE_IN_PROGRESS
+(contentMismatch 1350→1336, outbox_le_w 1655→1650, integrity 0, watermark immutable, all native).

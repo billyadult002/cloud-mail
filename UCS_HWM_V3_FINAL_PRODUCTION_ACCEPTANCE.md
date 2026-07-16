@@ -63,6 +63,26 @@ progress must never be recorded as a pass.)
 - No manual UCS mutation; rollback (flag-off / Worker `dbcf4c70`/`d05ffd3e`) remains available.
 - Real-iPhone + cutover gates remain unreachable (require parity PASS first; and a physical device).
 
+## Update — 19:43:53 UTC observation (verdict: PRODUCTION_CONVERGENCE_IN_PROGRESS)
+
+Monotonic native convergence confirmed, no blocker:
+- contentMismatch 1350→**1336**, outbox_le_w 1655→**1650**, unexplained 1650 (==outbox_le_w+0 failures).
+- V3 gen 128→132, proc 629→649, cursor 03:15:11→03:20:14; watermark immutable; backfill/membership READY.
+- **New >W ingest correctly excluded:** outbox_global 1677 = outbox_le_w 1650 + future(>3807) 27.
+- Integrity: duplicates=0, orphans=0, unresolved_failures=0. Parity passed=0 (in progress). Reads 0%.
+
+### Backfill historical quarantine=24 — acceptance interpretation (ADR-5 / E16 / V18)
+
+`conversation_materialization_checkpoints.quarantined_count` is a **monotonic lifetime counter**
+(the runtime only ever does `quarantined_count = quarantined_count + <this-run>`; it is never
+decremented). backfill=24 therefore records 24 historical quarantine *events* over the pipeline's
+life, **not** 24 currently-unresolved rows. The operative acceptance signals are the *current*
+ones: `unresolved_failures=0` (`conversation_pipeline_failures WHERE resolved_at IS NULL`) and the
+parity `missing`/`contentMismatch`. Since parity `missing`≈0 and unresolved failures=0, the
+historical 24 do **not** block the current frozen-snapshot acceptance. It is disclosed here, not
+hidden, and will be re-confirmed at parity PASS (missing must be 0, i.e. no ≤W conversation left
+without a current projection).
+
 ## Follow-up to reach FULL_PRODUCTION_PASS
 
 Observe (read-only) until V3 latches READY and a `conversation_projection_parity` row shows

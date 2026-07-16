@@ -79,8 +79,15 @@ and confirms A11 (native control path, no injection). It is **not** a PASS.
 2. **unexplained → 0**: the ≤W ingest-outbox (1655) must drain via native `processIngestOutbox`
    (~2/min; ~14 h). Slower long-pole.
 
+## Trend (19:37 → 19:43, native, read-only)
+
+- contentMismatch 1350 → **1336** (↓), outbox_le_w 1655 → **1650** (↓), unexplained 1650
+  (== outbox_le_w + 0 failures). passed still 0 on all surfaces. Integrity 0.
+- New >W ingest (27 events, email_id>3807) excluded from ≤W scope — snapshot conclusion unaffected.
+
 ## Current verdict
 
 Parity **not yet passed** (passed=0). Do not assert PASS. `contentMismatch`/`unexplained` > 0 is
-the *expected in-progress* state, not a design failure. Re-run this acceptance after both long-poles
-reach 0 and V3 is READY-latched.
+the *expected in-progress* state, not a design failure. Both ≤W long-poles are decreasing
+monotonically; re-run this acceptance after they reach 0 and V3 is READY-latched. The ≤W ingest
+outbox drain (~1/min observed) is the dominant long-pole.

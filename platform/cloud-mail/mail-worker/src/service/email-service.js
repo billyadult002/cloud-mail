@@ -77,7 +77,10 @@ const emailService = {
 		const placeholders = ids.map((_, index) => `?${index + 2}`).join(',');
 		let rows;
 		try {
-			rows = (await c.env.db.prepare(`SELECT s.* FROM mail_canonical_state s JOIN workspace_mailboxes wm ON wm.workspace_id=s.workspace_id AND wm.account_id=s.account_id JOIN workspace_members m ON m.workspace_id=s.workspace_id AND m.user_id=?1 WHERE s.tenant_id=?1 AND s.message_id IN (${placeholders}) ORDER BY s.state_version DESC`).bind(userId, ...ids).all()).results || [];
+			// F2: workspace_account_bindings is the canonical binding authority. A prior
+			// workspace_mailboxes query here had its result unconditionally overwritten by
+			// this one (superseded dead query, not a fallback), so it only added a D1
+			// round-trip and failure surface; removed.
 			rows = (await c.env.db.prepare(`SELECT s.* FROM mail_canonical_state s JOIN workspace_account_bindings wb ON wb.workspace_id=s.workspace_id AND wb.account_id=s.account_id AND wb.subject_user_id=s.tenant_id AND wb.lifecycle_state='READY' JOIN workspace_members m ON m.workspace_id=wb.workspace_id AND m.user_id=?1 WHERE s.tenant_id=?1 AND s.message_id IN (${placeholders}) ORDER BY s.state_version DESC`).bind(userId, ...ids).all()).results || [];
 		} catch (error) {
 			// Observable compatibility window before migration 0044. The old state

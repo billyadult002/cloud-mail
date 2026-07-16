@@ -175,6 +175,12 @@ const accountService = {
 		const user = await userService.selectById(c, userId);
 		const accountRow = await this.selectById(c, accountId);
 
+		// F5: guard not-found before any accountRow field access (previously
+		// accountRow.email dereferenced undefined -> TypeError -> HTTP 500).
+		if (!accountRow) {
+			throw new BizError(t('noUserAccount'), 404);
+		}
+
 		if (accountRow.email === user.email) {
 			throw new BizError(t('delMyAccount'));
 		}
@@ -320,7 +326,6 @@ const accountService = {
 	},
 
 	async setAllReceive(c, params, userId) {
-		let a = null
 		const { accountId } = params;
 		const accountRow = await this.selectByIdForUser(c, accountId, userId);
 		if (!accountRow) {

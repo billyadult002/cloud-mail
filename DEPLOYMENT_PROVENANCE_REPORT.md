@@ -17,7 +17,8 @@ Related standard: `docs/ADR-DEPLOYMENT-PROVENANCE-STANDARD.md`
 
 | Worker Version | Env | Deployed (UTC) | Git commit | Tag | Notes |
 |----------------|-----|----------------|-----------|-----|-------|
-| `d05ffd3e-724f-4c43-ba7a-3229d6cda9f1` | production | 2026-07-16 13:42:22 | `e78ba127b2d0860ad5ec3398152444b744fc2b1e` | `v2026.07-f3-logout` | **F3 fix** (logout session integrity + TTL). Current active. |
+| `500395a9-f485-47d4-bf13-952ca33ab93c` | **staging** | 2026-07-16 14:23:50 | `5a40b0b2bee4919af852da7b03dbb2ccadb5fb91` | `v2026.07-ucs-hwm` | UCS high-watermark completion (flag-gated, default off). Staging only; production untouched. Rollback ref `d0396317`. |
+| `d05ffd3e-724f-4c43-ba7a-3229d6cda9f1` | production | 2026-07-16 13:42:22 | `e78ba127b2d0860ad5ec3398152444b744fc2b1e` | `v2026.07-f3-logout` | **F3 fix** (logout session integrity + TTL). Current active in production. |
 | `101308e4-0faf-4ecc-897d-6fd47753a012` | production | 2026-07-16 13:25:50 | `18f7f25b64df81c3aa61248fd711760972de0539` | `v2026.07-baseline` | **F1 fix** (addUser parameterization). Baseline src == deployed src. Rollback ref for F3. |
 | `338018fc-7c51-4740-80e4-fc0388357441` | production | 2026-07-16 01:42:08 | — (pre-baseline) | — | Rollback reference only; predates VCS. |
 | `d0396317-00f3-4596-8caf-91f8dadda860` | staging | 2026-07-05 04:45:59 | — (pre-baseline) | — | Pre-F1; staging not yet updated. |
@@ -26,6 +27,7 @@ Related standard: `docs/ADR-DEPLOYMENT-PROVENANCE-STANDARD.md`
 
 | Release Tag | Commit | Production Worker Version | Status |
 |-------------|--------|---------------------------|--------|
+| `v2026.07-ucs-hwm` | `5a40b0b2…` | staging `500395a9-…` (prod pending) | Staging-verified; flag default off |
 | `v2026.07-f3-logout` | `e78ba127…` | `d05ffd3e-724f-4c43-ba7a-3229d6cda9f1` | **Active in production** |
 | `v2026.07-baseline` | `18f7f25…` | `101308e4-0faf-4ecc-897d-6fd47753a012` | Superseded (F3 rollback ref) |
 

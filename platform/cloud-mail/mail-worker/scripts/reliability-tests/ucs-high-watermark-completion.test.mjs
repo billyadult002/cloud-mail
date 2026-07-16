@@ -4,7 +4,7 @@
 // processRow is never reached) and assert query shape + commit binds.
 import { describe, expect, it } from 'vitest';
 import backfill, {
-	runWorkspace, parityWorkspace, watermarkScope, shouldFreezeWatermark, hwmEnabled
+	runWorkspace, parityWorkspace, rematerializeWorkspaceV3, watermarkScope, shouldFreezeWatermark, hwmEnabled
 } from '../../src/service/unified-conversation-backfill-service.js';
 
 // ---------- Unit: pure helpers ----------
@@ -146,5 +146,64 @@ describe('parityWorkspace watermark scope (integration)', () => {
 		const outbox = find(calls, /conversation_ingest_outbox WHERE .* state!='processed'/);
 		expect(failures.sql).not.toContain('source_ref NOT LIKE');
 		expect(outbox.sql).not.toContain('source_message_id<=');
+	});
+});
+
+function v3Resolver(checkpoint) {
+	return (sql, m) => {
+		if (m === 'run') return { meta: { changes: 1 } };
+		if (m === 'first') {
+			if (sql.includes('SELECT * FROM conversation_materialization_checkpoints WHERE id=?1 AND lease_owner=?2')) return checkpoint;
+			if (sql.includes('SELECT state FROM conversation_materialization_checkpoints WHERE id=?1')) return { state: 'paused' };
+			if (sql.includes('created_at,id FROM conversation_aggregates') && sql.includes('ORDER BY created_at DESC')) return { created_at: '2026-07-16 13:00:00', id: 'conversation:zzz' };
+			return null;
+		}
+		return { results: [] }; // vrows / legacy rows => empty => materialize never called
+	};
+}
+
+describe('rematerializeWorkspaceV3 high-watermark (integration)', () => {
+	const scope = { tenantId: 1, workspaceId: 2, limit: 5 };
+
+	it('flag ON, fresh: freezes composite (created_at,id) W, resets cursor, scopes by composite, latches ready', async () => {
+		const cp = { id: 'ucs-projection-rematerialize-v3:1:2', cursor_json: '{"conversation_id":""}', high_watermark: null, lease_generation: 97, lease_owner: 'o', state: 'running' };
+		const { db, calls } = makeDb(v3Resolver(cp));
+		const res = await rematerializeWorkspaceV3({ UCS_HWM_COMPLETION_ENABLED: 'true', db }, scope);
+
+		// freeze snapshot query + write-once UPDATE that also RESETS the cursor to composite start
+		expect(find(calls, /created_at,id FROM conversation_aggregates.*ORDER BY created_at DESC,id DESC LIMIT 1/)).toBeTruthy();
+		const freeze = find(calls, /SET high_watermark=\?1,cursor_json=\?2.*high_watermark IS NULL OR high_watermark=''/);
+		expect(freeze).toBeTruthy();
+		expect(freeze.args[0]).toBe('2026-07-16 13:00:00|conversation:zzz'); // W = (ts|id)
+		expect(freeze.args[1]).toBe(JSON.stringify({ cts: '', cid: '' }));   // cursor reset for full re-materialization
+		// composite scope on the fetch
+		const fetch = find(calls, /SELECT id,created_at FROM conversation_aggregates/);
+		expect(fetch.sql).toMatch(/created_at>\?3 OR \(created_at=\?3 AND id>\?4\)/);
+		expect(fetch.sql).toMatch(/created_at<\?5 OR \(created_at=\?5 AND id<=\?6\)/);
+		expect(res.ready).toBe(true);
+		expect(res.highWatermark).toContain('|');
+	});
+
+	it('flag ON, second run (W frozen): no re-freeze; composite scope preserved; ready holds', async () => {
+		const cp = { id: 'ucs-projection-rematerialize-v3:1:2', cursor_json: '{"cts":"2026-07-16 12:00:00","cid":"conversation:mmm"}', high_watermark: '2026-07-16 13:00:00|conversation:zzz', lease_generation: 98, lease_owner: 'o', state: 'running' };
+		const { db, calls } = makeDb(v3Resolver(cp));
+		const res = await rematerializeWorkspaceV3({ UCS_HWM_COMPLETION_ENABLED: 'true', db }, scope);
+
+		expect(find(calls, /ORDER BY created_at DESC,id DESC LIMIT 1/)).toBeFalsy();       // no freeze snapshot
+		expect(find(calls, /SET high_watermark=\?1,cursor_json=\?2/)).toBeFalsy();          // no re-freeze
+		const fetch = find(calls, /SELECT id,created_at FROM conversation_aggregates/);
+		expect(fetch.args[2]).toBe('2026-07-16 12:00:00'); // cursor cts bound
+		expect(fetch.args[3]).toBe('conversation:mmm');    // cursor cid bound
+		expect(res.ready).toBe(true);
+	});
+
+	it('flag OFF: legacy id-ordered path unchanged (no composite scope, no freeze)', async () => {
+		const cp = { id: 'ucs-projection-rematerialize-v3:1:2', cursor_json: '{"conversation_id":"conversation:aaa"}', high_watermark: null, lease_generation: 97, lease_owner: 'o', state: 'running' };
+		const { db, calls } = makeDb(v3Resolver(cp));
+		await rematerializeWorkspaceV3({ db }, scope); // flag off
+
+		expect(find(calls, /SET high_watermark=\?1,cursor_json=\?2/)).toBeFalsy();
+		expect(find(calls, /SELECT id,created_at FROM conversation_aggregates/)).toBeFalsy(); // no composite fetch
+		expect(find(calls, /SELECT id FROM conversation_aggregates WHERE .* id>\?3 ORDER BY id LIMIT/)).toBeTruthy(); // legacy fetch
 	});
 });

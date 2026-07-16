@@ -1,5 +1,10 @@
 # NEXORA Provider-Agnostic Communication OS + Goal-Driven Enterprise OS
 
+## 2026-07-16 19:48 UTC — UCS HWM V3 bounded observation: scheduler gap, still converging (verdict: PRODUCTION_CONVERGENCE_IN_PROGRESS)
+
+- Read-only (rows_written=0). Worker `525681a1`, flag true, reads 0%. Backfill READY hw=cursor=3807; membership READY; V3 watermark immutable `2026-07-16 19:23:13|conversation:623f0b8a-…`. Metrics flat vs 19:43 (contentMismatch 1336, outbox_le_w 1650, unexplained 1650, missing(att) 5, dups/orphans/failures 0, passed 0).
+- Cause = scheduler telemetry gap: latest runtime_telemetry id 2821 @ 19:41:26 UTC (~7 min gap). Leases UNOWNED, watermark immutable, no regression → NOT a blocker (ADR-6/V26/V27); awaiting native reclaim, no manual lease action. Frozen scope intact (outbox_global 1677 = le_w 1650 + future>3807 27). Current unresolved quarantine=0; lifetime counter backfill=24 disclosed, not a current blocker. Next bounded observation after a longer interval to confirm reclaim resumed progress.
+
 ## 2026-07-16 19:43 UTC — UCS HWM V3 native convergence + parity trend (verdict: PRODUCTION_CONVERGENCE_IN_PROGRESS)
 
 - Read-only (rows_written=0). Worker `525681a1`, flag true, projection reads 0% (epoch 1). Backfill READY hw=cursor=3807; membership READY; V3 watermark immutable `2026-07-16 19:23:13|conversation:623f0b8a-…`, cursor 03:15:11→03:20:14 monotonic, gen 128→132, proc 629→649 — native, unowned between runs.

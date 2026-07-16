@@ -62,6 +62,34 @@ Backfill both times: `ready / unowned / hw=3807 / cursor=3807 / quar=24`. Member
   same ≤W snapshot's outbox+failures; no >W leakage.
 - Integrity flat: duplicates=0, orphans=0, unresolved_failures=0 across observations (V14–V17).
 
+## Observation 19:47:46 / 19:48:18 UTC — scheduler telemetry gap (read-only, rows_written=0)
+
+| field | value |
+|-------|-------|
+| Worker / flag / proj_read | `525681a1` / true / 0% |
+| backfill | ready / UNOWNED / hw=3807 / cursor=3807 / gen 1622 / proc 2224 / lifetime-quar 24 |
+| membership | ready / UNOWNED |
+| V3 | paused / UNOWNED / gen 132 / proc 649 / hw `2026-07-16 19:23:13\|conversation:623f0b8a-…` (unchanged) / cursor cts 2026-07-13 03:20:14 |
+| contentMismatch | 1336 (unchanged vs 19:43) |
+| outbox_global / le_w / future_gt_w | 1677 / 1650 / 27 (1677 = 1650 + 27) |
+| unexplained | 1650 (== outbox_le_w + failures 0) |
+| missing (attachments) | 5 |
+| duplicates / orphans / unresolved_failures | 0 / 0 / 0 |
+| unresolved quarantine (current) | 0 (lifetime counter: backfill 24, V3/membership 0) |
+| parity passed | 0 |
+
+**Scheduler-gap classification (V26 / ADR-6):** latest `runtime_telemetry` audit is id **2821 @
+19:41:26 UTC**; at 19:48:18 that is a ~7-minute gap, which is why V3 gen/proc/cursor and all parity
+metrics are unchanged since ~19:43. Disposition:
+- Not a blocker. Leases are UNOWNED (no stuck ACTIVE lease, no takeover needed); watermark immutable;
+  cursor not regressed; duplicates/orphans/failures still 0 (no invariant violation).
+- This matches the RCA-documented intermittent Cloudflare scheduled-event gaps (e.g. the earlier
+  13:31→13:49 gap) that resume via **native reclaim** on a subsequent cron. Manual lease action is
+  forbidden and was not taken.
+- Per V27, BLOCKED_WITH_EVIDENCE requires *sustained* non-progress or an invariant violation; a
+  single ~7-min gap is neither. Verdict remains PRODUCTION_CONVERGENCE_IN_PROGRESS. Next bounded
+  observation (after a longer interval) should confirm native reclaim resumed progress.
+
 ## Evidence claims
 
 - **E7 backfill READY:** state=ready at cursor==hw==3807; latched across two observations, not

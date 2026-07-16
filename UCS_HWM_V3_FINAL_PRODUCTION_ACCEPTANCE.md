@@ -83,6 +83,16 @@ historical 24 do **not** block the current frozen-snapshot acceptance. It is dis
 hidden, and will be re-confirmed at parity PASS (missing must be 0, i.e. no ≤W conversation left
 without a current projection).
 
+## Update — 19:48:18 UTC observation (verdict: PRODUCTION_CONVERGENCE_IN_PROGRESS)
+
+- All metrics flat vs 19:43 (contentMismatch 1336, outbox_le_w 1650, unexplained 1650, missing 5,
+  integrity 0, passed 0) because of a **scheduler telemetry gap**: latest runtime_telemetry id
+  2821 @ 19:41:26 UTC (~7 min gap at observation).
+- Classification (ADR-6/V26/V27): NOT a blocker — leases UNOWNED (native reclaim pending), watermark
+  immutable, no cursor regression, no duplicates/orphans/failures. Matches the RCA's intermittent
+  Cloudflare scheduled-event gaps that self-resume via native reclaim. No manual lease action taken.
+- Worker/flag/reads unchanged and authorized; frozen-snapshot scope intact (outbox future 27 excluded).
+
 ## Follow-up to reach FULL_PRODUCTION_PASS
 
 Observe (read-only) until V3 latches READY and a `conversation_projection_parity` row shows

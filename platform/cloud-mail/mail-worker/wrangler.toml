@@ -40,6 +40,7 @@ CLOUDFLARE_CATCH_ALL_RULE_ID = "aa77a8abc8bc45a6a9e24b42ac346484"
 domain = ["fastonegroup.com", "hengmao.org"]
 CLASSIFICATION_INTELLIGENCE_ENABLED = "true"
 UCS_ACTIVATION_ENABLED = "true"
+UCS_HWM_COMPLETION_ENABLED = "true"
 CLOUDMAIL_RUNTIME_TELEMETRY_AUDIT_ENABLED = "true"
 #ai_model = ""			#ai模型,不填默认使用@cf/meta/llama-3.1-8b-instruct
 #analysis_cache = false			#是否开启分析数据缓存

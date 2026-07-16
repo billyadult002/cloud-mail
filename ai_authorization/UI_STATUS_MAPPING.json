@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "description": "Non-visual UI status mapping scaffold for AI authorization methods. This file is not wired into product UI.",
+  "statuses": {
+    "no_ai": {
+      "label": "No AI",
+      "allowed_action": "none",
+      "fallback": "no_ai",
+      "misrepresentation_guard": "No provider is connected or implied."
+    },
+    "setup_required_api_key": {
+      "label": "Setup required",
+      "allowed_action": "admin_or_later_secure_intake_only",
+      "fallback": "local_or_no_ai",
+      "misrepresentation_guard": "Must not be labeled as Google account sign-in."
+    },
+    "setup_required_oauth": {
+      "label": "Setup required",
+      "allowed_action": "admin_configuration_only",
+      "fallback": "local_or_no_ai",
+      "misrepresentation_guard": "Must not show sign-in until an OAuth client and callback are configured."
+    },
+    "setup_required_project_key": {
+      "label": "Setup required",
+      "allowed_action": "admin_configuration_only",
+      "fallback": "local_or_no_ai",
+      "misrepresentation_guard": "Must not be labeled as ChatGPT account sign-in."
+    },
+    "setup_required_workload_identity": {
+      "label": "Setup required",
+      "allowed_action": "admin_configuration_only",
+      "fallback": "local_or_no_ai",
+      "misrepresentation_guard": "Must not expose identity internals to users."
+    },
+    "setup_required_managed_identity": {
+      "label": "Setup required",
+      "allowed_action": "admin_configuration_only",
+      "fallback": "local_or_no_ai",
+      "misrepresentation_guard": "Must be tenant/environment scoped and metadata-only."
+    },
+    "setup_required_byok": {
+      "label": "Setup required",
+      "allowed_action": "not_enabled_in_this_scaffold",
+      "fallback": "local_or_no_ai",
+      "misrepresentation_guard": "Must not request or display user keys in this scaffold."
+    },
+    "setup_required_enterprise": {
+      "label": "Setup required",
+      "allowed_action": "enterprise_admin_only",
+      "fallback": "local_or_no_ai",
+      "misrepresentation_guard": "Must not imply user-owned billing or credential control."
+    }
+  },
+  "gate_labels": {
+    "runtime_enabled": "Runtime disabled",
+    "production_enabled": "Production disabled",
+    "model_selector_enabled": "Model selection disabled",
+    "live_dispatch_enabled": "Live dispatch disabled",
+    "data_sharing_allowed": "Consent required"
+  }
+}

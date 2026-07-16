@@ -1,0 +1,10 @@
+ALTER TABLE gmail_provider_freshness ADD COLUMN provider_operation TEXT;
+ALTER TABLE gmail_provider_freshness ADD COLUMN upstream_service TEXT;
+ALTER TABLE gmail_provider_freshness ADD COLUMN provider_http_status INTEGER;
+ALTER TABLE gmail_provider_freshness ADD COLUMN normalized_failure_code TEXT;
+ALTER TABLE gmail_provider_freshness ADD COLUMN credential_reference_id INTEGER;
+ALTER TABLE gmail_provider_freshness ADD COLUMN credential_generation INTEGER;
+ALTER TABLE gmail_provider_freshness ADD COLUMN intended_identity_hash TEXT;
+ALTER TABLE gmail_provider_freshness ADD COLUMN authorized_identity_hash TEXT;
+ALTER TABLE gmail_provider_freshness ADD COLUMN authorized_subject_hash TEXT;
+ALTER TABLE gmail_provider_freshness ADD COLUMN identity_match INTEGER;

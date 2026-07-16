@@ -1,0 +1,9 @@
+import app from '../hono/hono';
+import result from '../model/result';
+import userContext from '../security/user-context';
+import service from '../service/sender-bulk-classification-service';
+
+app.get('/v3/sender-bulk/destinations',async c=>{const q=c.req.query(),actorUserId=userContext.getUserId(c);return c.json(result.ok(await service.destinationContract(c,{tenantId:actorUserId,workspaceId:Number(q.workspace_id),actorUserId,normalizedSender:q.normalized_sender,accountIds:String(q.account_ids||'').split(',').filter(Boolean).map(Number)})));});
+app.post('/v3/sender-bulk/preview',async c=>{const body=await c.req.json(),actorUserId=userContext.getUserId(c);return c.json(result.ok(await service.preview(c,{...body,workspaceId:body.workspaceId??body.workspace_id,normalizedSender:body.normalizedSender??body.normalized_sender,destinationType:body.destinationType??body.destination_type,destinationKey:body.destinationKey??body.destination_key,accountIds:body.accountIds??body.account_ids??[],actorUserId})));});
+app.post('/v3/sender-bulk/execute',async c=>{const body=await c.req.json(),actorUserId=userContext.getUserId(c);return c.json(result.ok(await service.execute(c,{...body,workspaceId:body.workspaceId??body.workspace_id,normalizedSender:body.normalizedSender??body.normalized_sender,destinationType:body.destinationType??body.destination_type,destinationKey:body.destinationKey??body.destination_key,accountIds:body.accountIds??body.account_ids??[],idempotencyKey:c.req.header('Idempotency-Key')||body.idempotencyKey||body.idempotency_key,actorUserId})));});
+app.get('/v3/sender-bulk/:operationId',async c=>{const q=c.req.query(),tenantId=userContext.getUserId(c);return c.json(result.ok(await service.operation(c,{tenantId,workspaceId:Number(q.workspace_id),operationId:c.req.param('operationId')})));});

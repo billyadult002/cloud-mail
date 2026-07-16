@@ -1,0 +1,64 @@
+# CloudMail source-of-truth baseline .gitignore
+# Baseline captures authoritative SOURCE (code, config, migrations, docs, reports).
+# Derived/binary/large artifacts and ALL secret material are excluded by design.
+# Rationale: docs/ADR-REPOSITORY-AUTHORITY-RESTORATION.md
+
+# --- Secrets & signing material (NEVER commit) ---
+profile/
+*.p12
+*.mobileprovision
+*.certSigningRequest
+*.pem
+*.key
+id_rsa*
+.env
+.env.*
+*.env
+**/.dev.vars
+*service-account*.json
+*credentials*.json
+signing-work/
+
+# --- Derived / build artifacts (reproducible, large) ---
+artifacts/
+build/
+platform/build/
+archive/
+evidence/
+node_modules/
+**/node_modules/
+**/DerivedData*/
+**/Build/
+**/Logs/
+dist/
+**/dist/
+.wrangler/
+**/.wrangler/
+*.xcarchive/
+*.xcresult/
+*.dSYM/
+xcuserdata/
+**/xcuserdata/
+
+# --- Packaged apps / archives ---
+*.ipa
+*.zip
+*.zip.*
+*.tar
+*.tar.gz
+
+# --- Binary / media (evidence artifacts, not source) ---
+*.png
+*.jpg
+*.jpeg
+*.heic
+*.HEIC
+*.gif
+*.mp4
+*.mov
+nexora logo/
+
+# --- OS cruft ---
+.DS_Store
+**/.DS_Store
+Thumbs.db

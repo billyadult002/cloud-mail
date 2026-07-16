@@ -1,0 +1,20 @@
+{
+  "name": "CloudMail",
+  "short_name": "CloudMail",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f7fb",
+  "theme_color": "#252b3b",
+  "icons": [
+    {
+      "src": "/assets/cloudmail-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/cloudmail-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

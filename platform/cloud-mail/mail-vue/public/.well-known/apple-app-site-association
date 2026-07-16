@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "XC7JTUHQ33.com.fastonegroup.glassmail",
+        "paths": ["/reset-password", "/reset-password/*"]
+      }
+    ]
+  }
+}

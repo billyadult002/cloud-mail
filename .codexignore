@@ -1,0 +1,17 @@
+# Keep active source and current status docs visible.
+# Hide only bulky generated caches, historical archives, and local binary output.
+
+archive/quarantine/
+archive/reports/
+artifacts/**/DerivedData*
+artifacts/**/Build/
+artifacts/**/Logs/
+build/
+DerivedData/
+node_modules/
+.wrangler/state/
+*.xcarchive
+*.dSYM
+*.ipa
+*.xcresult/
+

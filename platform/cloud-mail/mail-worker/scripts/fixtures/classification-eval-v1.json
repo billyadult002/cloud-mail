@@ -1,0 +1,10 @@
+[
+  {"id":"safe-action","features":{"sender":"person@example.com","subject":"Approval needed","body":"Could you review and approve by Friday?"},"gold":{"security":"safe","origin":"human","decision":"mission_candidate"}},
+  {"id":"information","features":{"sender":"person@example.com","subject":"Weekly context","body":"Sharing this for your information."},"gold":{"security":"safe","origin":"human","decision":"information_only"}},
+  {"id":"automated-request-language","features":{"sender":"notification@example.com","subject":"Please review","body":"Please review this automated update. Do not reply."},"gold":{"security":"safe","origin":"automated_system","decision":"information_only"}},
+  {"id":"transaction","features":{"sender":"noreply@example.com","subject":"Order confirmation","body":"Receipt for your order. Do not reply."},"gold":{"security":"safe","origin":"automated_system","decision":"information_only"}},
+  {"id":"security","features":{"sender":"attacker@example.com","subject":"Urgent wire","body":"Verify your password and buy a gift card."},"gold":{"security":"suspicious","origin":"human","decision":"blocked_by_security"}},
+  {"id":"identity-unknown","features":{"subject":"Please approve","body":"Need you to decide."},"gold":{"security":"safe","origin":"human","decision":"human_review_required"}},
+  {"id":"commitment","features":{"sender":"partner@example.com","subject":"Delivery","body":"We will provide the report by Friday."},"gold":{"security":"safe","origin":"human","decision":"mission_candidate"}},
+  {"id":"ordinary-update","features":{"sender":"person@example.com","subject":"Meeting completed","body":"The meeting occurred yesterday."},"gold":{"security":"safe","origin":"human","decision":"information_only"}}
+]

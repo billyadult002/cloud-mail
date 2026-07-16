@@ -1,0 +1,326 @@
+provider_manifest_version: 1
+environment:
+  value: target_deployment
+  required: true
+  present: false
+  source: absent
+  safe_to_display: true
+  blocker_if_missing: BLOCKED_TARGET_ENVIRONMENT_METADATA_REQUIRED
+
+normal_user_ui:
+  api_key_visible:
+    value: false
+    required: true
+    present: true
+    source: code
+    safe_to_display: true
+    blocker_if_missing: FAIL_API_KEY_UI_VISIBLE
+  byok_visible:
+    value: false
+    required: true
+    present: true
+    source: code
+    safe_to_display: true
+    blocker_if_missing: FAIL_BYOK_UI_VISIBLE
+  developer_setup_visible:
+    value: false
+    required: true
+    present: true
+    source: code
+    safe_to_display: true
+    blocker_if_missing: FAIL_DEVELOPER_SETUP_UI_VISIBLE
+  claude_visible:
+    value: false
+    required: true
+    present: true
+    source: code
+    safe_to_display: true
+    blocker_if_missing: FAIL_CLAUDE_VISIBLE
+
+data_boundaries:
+  production_mailbox_data_allowed:
+    value: false
+    required: true
+    present: true
+    source: runtime_config
+    safe_to_display: true
+    blocker_if_missing: FAIL_PRODUCTION_MAILBOX_DATA_ALLOWED
+  mailbox_content_allowed:
+    value: false
+    required: true
+    present: true
+    source: runtime_config
+    safe_to_display: true
+    blocker_if_missing: FAIL_MAILBOX_CONTENT_ALLOWED
+  attachments_allowed:
+    value: false
+    required: true
+    present: true
+    source: runtime_config
+    safe_to_display: true
+    blocker_if_missing: FAIL_ATTACHMENTS_ALLOWED
+  contacts_allowed:
+    value: false
+    required: true
+    present: true
+    source: runtime_config
+    safe_to_display: true
+    blocker_if_missing: FAIL_CONTACTS_ALLOWED
+  private_calendar_data_allowed:
+    value: false
+    required: true
+    present: true
+    source: code
+    safe_to_display: true
+    blocker_if_missing: FAIL_PRIVATE_CALENDAR_DATA_ALLOWED
+  synthetic_tasks_allowed:
+    value: true
+    required: true
+    present: true
+    source: runtime_config
+    safe_to_display: true
+    blocker_if_missing: BLOCKED_SYNTHETIC_TASKS_NOT_CONFIGURED
+
+providers:
+  gemini:
+    selected_priority: 1
+    authorization_mode: scheme_a_web_oauth_callback
+    oauth:
+      client_id:
+        required: true
+        present: false
+        source: absent
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_GEMINI_OAUTH_CLIENT_ID_REQUIRED
+      client_secret_reference:
+        required: true
+        present: false
+        source: absent
+        safe_to_display: false
+        blocker_if_missing: BLOCKED_GEMINI_OAUTH_SECRET_REFERENCE_REQUIRED
+      redirect_uri:
+        required: true
+        present: false
+        source: absent
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_GEMINI_REDIRECT_URI_REQUIRED
+      scopes:
+        required: true
+        present: false
+        source: absent
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_GEMINI_OAUTH_SCOPES_REQUIRED
+      consent_project_proof:
+        required: true
+        present: false
+        source: external_provider
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_GEMINI_OAUTH_CONSENT_CONFIGURATION_UNVERIFIED
+      start_route:
+        required: true
+        present: true
+        source: code
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_GEMINI_OAUTH_START_ROUTE_REQUIRED
+      callback_route:
+        required: true
+        present: true
+        source: code
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_GEMINI_OAUTH_CALLBACK_ROUTE_REQUIRED
+      token_exchange_route:
+        required: true
+        present: true
+        source: code
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_GEMINI_TOKEN_EXCHANGE_ROUTE_REQUIRED
+      token_reference_storage:
+        required: true
+        present: true
+        source: code
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_GEMINI_TOKEN_REFERENCE_STORAGE_REQUIRED
+      token_encryption_reference:
+        required: true
+        present: false
+        source: absent
+        safe_to_display: false
+        blocker_if_missing: BLOCKED_GEMINI_TOKEN_ENCRYPTION_REFERENCE_REQUIRED
+    runtime:
+      model_alias:
+        required: true
+        present: false
+        source: absent
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_GEMINI_MODEL_ALIAS_REQUIRED
+      runtime_flag_synthetic:
+        required: true
+        present: false
+        source: runtime_config
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_GEMINI_RUNTIME_FLAG_REQUIRED
+      provider_flag_synthetic:
+        required: true
+        present: false
+        source: runtime_config
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_GEMINI_PROVIDER_FLAG_REQUIRED
+      credential_or_token_reference:
+        required: true
+        present: false
+        source: absent
+        safe_to_display: false
+        blocker_if_missing: BLOCKED_GEMINI_CREDENTIAL_REFERENCE_REQUIRED
+    safety:
+      mailbox_data_allowed:
+        required: true
+        present: true
+        value: false
+        source: runtime_config
+        safe_to_display: true
+        blocker_if_missing: FAIL_GEMINI_MAILBOX_DATA_ALLOWED
+      synthetic_only:
+        required: true
+        present: true
+        value: true
+        source: runtime_config
+        safe_to_display: true
+        blocker_if_missing: FAIL_GEMINI_NOT_SYNTHETIC_ONLY
+
+  openai_managed:
+    selected_priority: 2
+    authorization_mode: backend_managed_credential_reference
+    account_auth_available:
+      required: false
+      present: false
+      source: code
+      safe_to_display: true
+      blocker_if_missing: BLOCKED_OPENAI_ACCOUNT_AUTH_UNAVAILABLE
+    credential:
+      backend_credential_reference:
+        required: true
+        present: false
+        source: absent
+        safe_to_display: false
+        blocker_if_missing: BLOCKED_OPENAI_CREDENTIAL_REFERENCE_REQUIRED
+      executable_secret_reference:
+        required: true
+        present: false
+        source: absent
+        safe_to_display: false
+        blocker_if_missing: BLOCKED_OPENAI_EXECUTABLE_SECRET_REFERENCE_REQUIRED
+    runtime:
+      model_alias:
+        required: true
+        present: false
+        source: absent
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_OPENAI_MODEL_ALIAS_REQUIRED
+      runtime_flag_synthetic:
+        required: true
+        present: false
+        source: runtime_config
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_OPENAI_RUNTIME_FLAG_REQUIRED
+      provider_flag_synthetic:
+        required: true
+        present: false
+        source: runtime_config
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_OPENAI_PROVIDER_FLAG_REQUIRED
+    safety:
+      mailbox_data_allowed:
+        required: true
+        present: true
+        value: false
+        source: runtime_config
+        safe_to_display: true
+        blocker_if_missing: FAIL_OPENAI_MAILBOX_DATA_ALLOWED
+      synthetic_only:
+        required: true
+        present: true
+        value: true
+        source: runtime_config
+        safe_to_display: true
+        blocker_if_missing: FAIL_OPENAI_NOT_SYNTHETIC_ONLY
+
+  openai_account_auth:
+    selected_priority: 3
+    authorization_mode: official_account_auth_if_available
+    official_account_auth_available:
+      required: true
+      present: false
+      source: code
+      safe_to_display: true
+      blocker_if_missing: BLOCKED_OPENAI_ACCOUNT_AUTH_UNAVAILABLE
+    oauth:
+      client_id:
+        required: true
+        present: false
+        source: absent
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_OPENAI_ACCOUNT_AUTH_CLIENT_ID_REQUIRED
+      client_secret_reference:
+        required: true
+        present: false
+        source: absent
+        safe_to_display: false
+        blocker_if_missing: BLOCKED_OPENAI_ACCOUNT_AUTH_SECRET_REFERENCE_REQUIRED
+      redirect_uri:
+        required: true
+        present: false
+        source: absent
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_OPENAI_ACCOUNT_AUTH_REDIRECT_URI_REQUIRED
+      scopes:
+        required: true
+        present: false
+        source: absent
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_OPENAI_ACCOUNT_AUTH_SCOPES_REQUIRED
+      token_reference_storage:
+        required: true
+        present: false
+        source: absent
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_OPENAI_TOKEN_REFERENCE_STORAGE_REQUIRED
+      token_encryption_reference:
+        required: true
+        present: false
+        source: absent
+        safe_to_display: false
+        blocker_if_missing: BLOCKED_OPENAI_TOKEN_ENCRYPTION_REFERENCE_REQUIRED
+    runtime:
+      model_alias:
+        required: true
+        present: false
+        source: absent
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_OPENAI_MODEL_ALIAS_REQUIRED
+      runtime_flag_synthetic:
+        required: true
+        present: false
+        source: runtime_config
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_OPENAI_RUNTIME_FLAG_REQUIRED
+      provider_flag_synthetic:
+        required: true
+        present: false
+        source: runtime_config
+        safe_to_display: true
+        blocker_if_missing: BLOCKED_OPENAI_PROVIDER_FLAG_REQUIRED
+    safety:
+      mailbox_data_allowed:
+        required: true
+        present: true
+        value: false
+        source: runtime_config
+        safe_to_display: true
+        blocker_if_missing: FAIL_OPENAI_ACCOUNT_AUTH_MAILBOX_DATA_ALLOWED
+      synthetic_only:
+        required: true
+        present: true
+        value: true
+        source: runtime_config
+        safe_to_display: true
+        blocker_if_missing: FAIL_OPENAI_ACCOUNT_AUTH_NOT_SYNTHETIC_ONLY

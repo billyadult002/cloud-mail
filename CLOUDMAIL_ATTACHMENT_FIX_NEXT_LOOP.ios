@@ -1,0 +1,35 @@
+LOOP: CLOUDMAIL_ATTACHMENT_IOS_SEND_PIPELINE_IMPLEMENTATION
+
+Goal:
+Implement real iOS attachment delivery for CloudMail using the existing backend JSON attachment contract.
+
+Scope:
+- iOS/native app only unless backend request-size validation proves a backend staging endpoint is required.
+- Preserve existing OAuth/provider/billing/authorization boundaries.
+- Do not send attachments to AI providers.
+
+Required implementation:
+1. Add `LocalAttachmentDraft` model.
+2. Extend `SendAttachmentMetadata` with `content`, `contentType`, and optional `type`.
+3. Replace composer `[String] attachmentNames` with `[LocalAttachmentDraft] attachments`.
+4. In `ComposeView.fileImporter`, read selected files using security-scoped access, infer content type, capture byte size, and base64 encode content.
+5. Persist attachment payloads through Drafts and Outbox.
+6. Remove the `AppState.send(...)` attachment hardcoded block only after payload persistence exists.
+7. Map attachments into `SendEmailForm.attachments`.
+8. Keep Outbox retry truthful if backend send fails.
+9. Add tests for draft restore, outbox preserve, and backend payload inclusion.
+10. Re-run boundary scan.
+
+Success criteria:
+ATTACHMENT_UI_COMPLETE=true
+ATTACHMENT_DRAFT_COMPLETE=true
+ATTACHMENT_OUTBOX_COMPLETE=true
+ATTACHMENT_MIME_COMPLETE=true
+ATTACHMENT_TRANSPORT_COMPLETE=true
+ATTACHMENT_SEND_PIPELINE_COMPLETE=true
+
+Preserved:
+cross_account_access=false
+billing_owner=user
+provider_ownership=user_owned
+shared_platform_api_key=false

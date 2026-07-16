@@ -1,0 +1,9 @@
+{
+  "name": "cloudmail-website",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "preview": "npx wrangler pages dev dist --port 8788"
+  }
+}

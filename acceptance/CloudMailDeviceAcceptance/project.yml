@@ -1,0 +1,33 @@
+name: CloudMailDeviceAcceptance
+options:
+  bundleIdPrefix: com.fastonegroup
+  deploymentTarget:
+    iOS: "26.0"
+settings:
+  base:
+    DEVELOPMENT_TEAM: P6VKJM76BJ
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+targets:
+  AcceptanceHost:
+    type: application
+    platform: iOS
+    sources:
+      - path: Host
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.saercpku.nexora.acceptance.host
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1"
+  CloudMailDeviceAcceptanceTests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: AcceptanceHost
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.saercpku.nexora.acceptance.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: AcceptanceHost

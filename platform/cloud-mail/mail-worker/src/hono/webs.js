@@ -1,0 +1,44 @@
+import app from './hono';
+import '../security/security'
+
+import '../api/email-api';
+import '../api/user-api';
+import '../api/login-api';
+import '../api/password-reset-api';
+import '../api/session-api';
+import '../api/cloudmail-v2-api';
+import '../api/p31-domain-foundation-api';
+import '../api/p32c-enterprise-governance-api';
+import '../api/p32d-runtime-validation-api';
+import '../api/nexora-v3-api';
+import '../api/global-mail-ledger-api';
+import '../api/gmail-api';
+import '../api/gmail-platform-v2-api';
+import '../api/gemini-oauth-api';
+import '../api/google-test-user-request-api';
+import '../api/delivery-diagnostics-api';
+import '../api/ai-runtime-api';
+import '../api/test-api';
+import '../api/setting-api';
+import '../api/account-api';
+import '../api/star-api';
+import '../api/task-api';
+import '../api/r2-api';
+import '../api/resend-api';
+import '../api/user-api';
+import '../api/my-api';
+import '../api/role-api'
+import '../api/all-email-api'
+import '../api/init-api'
+import '../api/analysis-api'
+import '../api/reg-key-api'
+import '../api/public-api'
+import '../api/telegram-api'
+import '../api/oauth-api'
+import '../api/mail-action-integrity-api'
+import '../api/hybrid-mail-intelligence-api'
+import '../api/commitment-lifecycle-api'
+import '../api/unified-conversation-api'
+import '../api/sender-bulk-classification-api'
+import '../api/sender-bulk-reconciliation-api'
+export default app;

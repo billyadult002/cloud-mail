@@ -1,0 +1,25 @@
+# Ignore build and cache directories
+build/
+artifacts/
+archive/
+archive/quarantine/
+archive/reports/
+artifacts/**/DerivedData*
+artifacts/**/Build/
+artifacts/**/Logs/
+DerivedData/
+node_modules/
+platform/build/
+.wrangler/state/
+
+# Ignore archives and binary images
+*.ipa
+*.zip
+*.zip.*
+*.tar.gz
+*.xcarchive/
+*.dSYM
+*.heic
+*.HEIC
+*.png
+*.xcresult/

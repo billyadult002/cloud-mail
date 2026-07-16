@@ -1,0 +1,396 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		02346CFFE8A626EF4E55A29C /* AcceptanceHostApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDD715A513ACBCAFAF1EAF21 /* AcceptanceHostApp.swift */; };
+		72BE2C08736364E36189B8FE /* CloudMailDeviceAcceptanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B11E59B2E26D78D7C1E18A1E /* CloudMailDeviceAcceptanceTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		3A6DA754CC6D56073E75F32C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DADA9D0679F6428B82EAE5A3 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 79F1E6627131E9D63ED303EF;
+			remoteInfo = AcceptanceHost;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		37960A15720952F4A98A89CC /* AcceptanceHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AcceptanceHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B11E59B2E26D78D7C1E18A1E /* CloudMailDeviceAcceptanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudMailDeviceAcceptanceTests.swift; sourceTree = "<group>"; };
+		B375D77229E905BC3E0AC5F8 /* CloudMailDeviceAcceptanceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CloudMailDeviceAcceptanceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		CDD715A513ACBCAFAF1EAF21 /* AcceptanceHostApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AcceptanceHostApp.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		49364F76EDFCF9C7E9FFE967 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				37960A15720952F4A98A89CC /* AcceptanceHost.app */,
+				B375D77229E905BC3E0AC5F8 /* CloudMailDeviceAcceptanceTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		4FFF9E1BE215BBAC5F20ECE0 /* Host */ = {
+			isa = PBXGroup;
+			children = (
+				CDD715A513ACBCAFAF1EAF21 /* AcceptanceHostApp.swift */,
+			);
+			path = Host;
+			sourceTree = "<group>";
+		};
+		6A6051101D8FFF98F3BBDEBF = {
+			isa = PBXGroup;
+			children = (
+				4FFF9E1BE215BBAC5F20ECE0 /* Host */,
+				78F6D085C22A6F017B099E04 /* Tests */,
+				49364F76EDFCF9C7E9FFE967 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		78F6D085C22A6F017B099E04 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				B11E59B2E26D78D7C1E18A1E /* CloudMailDeviceAcceptanceTests.swift */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0329B1DF29822F7CEA809495 /* CloudMailDeviceAcceptanceTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 08CBE46C48BE46927304AC65 /* Build configuration list for PBXNativeTarget "CloudMailDeviceAcceptanceTests" */;
+			buildPhases = (
+				11BA960289EED13AE43E0644 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C964001DBE859D37F490AF90 /* PBXTargetDependency */,
+			);
+			name = CloudMailDeviceAcceptanceTests;
+			packageProductDependencies = (
+			);
+			productName = CloudMailDeviceAcceptanceTests;
+			productReference = B375D77229E905BC3E0AC5F8 /* CloudMailDeviceAcceptanceTests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		79F1E6627131E9D63ED303EF /* AcceptanceHost */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5AA57B87028636FFC51690E6 /* Build configuration list for PBXNativeTarget "AcceptanceHost" */;
+			buildPhases = (
+				9C4B48386BE625EDA857B28C /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AcceptanceHost;
+			packageProductDependencies = (
+			);
+			productName = AcceptanceHost;
+			productReference = 37960A15720952F4A98A89CC /* AcceptanceHost.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		DADA9D0679F6428B82EAE5A3 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					0329B1DF29822F7CEA809495 = {
+						ProvisioningStyle = Automatic;
+						TestTargetID = 79F1E6627131E9D63ED303EF;
+					};
+					79F1E6627131E9D63ED303EF = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 31243A3448673E49EFD3D039 /* Build configuration list for PBXProject "CloudMailDeviceAcceptance" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 6A6051101D8FFF98F3BBDEBF;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 49364F76EDFCF9C7E9FFE967 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				79F1E6627131E9D63ED303EF /* AcceptanceHost */,
+				0329B1DF29822F7CEA809495 /* CloudMailDeviceAcceptanceTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		11BA960289EED13AE43E0644 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				72BE2C08736364E36189B8FE /* CloudMailDeviceAcceptanceTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9C4B48386BE625EDA857B28C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				02346CFFE8A626EF4E55A29C /* AcceptanceHostApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C964001DBE859D37F490AF90 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 79F1E6627131E9D63ED303EF /* AcceptanceHost */;
+			targetProxy = 3A6DA754CC6D56073E75F32C /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		26DA5FAD4DDDA35E8EF57F79 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = XC7JTUHQ33;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.saercpku.nexora.acceptance.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = AcceptanceHost;
+			};
+			name = Debug;
+		};
+		4EAD6E8A0FECF92590913F53 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = P6VKJM76BJ;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		5141A1A200DC17E231D5F525 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = P6VKJM76BJ;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		57D33E22FAAC5C634592E3AB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = XC7JTUHQ33;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.saercpku.nexora.acceptance.host;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		880348E03B96D7FE50F4733D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = XC7JTUHQ33;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.saercpku.nexora.acceptance.host;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		E352CECC79EC8C31A2483FB4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = XC7JTUHQ33;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.saercpku.nexora.acceptance.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = AcceptanceHost;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		08CBE46C48BE46927304AC65 /* Build configuration list for PBXNativeTarget "CloudMailDeviceAcceptanceTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				26DA5FAD4DDDA35E8EF57F79 /* Debug */,
+				E352CECC79EC8C31A2483FB4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		31243A3448673E49EFD3D039 /* Build configuration list for PBXProject "CloudMailDeviceAcceptance" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4EAD6E8A0FECF92590913F53 /* Debug */,
+				5141A1A200DC17E231D5F525 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		5AA57B87028636FFC51690E6 /* Build configuration list for PBXNativeTarget "AcceptanceHost" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				880348E03B96D7FE50F4733D /* Debug */,
+				57D33E22FAAC5C634592E3AB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = DADA9D0679F6428B82EAE5A3 /* Project object */;
+}

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CloudMail Reset</title>
+    <script>
+      const token = new URL(location.href).searchParams.get("token") || "";
+      if (token) location.href = `glassmail://reset-password?token=${encodeURIComponent(token)}`;
+    </script>
+  </head>
+  <body>
+    <main>
+      <h1>Opening CloudMail</h1>
+      <p>The reset token has been received. Open CloudMail to finish updating your password.</p>
+    </main>
+  </body>
+</html>

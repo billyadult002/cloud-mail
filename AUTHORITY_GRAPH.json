@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-10T15:24:00Z",
+  "authority_state": "AUTHORIZATION_REQUIRED",
+  "subject": "current-user-provider-authorization",
+  "nodes": [
+    {"id":"subject:current-user","type":"SUBJECT","label":"Current authenticated user"},
+    {"id":"provider:unselected","type":"PROVIDER","label":"Provider not yet authorized"}
+  ],
+  "edges": [
+    {"from":"subject:current-user","to":"provider:unselected","relationship":"AUTHORIZATION_REQUIRED"}
+  ],
+  "evidence": {
+    "production_schema":"0026_nexora_v3_autonomy_os.sql",
+    "worker_version":"8919a7a3-bd7e-40e2-8fcb-3dcb5c1fc4a0",
+    "live_authorization_rows":0,
+    "secret_exposure":false
+  }
+}

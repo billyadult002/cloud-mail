@@ -1,0 +1,647 @@
+# NEXORA Provider-Agnostic Communication OS + Goal-Driven Enterprise OS
+
+## 2026-07-16 04:27 UTC — UCS Workspace 2 V3 completion monitor
+
+- Repository check passed before all work. Every production D1 statement was SELECT-only; the 10-query bundle and all individual evidence queries reported `rows_written=0`.
+- Exact W2 checkpoint `ucs-projection-rematerialize-v3:1:2` (`tenant_id=1`, `workspace_id=2`, `pipeline_key=ucs-projection-rematerialize-v3`) remains `paused`, `lease_generation=55`, `processed_count=272`, quarantined `0`, cursor `conversation:2158d6cd-ee34-4184-930a-02c303f7b582`, null high-watermark/last-projection/owner/lease, updated `2026-07-16 03:05:27 UTC`.
+- W2 outbox at `04:27:12 UTC`: pending `1,714` (attempt sum 0), processing `1` (attempt sum 1), processed `922` (attempt sum 991), failed `0`; non-processed total `1,715`. The processing row remains `ucs-canonical:1:2:2033:1`, owner `66776405-63b9-47a3-944e-2b8a949fb46b`, expired lease `03:24:56 UTC`, attempt 1, no error; no recovery action was taken.
+- W2 V3 coverage remains target/current/missing `2,069/618/1,451` (`29.8695%`), cursor remaining `1,793`, duplicates `0`, orphans `0`. Failures remain one resolved historical `ucs-backfill-v1/backfill_materialize` row (attempt sum 24) and zero unresolved rows, including zero unresolved V3 failures.
+- Latest W2 telemetry remains audit `2251` at `03:05:34 UTC`: outcome success/ok, elapsed 41,452 ms; live claimed/processed/failed `true/2/0`; V3 claimed/processed/failed/ready `true/5/0/false`; cursor matches the durable checkpoint. Latest global runtime telemetry remains audit `2257` (`gmailSync`) at `03:05:41 UTC`, an approximately 81-minute gap at observation. Treat this as the monitored intermittent global runtime gap, not a W2 recovery regression.
+- Certified native recovery evidence remains intact: W2 advanced `39/192` to `55/272` through telemetry `2174` onward and consecutive five-row cycles, then released paused/unowned.
+- Tombstone `ucs-canonical:1:2:104:1` remains `processed/source_removed`, attempt `62`, null owner/lease, processed `01:43:12 UTC`. Reads remain disabled (`projection_read_enabled=0`, rollout 0%, epoch 1).
+- W1 remains separate: generation `187`, processed `661`, quarantined `25`, `running`, owner `14668008-df00-4229-9848-517a04883a7a`, lease `04:22:56 UTC` (expired at observation). W1 is not W2 evidence and was not modified.
+- Completion gates remain closed: W2 is not ready; exact coverage, cursor completion, target stability, zero non-processed outbox, and fresh pre-parity evidence are absent. No parity, manual release/reset/claim, projection/checkpoint/outbox mutation, read enablement, or `FULL_PRODUCTION_PASS` declaration occurred.
+
+## 2026-07-16 04:14 UTC — UCS Workspace 2 V3 completion monitor
+
+- Repository check passed before all work. Production D1 observations were SELECT-only; Wrangler reported `rows_written=0` for the query bundle and every individual query.
+- Exact W2 checkpoint `ucs-projection-rematerialize-v3:1:2` (`tenant_id=1`, `workspace_id=2`, `pipeline_key=ucs-projection-rematerialize-v3`) remains `paused`, generation `55`, processed `272`, quarantined `0`, cursor `conversation:2158d6cd-ee34-4184-930a-02c303f7b582`, null high-watermark/last-projection/owner/lease, updated `2026-07-16 03:05:27 UTC`.
+- W2 outbox states at `04:13:46 UTC`: `pending=1,714` (attempt sum 0), `processing=1` (attempt sum 1), `processed=922` (attempt sum 991), and no `failed` state. Total non-processed remains `1,715`. The processing row is `ucs-canonical:1:2:2033:1`, owner `66776405-63b9-47a3-944e-2b8a949fb46b`, lease `03:24:56 UTC`, expired at observation, attempt 1, no error. It was not manually released or reclaimed.
+- W2 V3 coverage is target/current/missing `2,069/618/1,451` (`29.8695%`), cursor remaining `1,793`, duplicates `0`, orphans `0`. Pipeline failures contain one resolved historical `ucs-backfill-v1/backfill_materialize` row (attempt sum 24) and zero unresolved rows, including zero unresolved V3 rows.
+- Latest W2 UCS telemetry remains audit `2251` at `03:05:34 UTC`: live claimed/processed/failed `true/2/0`; V3 claimed/processed/failed/ready `true/5/0/false`; cursor matches the durable checkpoint. Latest global runtime telemetry is `gmailSync` audit `2257` at `03:05:41 UTC`, leaving a roughly 68-minute global telemetry gap at observation. This is an intermittent global runtime gap with W2 paused/unowned, not a W2 lease-recovery regression.
+- Tombstone `ucs-canonical:1:2:104:1` remains `processed/source_removed`, attempt `62`, owner/lease null, processed `01:43:12 UTC`. Projection reads remain disabled (`projection_read_enabled=0`, rollout 0%, epoch 1).
+- W1 remains separate: checkpoint `ucs-projection-rematerialize-v3:1:1` was `running`, generation `186`, processed `661`, quarantined `25`, owner `af9a344f-35a9-473f-bad5-ff7719ea58f2`, lease `03:42:56 UTC` (expired at W2 observation). W1 is not W2 acceptance evidence and was not modified.
+- Completion gates remain closed: W2 is not ready, target/coverage/cursor/outbox gates are not converged, and scheduler telemetry is stale. No parity, read enablement, checkpoint/outbox/projection mutation, or `FULL_PRODUCTION_PASS` declaration occurred.
+
+## 2026-07-16 01:56 UTC — UCS Workspace 2 V3 completion monitor
+
+- Read-only production sample queried exactly `ucs-projection-rematerialize-v3:1:2` with `tenant_id=1`, `workspace_id=2`, and `pipeline_key=ucs-projection-rematerialize-v3`. Raw checkpoint state was `running`, `lease_generation=39`, `processed_count=192`, quarantine 0, cursor `conversation:18755c4f-c921-47ca-acf4-a7f2f7884995`, owner `56edb71a-b802-4e70-b007-246e62b2db1a`, lease until `01:56:22 UTC`, updated `01:51:22 UTC`.
+- Workspace 2 target/current/missing V3 coverage was `2,068 / 522 / 1,546` (25.24% current), with 1,873 aggregates after the captured cursor, zero duplicate current-V3 conversations, and zero orphan current-V3 rows. Unresolved Workspace 2 pipeline failures were zero.
+- Workspace 2 outbox state was `pending=1,742`, `processed=890`, with no failed rows. Target row `ucs-canonical:1:2:104:1` was naturally claimed by minute-cron ingest and became `processed` at `01:43:12 UTC`, attempt 62, lease cleared, `last_error_code=source_removed`. No direct outbox mutation was performed.
+- Latest persisted `unifiedConversation` telemetry was ID 2139 at `01:55:24 UTC`, `ok=true`. Workspace 2 reported live ingest `claimed=true, processed=2, failed=0`, membership ready at cursor `conversation:fff3dc7b-5904-4c10-baf4-7bd9e130c080`, and V3 `claimed=false, processed=0, ready=false`, consistent with the independently captured generation-39 fenced owner. Recent preceding cycles show normal five-row Workspace 2 V3 progress with zero V3 failures.
+- Workspace 2 remains shadow-only: `projection_read_enabled=0`, rollout 0%, cutover epoch 1. Workspace 1 was kept separate (`ucs-projection-rematerialize-v3:1:1`, generation 158, processed 586, running, quarantined 25) and is not used for Workspace 2 acceptance.
+- Formal same-epoch 10-surface audit was not invoked because checkpoint readiness, cursor completion, exact V3 coverage, and outbox-zero gates are not satisfied. No manual materializer, cursor reset, direct projection/checkpoint/telemetry edit, read enablement, post-audit action, or `FULL_PRODUCTION_PASS` occurred.
+
+## 2026-07-16 01:27 UTC — UCS Workspace 2 V3 completion monitor
+
+- Read-only baseline comparison uses the independently certified `01:07:23 UTC` snapshot: checkpoint `ucs-projection-rematerialize-v3:1:2` generation 11 / processed 55, target 2,034, cursor remaining 1,979, and 314 current V3 projections.
+- Current frozen sample: checkpoint generation 19 / processed 95, `paused`, owner/lease null, quarantine 0; target 2,049, cursor remaining 1,953, and V3 coverage 377/2,049 (18.40%). Unresolved pipeline failures are zero.
+- Delta reconciliation: target growth `+15`, processed delta `+40`, and `previous_remaining + target_growth - current_remaining = 1979 + 15 - 1953 = 41`, one above the processed delta. A follow-up creation-time probe found one new aggregate at/before the current cursor, explaining why total target growth cannot be treated as exact after-cursor growth.
+- Projection delta is `+63` versus V3 checkpoint processed delta `+40`. Since baseline, provenance shows 40 current rows from the V3 traversal, 17 from `ucs-checkpoint:1:2`, and 15 from `ucs-live-checkpoint:1:2`; the latter two are legitimate atomic/live projection writers, not competing writers.
+- Eight UCS telemetry cycles from 01:07:32 through 01:14:34 reported Workspace 2 V3 processed 40 / failed 0. Ingest telemetry reported 15 processed / 1 failed; ledger timestamps show 16 backlog rows processed and 3 new rows created, a net backlog reduction of 13. Current outbox remains 1,785 pending, 1 failed, 842 processed (849 processed-state attempts; 59 failed-state attempts).
+- Conditional V3 traversal forecast: `ceil(1953/5)=391` successful cycles, nominally 6h31m, only if minute delivery resumes, five-row throughput persists, and target growth stops. Independent ingest forecast from this window is about 893 cycles gross (`1785 / 2`) or 1,100 cycles net (`1786 / 1.625`), excluding any special handling required for the failed row.
+- Parity was not invoked. The checkpoint is not ready, exact V3 coverage is absent, target stability is absent, scheduler continuity is stale after 01:14:34, and outbox is nonzero. Projection reads remain disabled and no `FULL_PRODUCTION_PASS` is declared.
+
+## 2026-07-13 — generalized primary-category atomic-contract checkpoint
+
+- Production category mutations remain frozen. No Movoto retry, new sender, rule-triggered primary-category write, or direct production repair has been executed from this checkpoint.
+- Added the reviewable shared boundary `atomic-classification-mutation-service.js`: context/fence validation, current-state loading, virtual exclusive-family replacement, atomic D1 statement planning, batch commit interpretation, and conditional lease release.
+- Replaced the sender-bulk mutation path with the shared contract. A successful item now commits its category-head replacement, snapshot, projection supersession/insertion, Evidence, per-item audit, completed item, and operation progress in one D1 batch. A rejected batch cannot create a completed item or any new current category/projection state.
+- Added additive migration `0053_primary_category_exclusivity.sql`; it blocks a second current `Category` head in the same tenant/workspace/conversation while preserving append-only historical Facet results.
+- Current write inventory still identifies UCS backfill as the remaining direct category-writing path. It remains frozen pending conversion to the same shared boundary; therefore this is an implementation checkpoint, not a production deployment or reconciliation result.
+- UCS backfill now routes its primary `Category` replacement through the shared atomic contract; its non-category Facets remain independent and are preserved by the virtual replacement set. The former compressed category writer and unused direct upsert helper have been removed. A source inventory now shows the shared atomic service as the only current-`Category` head writer.
+- Migration 0053 was structurally exercised in isolated SQLite: a direct second current category head is rejected with `conversation_primary_category_head_exclusive`; delete-and-insert replacement within one transaction leaves exactly the destination head. A full local migration replay remains blocked before 0053 at historical migration 0002 because the local fixture has no `account` table.
+- Sender-bulk preview now reports a non-ambiguous scope diagnostic: original authorized scope, currently eligible scope, already-correct destination scope, unresolved/failed historical items, orphan destination Facets, reconciliation-required items, and new-mutation items. It does not treat the remaining retry count as resolution of the immutable original operation.
+- Added D1-runtime failure injection coverage in `atomic-classification-d1.test.mjs`. A late item-result failure rolls back the simulated current head, snapshot, Projection, All Mail field and item progress together; duplicate current head rejection and transactional replacement are also verified against the Workers D1 binding.
+- Fresh read-only production conflict inventory: migration 0053 remains pending; duplicate current Category heads = 0 and current Projection category mismatches = 0. The immutable Movoto operation remains `partial` with 26 total/0 completed/26 failed items, but the current read reports 0 of those item conversations with a current Promotions head and 0 without a current Projection. This differs from the earlier orphan-Facet diagnostic and is preserved as a reconciliation fact, not reclassified as success.
+- Added additive `0054_sender_bulk_reconciliation_ledger.sql` and `sender-bulk-reconciliation-service.js`. The matrix is read-only against existing production truth; future disposition records are append-only and link the immutable original item, current authority/source state, historical diagnosis discrepancy, deployment reference and corrective attempt without modifying original attempts.
+- Discrepancy resolved through two independent read-only queries: the original 26 scope currently has 0 current Promotions heads and 26 current Projections, while append-only `conversation_facet_results` retains 26 historical sender-bulk Promotions results. The earlier orphan diagnosis conflated historical Facet-result presence with current-head truth (and its earlier count was 25); record as `HISTORICAL_DIAGNOSIS_NOT_REPRODUCED_AT_CURRENT_SNAPSHOT`, not a current orphan repair target.
+- Active reconciliation safety boundary: no raw D1 repair will be used. The existing record API has been confirmed insufficient for a truthful correction because it cannot link a disposition record to an executable successor. The next additive implementation is a Workspace-authorized, idempotent linked atomic retry that retains the failed original operation intact, records successor lineage per item, and uses the shared checkpoint-fenced category/projection transaction.
+- Production reconciliation evidence (2026-07-13): Worker `8dacf839-80e2-4167-86d7-f7a11ed5f6d6`, migration `0055_sender_bulk_reconciliation_attempts.sql`, and 221/221 Worker reliability tests. The signed-in Workspace 2 matrix returned 26/26 currently eligible Movoto items. Linked successor `sender-bulk-retry:1c064e9531f973a664c8dc2c4a973efcae7dc53135e23bccc060712616761e8c` completed 26/26 with 0 failures. Read-only production verification: 26 immutable reconciliation records, 26 successor-attempt lineage rows, 26 current `Category=promotions` heads, and 26 current projections containing Promotions. This was a NEXORA classification-only action; provider-label synchronization remains explicitly `not_requested`.
+- Truth boundary: the real-iPhone visual refresh/acceptance for this repaired state has not yet been collected in this increment. Backend reconciliation is complete; no user-visible PASS is claimed until production bundle `app.wangbei8554.pingguo736` displays the refreshed Promotions result on Bill's physical iPhone 17.
+- Real-iPhone mirrored check (2026-07-13): production NEXORA was opened on Bill's physical iPhone 17 and the Inbox refresh control was invoked. Searching `Movoto` in All Mail rendered `No Messages Visible`, with visible count `0` and a stated current dashboard-filter mismatch. This contradicts the independently verified 26 current Promotions projections. Result: **real-device acceptance FAIL**; treat as a production iOS visibility/read-model defect, not as evidence against the completed backend reconciliation.
+- IPA-install correction and immutable device evidence: before the final acceptance repeat, Build 347 IPA `artifacts/nexora-v3/export-build347-sender-bulk-stable-sheet/NEXORA.ipa` (SHA-256 `67751737ac181ce710659545257c201c1b19d1cfcb2e9d76449fca9535d65c03`) was verified as bundle `app.wangbei8554.pingguo736`, build `347`, Team `4GGH43VE67`, then installed over USB and launched on Bill's iPhone 17. The installed app refreshed with 50 visible messages, but completed `Movoto` search again rendered `No Messages Visible`, visible count 0, and `First Count Drop: Search filter`. This is the authoritative real-device failure evidence.
+- Elements Outfitters real-device control: in the same installed Build 347, an Elements Outfitters message was visible in All Mail and opened successfully. The detail view displayed sender `info@elementsoutfitters.ca`, subject, AI Briefing, Communication Intelligence, and the action menu (including Move to Category). This proves the production IPA and ordinary detail/action surface are live; it does not resolve the distinct Movoto projection-search visibility defect.
+
+## Active P0 — Unified Conversation System
+
+Status: IN_PROGRESS. Replace partially independent provider-message, classification, commitment, mission, and UI read paths with one provider-independent Conversation Aggregate → Facet Classification → Commitment Ledger → Conversation Projection chain. Gmail synchronization, readiness, checkpoints, recovery, Evidence Ledger, canonical mail actions, and existing production behavior remain protected compatibility boundaries. No completion claim until All Mail, Categories, Action Required, Waiting For Me, Waiting For Others, and Mission Control are demonstrably derived from Conversation Projection.
+
+Foundation checkpoint (2026-07-12): current-state/backend/UI audits and the complete target design are recorded in `docs/NEXORA_UNIFIED_CONVERSATION_SYSTEM.md`. Additive migration `0046_unified_conversation_system.sql` introduces the aggregate, provider bindings, message observations, participants, extensible facets, required commitment ledger, projections, checkpoints, item failures, parity, and cutover state. The provider-independent service/API foundation and Swift projection DTO/shadow store compile. Migration structural execution passes; Worker syntax and 199/199 reliability tests pass; Xcode Beta Release compile passes. Migration 0046 is intentionally NOT applied remotely and projection reads remain disabled until dual observation, backfill, fenced materialization, parity, mission provenance, client cutover, and real-iPhone acceptance are complete.
+
+Permanent approval is granted. Execute continuously without stage checkpoints. User-visible truth and real-iPhone workflow evidence are required; build/install/launch alone never count as feature PASS.
+
+Latest closed loop — Workspace-bound canonical mail actions: migrations `0044_workspace_account_bindings.sql` and `0045_workspace_account_binding_subjects.sql` are applied remotely. Provider accounts now bind to a Workspace by immutable account owner and the currently authorized subject; this preserves delegated-mailbox authority without treating public provider domains as customer-owned domains. The action boundary auto-establishes a valid binding for an already-authorized account, covering cold-start and stale-client-cache paths. Worker `2da3173a-f11c-423f-bb6f-46344a9c5af9` is deployed. Static check and 194 Worker reliability tests passed. On Bill's iPhone 17, production bundle `app.wangbei8554.pingguo736` passed `testNexoraMoveUndoAndSearchRealIPhone` in 2m06s: Move showed Undo, Undo recovered the prior state, and Smart Search completed. Privacy-safe production evidence confirms one canonical-state record and completed `move_folder` receipts; no mail content, credentials, or tokens were inspected.
+
+Current pointer: provider-neutral adapter audit after Goal OS navigation and seven-dimensional Communication Intelligence real-iPhone closure.
+
+Current active increment: P0 multi-Gmail reconnect recovery. The reconnect OAuth state is being bound to the tenant/user, target account ID, expected Google identity hash, and account authorization generation. A stale or identity-mismatched callback must commit neither account state nor credential state; immediate recovery remains one bounded account-scoped Gmail REST sync only after a verified callback commit. Healthy accounts are out of scope except non-destructive regression checks. No credentials or mailbox content are inspected.
+
+Current active increment: P0 Durable Mission Runtime kernel. The shared runtime must persist authoritative Mission, Run, Step, Checkpoint, Approval, Tool Call, Evidence, Verification, Failure, Recovery, Artifact, and Outcome records without treating prompts, reasoning, cache, or conversation history as business state. Existing `nexora_autonomy_jobs`, `outbound_messages`, Workspace RBAC, and provider authority evidence are reusable foundations, but do not yet provide a tenant/workspace-scoped Mission state machine, action-specific approval consumption, or an evidence-bound verification ledger. Gmail recovery remains a protected regression boundary and is not reclassified by this task.
+
+Current active increment: P0 Evidence Ledger and Verified Action Boundary. Extend (do not replace) the remotely deployed `0037`/`0038` Durable Mission Runtime using the existing job transport, authority, approval, audit, checkpoint and outbound-message contracts. Deliver append-only claim-linked evidence with integrity, freshness, relation and tenant/workspace boundaries; deterministic versioned verification policies; action/outcome finalize guards; and bounded read-only production evidence. No raw credentials, message bodies, outbound links, sends, or real outbound approval creation/consumption are in scope.
+
+Evidence Ledger and Verified Action Boundary P0 closure: remote migration `0039_evidence_ledger_verified_action_boundary.sql` is applied and Worker version `d903e077-e6af-496c-a364-a1ec363579e4` is deployed. `mission_runtime_evidence` remains the canonical ledger and is append-only by database triggers; additive Claims, versioned Policies, Evidence Relations and Verification Evidence records provide deterministic integrity/freshness/sufficiency/conflict evaluation. A read-only Gmail production mission `readonly-gmail-5-mission` completed with a verified Outcome through the full claim/evidence chain; a nonhealthy read-only probe stopped at `verification_pending`/`inconclusive` with no Outcome. The controlled outbound boundary mission `outbound-boundary-6-mission` stopped at `waiting_for_approval`, with zero approvals, outbound-message references and send tool calls. Full Worker reliability is 158/158. This is a backend-only increment; it has no iPhone UI change.
+
+Current active increment: P0 Provider Capability and Authorization Contract. Extend the deployed Runtime and Evidence Ledger with tenant/workspace-scoped provider identity, controlled credential reference status, authority, capability, action requirement and decision contracts. Gmail is the first production adapter. Decisions must be evidence-backed and action-specific; they gate dispatch without reading credentials, bodies, or sending communication. Validate healthy, needs-reconnect and blocked Gmail states plus the existing no-approval outbound boundary.
+
+Current active increment: P0 Autonomous Action Control Plane. Integrate the deployed `0040` provider decision kernel into the Durable Runtime’s actual pre-dispatch path. Every controlled Action must persist a tenant/workspace-scoped decision before any Tool Call, then preserve the separate Evidence, Verification and Outcome contracts. Healthy read-only Gmail, needs-reconnect, unsupported/policy-denied and outbound waiting-for-approval are the required no-send production chains.
+
+Autonomous Action Control Plane final production checkpoint: Worker `38301ee1-44f9-4cb3-bf86-127b6bba2f51` is deployed and the full Worker suite passes 160/160. `readonly-gmail-8-mission` completed through persisted allowed Decision, one read-only Tool Call, one Evidence, one Verification and one Outcome. `policy-denial-9-mission` is durably blocked with a policy-derived Decision and zero Tool Calls/Outcomes. `outbound-boundary-10-mission` and Action remain waiting for approval with zero approvals, consumptions, outbound references and send Tool Calls. Controlled expired-lease `readonly-gmail-11-mission` was reclaimed from fencing generation 1 to 2, persisted a fresh generation-2 allowed Decision, created exactly one Tool Call and completed. Final P0 verdict remains BLOCKED only on the required real needs-reconnect integrated chain: production has four needs-reconnect Gmail accounts but their owners have zero Workspace memberships, so the tenant/workspace membership guard correctly prevents Decision creation; inventing membership would be an unauthorized authority expansion.
+
+Current active increment: P0 Enterprise Identity, Membership and Delegation Control Plane. Add an authoritative request/review/acceptance/consent/activation/expiry/revocation workflow and Runtime authority resolver. Preserve existing owner membership compatibility, require explicit account-owner consent plus Workspace approval for non-owned accounts, restrict P0 scopes to account-state visibility and bounded metadata, and keep all real reconnect accounts denied until a genuine business request arrives.
+
+Current active increment: P0 Classification, Commitment and Thread-to-Mission Intelligence. Build an additive, provider-agnostic ten-layer classification ledger, persistent Conversation state, minimal Commitment ledger, evidence-bound Mission Candidate policy and side-effect-free Durable Mission creation guard. Reuse `nexora_autonomy_jobs`, Evidence Ledger and Durable Mission Runtime; preserve Enterprise Authority as an independent external blocker. Production validation may use only healthy authorized metadata/content paths and must create no Provider write, outbound reference, Approval, reconnect or external communication.
+
+Current continuation: complete Classification/Commitment P0 from engineering FAIL to full PASS without replacing 0042. Add protected Commitment lifecycle and Deadline versions, classification-specific checkpoint/fencing takeover, late-message/version guards, classifier replay, structural scope enforcement, evaluation-v2/per-layer gates, observability, controlled lifecycle proofs and final production validation.
+
+Current active increment: All Mail Classification and Mail Action Integrity P0. This supersedes the unfinished Commitment completion as the primary task while preserving its additive files. Deliver one canonical server mail-state contract, evidence-gated marketing/financial classification and independent Priority policy, durable Manual Override precedence, mutation/idempotency/cache/sync reconciliation, complete visible action wiring, production repair, and production-bundle acceptance on Bill's iPhone 17. No PASS without the required real-device interaction chain.
+
+Classification/Commitment/Thread-to-Mission production checkpoint: migration `0042_classification_commitment_thread_mission.sql` is applied and Worker `9849ae8a-8684-463b-ad7c-f49ea0d57406` is deployed with scoped flag `CLASSIFICATION_INTELLIGENCE_ENABLED=true` (staging false). Ten ordered versioned layer results, versioned Conversation states, candidate-only Commitment records/events, Mission Candidates, safe evaluation fixtures and an internal-only Mission guard are live. Production jobs 13-16 classified four healthy owner-authorized messages; job 17 replayed job 13 idempotently with exactly one Classification Run, Candidate and Mission. The safe Mission `thread-mission-3130feca866b85ee70f4c482b05222fc` is `awaiting_review`, with supported derived Evidence but pending Claim/inconclusive Verification and zero Actions/Tool Calls. A real automated-origin false escalation was detected, cancelled and audit-preserved; policy now forces automated origins to information-only and its regression passes. Full Worker reliability is 170/170. Gmail remains 7 mailbox_ready, 4 needs_reconnect, 2 blocked; no OAuth/reconnect/outbound/provider write occurred.
+
+Enterprise Identity, Membership and Delegation Control Plane production checkpoint: remote migration `0041_enterprise_identity_membership_delegation.sql` is applied and Worker version `54773f95-e312-47ed-af54-c2be732d955e` is deployed. Authenticated Admin Workflow APIs now cover membership invitation/review/token-bound acceptance and separate account-delegation request/owner-consent/admin-review plus suspend/resume/revoke generation transitions. P0 scopes exclude mail body, send, OAuth, credential and reconnect authority. Runtime resolves Workspace and account authority before Provider Decision. Full Worker reliability is 164/164. Production job `12` durably denied the cross-tenant `needs_reconnect` account with `cross_tenant_authority_denied`, a recovery action to request legitimate membership or delegation, and zero Tool Calls. The account remained `needs_reconnect`; all new authority tables and audit events remain zero, and no outbound message was created. Final positive-chain status is `BLOCKED_BY_EXTERNAL_BUSINESS_AUTHORITY`: no genuine request, tenant relationship, owner consent or independent approver exists, so no membership/delegation was manufactured.
+
+Durable Mission Runtime execution closure: remote D1 migrations `0037` and `0038` are applied. Production Worker runtime uses only `nexora_autonomy_jobs` for scheduled transport, tenant/workspace membership gates, conditional leases with fencing, checkpoint persistence, approval binding, tool-call/evidence/verification/outcome records and an evidence-bound completion guard. A scoped, read-only Gmail freshness/checkpoint probe completed through the deployed Worker after an intentionally expired lease was reclaimed by fencing generation 2. It created no outbound link and no send action; aggregate Gmail account state remained 7 `mailbox_ready`, 4 `needs_reconnect`, 2 `blocked`. Worker reliability is 152/152. This backend-only increment has no iPhone UI change.
+
+- Multi-Gmail reconnect recovery increment: migration `0032_account_bound_google_reconnect.sql` is remotely applied and Worker version `95552a77-299c-4cfa-8938-a4a8645c4b81` is deployed. OAuth state is now target-account/tenant/hashed-identity/generation bound; callback validates mailbox identity before Gemini token mutation; account update and credential replacement are generation-gated; stale OAuth sync completion does not overwrite a newer authorization. Full reliability suite is 146/146. Anonymous aggregate confirms no live reconnect was triggered by the schema release. Production Build 325 IPA SHA `051ce1ee37da34ff22318afd7f8a4236a9965c286c1c6e67910d191944eaea04` installed and launched on Bill's iPhone 17 (sequence 5396). This is PARTIAL only: a secure native Google authorization is required for live callback/checkpoint/client-refresh observation, and no provider credential or mailbox content was read.
+
+- Live callback incident correction: secure Google authorization completed, then Gmail API returned `404 NOT_FOUND`. This was a wrong product state mapping: a valid OAuth callback was being presented as another reconnect/import failure. Gmail 404 now maps to `provider_mailbox_unavailable`, retains authorization, prevents reconnect CTA eligibility, and tells the user to check Gmail service availability or Workspace licensing. Migrations `0033` and `0034` normalized all three anonymous legacy 404 records; the remote aggregation has zero remaining Gmail `first_import_failed/client` 404 states. Worker version `c4cbd6b0-ea5a-4cf2-a44b-53b665f86b9b` is deployed; 147/147 Worker tests pass. Build 326 IPA SHA `029771ff7f8e549ed205b2242250049abad3bde0be5f15a2b71929de3589d13e` installed/launched on Bill's iPhone 17 at sequence 5404. Direct refreshed Accounts visual confirmation remains required before a real-iPhone interaction PASS.
+
+- Gmail 404 provenance closure: migration `0035_gmail_provider_response_provenance.sql` records only safe source metadata (operation, upstream service, HTTP status, normalized code, credential reference/generation, and one-way identity-match flags). Worker version `e983251c-9854-4447-8785-d4fdc9ff2db6` is deployed; syntax, state-machine (18/18), and full Worker reliability (148/148) suites pass. A controlled live probe of the three affected authorized accounts independently recorded: current authorization generation 3, matching authorized identity, `gmail.googleapis.com` `profile` operation, HTTP 404, and preserved OAuth/token validity. Each account is now terminal `provider_mailbox_unavailable`, with retry removed; no credential, address, message, or hash value was exposed. This is verified provider evidence that Gmail is unavailable for those identities, not a mailbox-sync PASS. Build 328 IPA SHA `0d7f38ee22daf27ef8931dd8c7ec2b92074932e6f4cdb1b963331fbc48c6ca03` is signed, installed, and launched on Bill's iPhone 17 at sequence `5420`. A real Accounts refresh/visual observation remains required; no real-device interaction or completed-mail-sync PASS is claimed.
+
+Progress:
+
+- Brand: dark NEXORA logo assets applied; user-visible legacy strings under audit; version 3.03 build 303.
+- Mail state: provider-neutral persistent Move API and D1 folder state deployed; local-only Move removed.
+- Productivity: multiselect/bulk framework present; undo and recent/suggested folders added; interaction verification pending.
+- All Mail: VIP, attachments, calendar, today, yesterday and seven-day filters added.
+- Detail: bottom actions consolidated to Reply, AI, Move and More.
+- Acceptance: Move→Follow-up→server persistence→Undo and smart Search passed on the real iPhone. Compose recipient completion, templates, read-receipt privacy state and real Undo Send passed. Explicit multi-select and bulk toolbar passed; deterministic long-press automation remains unproven and is not marked PASS.
+- Security: Worker unit tests and 136 reliability tests pass after Vitest 4 / current Cloudflare pool migration; npm audit reports zero vulnerabilities.
+- Goal OS: Goals is the default Home; Goals, Today, Execute, Spaces, People and Briefing primary navigation passed on Bill's iPhone 17 (`Test-AcceptanceHost-2026.07.11_11-59-15--0400.xcresult`).
+- Communication Intelligence: provider-neutral Intent, Action, Context, Relationship, Attention, Trust and Lifecycle are visible on real message detail and passed on Bill's iPhone 17 (`Test-AcceptanceHost-2026.07.11_12-13-43--0400.xcresult`).
+- Provider adapters: onboarding-plan now retains bounded public discovery signals and models independent mailbox/infrastructure authority chains. Authority now requires both provider-granted scopes and verified adapter capabilities; complete scopes alone cannot produce AUTHORIZED. 140 Worker reliability tests pass locally. Live Worker deployment remains unclaimed.
+- Scalable lists: Goal Center and Goal Detail now use count-aware progressive disclosure with exact scoped search, Clear, Show All and top-positioned Show Less. The real-iPhone growing Goal scenario passed (`Test-AcceptanceHost-2026.07.11_12-42-26--0400.xcresult`), and Goal Detail's three-action expansion → exact action search → clear-preserves-expansion → collapse loop passed (`Test-AcceptanceHost-2026.07.11_13-58-09--0400.xcresult`).
+- Spaces / People: Context spaces and observed repeated correspondents are relevance-ranked, progressively disclosed, searchable by visible metadata, and no longer capped by a hidden prefix. The real-iPhone People refresh, expansion, search, and collapse loop passed (`Test-AcceptanceHost-2026.07.11_13-47-51--0400.xcresult`).
+- Execute: preparation templates and completion evidence use the same progressive disclosure contract. Entry and regression validation passed on the connected iPhone; growing-data expansion remains a required follow-up before claiming that workflow fully closed.
+- Execute action reality: selecting a preparation template now inserts its exact text into the global composer rather than opening an empty composer. The full template → compose → prefilled-body flow passed on Bill's iPhone 17 (`Test-AcceptanceHost-2026.07.11_14-25-13--0400.xcresult`). Completion-evidence growth/opening validation remains pending.
+- Output action reality: Mission Detail now confirms the exact generated deliverable immediately after creation. Executive Brief generation → named completion feedback passed on Bill's iPhone 17 (`Test-AcceptanceHost-2026.07.11_14-33-29--0400.xcresult`). Completion Evidence’s cross-page persistence/expansion/opening test is still pending; an attempted sticky Goal OS rail had a real-device hit-target conflict and was reverted before release.
+- Search truth: Inbox now calls out whether a query is structured local search or exact local search, and never presents local matching as semantic retrieval. Both modes passed on Bill's iPhone 17 (`Test-AcceptanceHost-2026.07.11_13-55-53--0400.xcresult`).
+- Progressive-list rule: user-visible lists with more than five rows retain two items by default and provide count-aware expansion and an in-context collapse. Active Goals, Provider Capability Matrix, Health, Goal Center Outcomes / Recent Outputs, and NEXORA center details now use this rule or the shared progressive component. Health (6 checks), Provider Matrix (8 providers), and Provisioning & Repair detail (8 items) passed on Bill's iPhone 17 (`Test-AcceptanceHost-2026.07.11_14-08-18--0400.xcresult`).
+- Multinational / Enterprise hygiene: Enterprise Organization Graph no longer presents fixed department or manager/assistant placeholders; it exposes only observed domains, contacts and connected mailboxes, with unobserved provider directory metadata explicitly marked. Settings now applies the selected profile theme directly to its own view tree. A global `CollapsibleList` replaces duplicated show-all/prefix logic across Enterprise Hub and Enterprise Directory: contacts, domains, rules, tasks, follow-ups, knowledge search, audit, profile-sync items, restore preview, devices, and contact-detail conversations. The component defaults to two items, owns empty states and accessibility labels/values, and resets its expanded state when dynamic data shrinks to its threshold. Production Build 303 was rebuilt, signed, installed, and launched on the current paired iPhone (install sequence 5188). Dedicated XCTest validation is currently blocked because Xcode Beta has no Apple Developer account or development profiles for AcceptanceHost; this is not a feature PASS.
+- Multinational Communication Intelligence: first additive increment supplies stable canonical codes, sender type, business domain/event, workflow state, confidentiality boundary, and entity-context dimensions in Email Detail. English/Chinese local keyword evidence covers foundational finance, contract, and security signals only; it does not claim live sanctions, data-residency, malware, or enterprise-directory validation. A security-first control now overrides business classification when high/suspicious trust, phishing risk, or blocked/suspicious attachments are present, preventing finance/legal labels from down-ranking a security event. Production Build 303 is signed, installed and launched on the current paired iPhone; dedicated UI XCTest remains blocked by missing AcceptanceHost development profiles, so this is not a feature PASS.
+- Action-reality audit: Contact Profile's former `Block` action was a no-op beyond an unseen preference write. It is now a reversible `Hide from Directory` privacy action: directory filtering reads the persisted state, Profile exposes the actual visibility state, and explanatory text explicitly says provider delivery is unaffected. Production Build 303 was rebuilt, signed, installed and launched on the paired iPhone (install sequence 5196). Automated interaction acceptance remains unavailable until a matching AcceptanceHost development profile is provisioned.
+- Enterprise workflow reality: Automation actions no longer silently duplicate seeded rules. The initial rule set contains only baseline routing rules; explicit `Ensure` actions create the three optional rules exactly once and show a visible result. Tasks and calendar follow-ups now persist locally across view/app lifetimes and emit visible completion feedback. Calendar controls were renamed to local follow-ups and disclose that external calendar creation requires a connected provider with write authority. Production Build 303 was rebuilt, signed, installed and launched on the paired iPhone (install sequence 5204); this is installation/launch evidence, not workflow-interaction PASS.
+- Provider / OS detail lists: NEXORA V3 Center Detail no longer owns a second `prefix(2)` / show-more implementation. Identity Workspace, Privacy & Alias, Organization, Provisioning & Repair, Executive Agenda, and Provider Capability detail rows now share `CollapsibleList` and its dynamic-collapse/accessibility semantics. Production Build 303 was rebuilt, signed, installed and launched on the paired iPhone (install sequence 5212). Automated interaction validation remains unavailable pending AcceptanceHost development signing.
+- Governance audit list: GovernanceAuditTrailView now uses the shared `CollapsibleList`; its old ten-row prefix and local expansion state have been removed while preserving chronological input order and the full audit event row. Production Build 303 was rebuilt, signed, installed and launched on the paired iPhone (install sequence 5220). This remains build/install/launch evidence only.
+- OAuth approval lists: OAuthApprovalCenter's per-status Local and Remote request rows are now normalized behind an internal identified row model and rendered through `CollapsibleList`. The prior single global show-all state and three-row split limit were removed; every status has independent two-row disclosure, retains the existing Local/Remote approval controls, and resets correctly when requests change. Production Build 303 was rebuilt, signed, installed and launched on the paired iPhone (install sequence 5228). Interactive acceptance remains unavailable without an AcceptanceHost development profile.
+- Provider coverage truth: OAuth Provider Coverage never contained a working configure button, but its `Action` label could imply one. The read-only field is now `Next availability step`; pending/not-configured adapters are explicitly `Not usable`, while evidence-backed paths retain an `Evidence scoped` claim. Production Build 303 was rebuilt, signed, installed and launched on the paired iPhone (install sequence 5236). This is not interaction PASS.
+- Build evidence discipline: current product builds now advance `CURRENT_PROJECT_VERSION` and produce immutable, hash-recorded IPA evidence packages instead of overwriting the generic v3.03 IPA. Build 304 provider-agnostic evidence installed at sequence 5244; Build 305 communication-policy evidence installed at sequence 5252. AcceptanceHost signing audit found exactly one local profile, restricted to the production App ID; there is no profile for the historical AcceptanceHost or UI-test runner identifiers.
+- Communication Policy layer: Communication Intelligence now separates deterministic local policy signals from unverified claims. It presents sender/recipient/thread metadata evidence, explicit transport-header absence, normalized local time context, open-loop state, a canonical-policy explanation, and a message-only correction scope. It does not claim provider headers, external business validation, or automatic adaptive learning.
+- High-attention contamination control: Goals Today now excludes promotion/newsletter/bulk mail before incrementing Need Reply, Waiting, Follow Up, and Urgent. WorkOS emits no high-attention queue signals for those campaign classes, and Communication Intelligence renders promotion/update messages as P4 FYI unless a security control overrides the category. Build 306 immutable evidence was signed, installed and launched on the paired iPhone (install sequence 5260); interaction PASS remains pending the AcceptanceHost signing repair.
+- Google Tester list migration: shared `CollapsibleList` now supports an optional exact local search callback. Google Tester Management's Current Testers and Tester History removed their separate ten-row limits and show-all states, retain current remote-first/local ordering and approval/remove actions, and now have two-row progressive disclosure plus local filters. Build 307 immutable evidence was signed, installed and launched on the paired iPhone (install sequence 5268). No interaction PASS is claimed without AcceptanceHost signing.
+- Accounts / Goals list migration: Accounts no longer owns a six-row local preview or show-all state; it uses `CollapsibleList` with mailbox metadata filtering. Goals Home Blocked, Waiting, and Recently Completed no longer silently truncate at three; each uses the shared two-row, searchable list and preserves the Goal Center navigation path. Build 308 immutable evidence was signed, installed and launched on the paired iPhone (install sequence 5276). Interaction acceptance remains pending the missing AcceptanceHost profile.
+- Mobile Workspace health migration: Mailbox Health removed its local first-two/drop-first disclosure and now uses `CollapsibleList` with account/provider/domain/state/search metadata. Health-detail navigation remains unchanged. Build 309 immutable evidence was signed, installed and launched on the paired iPhone (install sequence 5284). No interaction PASS claimed.
+- Progressive-disclosure consolidation: `ProgressiveDisclosureSection` now delegates filtering, empty/no-match states, disclosure and dynamic-collapse behavior to `CollapsibleList`, so Goal Center, Execute, Spaces, People, Health and Provider Capability Matrix use one core rather than a second state machine. Build 310 immutable evidence was signed, installed and launched on the paired iPhone (install sequence 5292). User is now at the Mac to add the missing Xcode Beta developer account; no secret is requested in chat.
+- Authority-inheritance resolution: `beginOnboarding` no longer writes every new mailbox on a verified domain as `BLOCKED`. Server-side domain/provider/workspace grant evidence now resolves through `EffectiveAuthorityResolver` into `READY_TO_ADD`, consent-required, partial, provider-limited, policy-blocked, or security-blocked states. Discovery uses the same state vocabulary and never maps ordinary consent to a blocked lifecycle. AUTH-001 through AUTH-007 coverage and the complete Worker suite pass (142 tests). Build 312 is signed, installed, and launched on Bill's physical iPhone (install sequence 5308); API deployment and real-device interaction evidence remain pending.
+- Entity detail navigation: Organization Graph is now a primary app-native navigation path rather than refresh-only. Nodes are sorted and navigated by their persistent UUID, have a not-available state, preserve provider-evidence truth, and never display an unsupported directory mutation as a fake control. Build 313 is signed, installed, and launched on Bill's physical iPhone (install sequence 5316). XCTest interaction remains blocked by the `CloudMailDeviceAcceptanceTests.xctrunner` development profile.
+- Goals entity action reality: Goal rows now open their specific goal detail instead of a generic center. Spaces and People entity rows are real navigation links. Graph identity is now deterministic from entity kind plus normalized source, so navigation survives refresh, sort, search, list expansion, and app relaunch. Entity details resolve source email or source domain into related loaded communications; every communication opens its actual email detail. Source handling provides local directory hide/restore, local contact removal with entity-specific confirmation, move related messages to Junk with scope confirmation, and local block plus Junk with scope confirmation. Domain spaces can apply Junk/block to every observed source, while single-source records retain precise local directory controls. These actions never claim provider contact deletion or provider delivery changes. Build 316 validation is in progress; no interaction PASS is claimed before real-device evidence.
+- Build 316 evidence: the immutable IPA hash is `4688b1e837c40afdd5061dfd986f0968961c103c2a77b901789156b9c1134dc9`; production bundle installation on Bill’s iPhone 17 completed at sequence `5324` and launch succeeded. A fresh AcceptanceHost run still fails before test execution because `CloudMailDeviceAcceptanceTests` cannot sign its `com.saercpku.nexora.acceptance.tests.xctrunner` for Team `P6VKJM76BJ` (no account/profile). This remains an external signing blocker for automated real-device interaction validation, not a PASS.
+- Briefing lifecycle closure: every Chief of Staff Briefing primary row now opens a stable, entity-specific detail with generated state, local-evidence boundary, related goals when applicable, and navigable source communications. The static summaries are no longer primary-list endpoints. Build 317 IPA hash `136f59abdc6516c819ac026934a86c5ebd9b9da36ca1b94bd7ea2c8404e5de99` was installed and launched on Bill’s iPhone 17 at sequence `5332`; interaction PASS remains unclaimed pending real-device observation.
+- Universal Mailbox Activation: `UniversalMailboxActivationState` now independently maps authority, identity, ownership, routing, provider capability, workspace policy, and security into one human-readable activation status with one reason, recommended action, CTA label, and progress. NEXORA V3 onboarding renders this universal presentation rather than raw provider graph or authority codes. UMAC-001 through UMAC-007 pass; Worker suite is 144/144. Build 318 validation is in progress; the Worker has not been deployed and real-device interaction PASS remains unclaimed.
+- Layered Mail Classification P0 triage: current Swift classification had unsafe People fallback and a row-level correction wrote both sender and domain rules, silently expanding user scope. The first correction introduces `Other` as the low-confidence/cache fallback, changes default manual recategorization to message-only persisted scope, and removes automatic sender/domain rule creation. iOS compile passes. Promotion/security layering, adversarial fixtures, historical reclassification, remote release, and client acceptance remain in progress; no classification mission PASS is claimed.
+- Classification priority projection: legacy sender-domain overrides are ignored unless an explicit scoped rule is introduced; Smart Inbox now derives compacted, populated-only presentation groups in deterministic critical → people → operations → updates → promotions order without changing semantic category or All Mail membership. Worker suite remains 144/144 and iOS compilation passes. Build 319 signing/install validation is in progress; classification interaction and historical/remote evidence remain pending.
+- Promotion dominance hardening: bulk/list-managed mail now remains in Promotions even when its copy contains urgency or approval language. Receipts, orders, and travel confirmations retain their operational exception. The legacy organization-wide domain override is no longer consulted during cache rebuild, so an old broad correction cannot silently reclassify unrelated mail. Simulator compilation passed; production build, historical reclassification, and real-device interaction validation remain pending.
+- Correction-scope closure: the legacy MailOS V2 recategorization action is now message-scoped as well; implicit historical sender/domain rules are retained locally but never applied. Immutable Build 320 (promotion dominance, hash `9f68e7aa7540f015b757c51f496ec56b661e007b497206b198c00d93a0e88c30`) installed and launched at sequence `5356`; Build 321 (complete message-scoped correction closure, hash `d75a3f004aa679aea1ae063ffd5faed40e55509f27b8c07f153c62c69f1ce1fb`) installed and launched at sequence `5364`. A fresh AcceptanceHost run still fails before tests because the development profile for `com.saercpku.nexora.acceptance.tests.xctrunner` is absent. These are installation/launch evidence, not interaction PASS.
+- Multilingual deterministic classification: promotion, bulk, notification, action, finance, orders, travel, updates and work detection now have Chinese-language local signals. Build 322 IPA hash `4047e7efeebca39b89e4a48f90f10f3e7bac84940f345fd24e2666895fc7f211` installed and launched on Bill's iPhone 17 at sequence `5372`. This adds local coverage only; it is not a claim of universal-language understanding or real-device classification interaction PASS.
+- Accounts freshness UI: current `just now` source is `MailAddress.lastSyncedAt` from `account.last_synced_at`; Accounts now explicitly separates `Last synced` from `Latest email` (`latestEmailTime`) and only renders the no-new-email note for a Gmail/Google Workspace account in `mailbox_ready` state with both timestamps. Build 323 IPA hash `fca7ffe75f27aaa202707093e4c89f00c28957bee8384cd0c7b0bb5bb21e3361` installed and launched at sequence `5380`. The backend contract has known partial-sync timestamp risks and live Gmail/provider checkpoint validation remains pending; no Accounts freshness verdict is claimed.
+- Accounts provider-freshness correction: `routeSyncFailure` previously re-promoted a formerly ready Gmail mailbox after a failed provider attempt and wrote `account.last_synced_at = CURRENT_TIMESTAMP`. That false-success branch is removed: terminal auth, rate limit, interruption and transient failures preserve the prior successful timestamp and retain explicit failure state. The Gmail recoverable-state suite passes 14/14 and the complete Worker reliability suite passes 144/144 locally. No Worker deployment, provider checkpoint, or real-device Accounts interaction PASS is claimed.
+- Accounts normalized freshness schema: migration `0030_account_sync_freshness_contract.sql` adds independent attempt, success, latest-message, provider-checkpoint, failure-time and safe failure-reason fields. Gmail OAuth and legacy IMAP success paths now populate the success/checkpoint/latest-message fields and clear failure fields; a sync failure preserves success. Node syntax validation and the Gmail state-machine suite pass (14/14). Migration is not remotely applied, and no production/provider/device verdict is claimed.
+- Accounts normalized client compatibility: `MailAddress` now decodes the normalized timestamps; Accounts prefers `lastSuccessfulSyncAt` for Last synced and `lastMessageReceivedAt` for Latest email, falling back to legacy values only until the remote migration is applied. Build 324 IPA hash `668d1536e9fab137d17101ecde38e57a635ff696cbdb5d818bb8e2bd7dfd5a45` installed and launched on Bill's iPhone 17 at sequence `5388`. No live remote data or interaction PASS is claimed.
+- Remote freshness deployment audit: `wrangler d1 migrations list cloud-mail --remote` is blocked by Cloudflare API 7403 for database `4c05f52d-5d8c-4fb5-9a6d-888bebf8c596`; no remote schema inspection, migration, Worker deployment, or provider claim was made. A clean local Wrangler D1 migration replay is also not a valid schema verifier because this repository's migration ledger assumes the legacy `account` baseline created outside the migration directory (`no such table: account`).
+- Remote freshness activation: Cloudflare authority was later restored. Remote D1 migrations `0029`, `0030`, and `0031` applied successfully; all six normalized columns were verified, and the ledger-only latest-message backfill populated 11 Gmail/Workspace rows without fabricating any successful sync. Worker version `4ca5466f-3f78-4ed5-81b6-c3d2a8ed4294` is deployed. After a scheduled cycle, anonymous aggregation proves 7 sync attempts, 3 verified successful sync/checkpoint records, and 4 cases where a successful sync is newer than the latest stored message (the no-new-mail state). Failure records remain separate; no email addresses, message content, or credentials were read. Client interaction acceptance is still pending.
+
+Next focus: finish verified scalable Execute data paths, complete the remaining user-visible list audit without changing intentionally bounded operational controls, then implement provider-adapter capability and discovery hardening without making unverified live-provider claims.
+
+Stop condition: all acceptance criteria pass on the connected real iPhone, final IPA and final report exist, or a documented external blocker makes further safe progress impossible.
+
+Iteration cap: five maker/checker loops.
+## Current Active Increment — Hybrid Apple On-Device Mail Intelligence and All Mail Integrity P0
+
+This mission supersedes the unfinished All Mail-only increment while preserving its additive, undeployed 0044 canonical-state work for review and reuse. Deliver an Apple Foundation Models capability adapter that emits structured, scoped local evidence only; server-authoritative evidence/policy finalization; deterministic and policy-governed server fallback; durable manual overrides and complete mail-action integrity; production deployment; and production-bundle acceptance on Bill's physical iPhone 17 for both Apple Intelligence available and unavailable paths. Do not report PASS without the exact real-device acceptance chain.
+## Current Active Increment — Complete AI-Native Classification, Commitment and Thread-to-Mission P0
+
+This mission supersedes the unfinished Hybrid Mail increment. Preserve but isolate undeployed 0044/0045 work; do not include it in this mission's production rollout unless directly required and fully reviewed. Reuse deployed migration 0042 and the production classification baseline. Complete protected Commitment lifecycle, structured Deadline history, multi-message evolution, classification lease/checkpoint/fencing, late-message and terminal-state concurrency, classifier-version replay, structural isolation, evaluation v2/per-layer metrics, final Worker deployment and safe production validation. Provider actions, tool calls, outbound references, approvals, provider writes and external communications must remain zero.
+## Current Active Increment — Complete Hybrid Mail Intelligence and Action Integrity P0
+
+This mission supersedes the unfinished Commitment completion. The supplied attachment is truncated during Success Criterion 9; proceed under its visible constraints plus the stricter previously supplied Hybrid Mission authority boundary. Isolate undeployed 0043 lifecycle work and restore 0044/0045 as the only active migration set. Complete atomic canonical mutation, canonical query cutover, iPhone action API cutover, override restoration, cache/index reconciliation, Apple/fallback evidence parity, adversarial acceptance, production deployment and physical iPhone acceptance without outbound, OAuth, reconnect, credential or unauthorized destructive provider effects.
+# 2026-07-12 Apple Evidence App to API to Policy Closure
+
+- [x] App invokes Apple on-device adapter or deterministic unavailable branch after authoritative mail load.
+- [x] App uploads only structured, no-free-text Evidence with message version and content digest.
+- [x] API verifies Workspace/mailbox/delegation, version, and digest against authoritative mail content.
+- [x] Server persists append-only Evidence and bounded Policy Decision atomically.
+- [x] Policy is fail-closed when security evidence is not content/version scoped.
+- [x] Decisions bind content digest, expire correctly, and support append-only renewal for unchanged content.
+- [x] App applies only the accepted server Decision whose digest matches the submitted current content.
+- [x] Independent adversarial Checker: ACCEPTED for narrowed source chain.
+- [x] Reliability suite: 191/191; JS check PASS; Xcode Beta production-bundle compile PASS.
+- [x] Remote D1 migrations 0044/0045 applied; no pending migrations.
+- [x] Worker deployed, version `febcf9bc-2d73-4dc2-bf0f-8af40e59076d`.
+- [ ] Physical-device install/acceptance: MANUAL_BOUNDARY — available local signing team cannot issue the production bundle profile because the registered App ID has iCloud capability.
+# 2026-07-12 Classification Fencing, Atomic Conversation State, Evidence-Bound Commitment P0
+
+Status: IN_PROGRESS. Production truth at mission start differs from the attachment snapshot: migrations 0044/0045 and Worker version 194 are already deployed from the preceding authorized mission. Preserve that history; do not destructively revert it. Restore and harden 0043 as a separately reviewed additive migration.
+
+Real-device signing correction (user-authoritative): target device is `00008150-000629623EC0401C`; provisioning assets must come only from `/Users/billtin/Documents/cloudmail/profile`. Do not use any profile associated with `saercpku@gmail.com`. The profile password is secret-bearing local input and must never be read, logged, persisted, or passed on a command line by Codex.
+
+- [x] Repository gate PASS and mission contract read completely.
+- [x] Discovery confirms application-level fence/write TOCTOU, non-atomic Conversation/Deadline writes, under-bound Verification, unsafe legacy backfill, and caller-supplied evaluator counters.
+- [ ] Database-level fenced writes for every classification-owned durable entity.
+- [ ] Atomic Conversation CAS with exact message-set and input digest authorization.
+- [ ] Evidence/Verification/transition authorization binding and one-time consumption.
+- [ ] Atomic verified Deadline replacement with IANA/DST handling and terminal guard.
+- [ ] Legacy authoritative backfill or read-only quarantine.
+- [ ] Authoritative production release counters and append-only evaluation audit.
+- [ ] Deterministic D1 concurrency, recovery, replay, scope and migration tests.
+- [ ] Full reliability suite and independent adversarial ACCEPTED.
+- [ ] Restore/apply 0043, deploy, verify version and production counters without Provider/outbound/OAuth side effects.
+
+## 2026-07-12 Classification P0 production execution evidence
+
+- [x] Database fencing/CAS/verification/deadline guards completed in formal migration `0043_commitment_lifecycle_fencing_hardening.sql`; legacy records remain safely backfilled only on unique immutable-run evidence or quarantined read-only.
+- [x] Authoritative release evaluator added: it queries D1 facts at evaluation time and persists an append-only evaluation; callers cannot submit counters.
+- [x] Independent structural checker accepted all required database trigger families; Worker syntax check and full reliability suite pass: 23 files / 194 tests.
+- [x] Remote migration 0043 applied successfully; remote schema confirms all 15 required structural triggers.
+- [x] Worker deployed and reported version `1751abe4-bb99-4077-9b8d-4eb3af25014e`.
+- [x] Production build 329 created with the production bundle ID, Apple Distribution signature, immutable IPA hash `b8fbd9a85917fbad7418796f789c789fabe54436500e9ad84caec480cf1046de`, installed and launched on Bill's iPhone 17.
+- [ ] Real-iPhone interaction acceptance for the classification/All Mail workflow remains IN_PROGRESS. Install/launch is not interaction evidence.
+- [x] Historical XCTest signing blocker is resolved: AcceptanceHost and its UI-test runner now sign, install, launch, and control the production bundle on Bill's physical iPhone. Build 330 evidence below supersedes this former blocker.
+
+## Move / Undo / Search real-iPhone closure — 2026-07-12
+
+- [x] Checker rejected the button-disappearance-only acceptance gap. `move` now returns canonical success, Undo remains retryable after failure, clears only after a successful receipt, and blocks duplicate taps while recovery is in progress.
+- [x] Delegated folder-filter reads now use the same Workspace-binding-aware canonical projection as trash exclusion; source-account owner and authorized subject remain distinct.
+- [x] Xcode Beta Release compile passed. Worker `npm run check` passed and `npm run test:rc` passed 23 files / 194 tests.
+- [x] Worker version `cb6c931d-7c1d-4e5b-8b6f-51f3f5faa8c0` deployed with the canonical delegated-folder read correction.
+- [x] Immutable production IPA: `artifacts/nexora-v3/export-build330-move-undo-search/NEXORA.ipa`; bundle `app.wangbei8554.pingguo736`; version `3.03` build `330`; SHA-256 `fa225b040561174546913c9032df0720685201cf947578f8f36f940c77d229ef`.
+- [x] Installed through wired USB on Bill's iPhone 17 at database sequence `5612`; device inspection confirms installed version `3.03 (330)`.
+- [x] `testNexoraMoveUndoAndSearchRealIPhone` passed on the physical iPhone in 145.915 seconds with 0 failures. Move displayed Undo; Undo received canonical success and cleared without `mail_state_version_conflict`; Search accepted `unread` and `from:fast` and completed with device screenshots.
+- [x] Immutable result: `artifacts/nexora-v3/NEXORA-v3.03-build330-move-undo-search-canonical.xcresult` (`Passed`, 1/1, iPhone 17 Pro Max, iOS 27.0 build 24A5380h).
+
+Verdict: **PASS** for the production-bundle Move → Undo → Search real-iPhone workflow. This verdict does not expand to unrelated classification/All Mail acceptance items above.
+
+## Unified Conversation System production activation — 2026-07-12
+
+Status: **IN_PROGRESS / SHADOW_ONLY**. User-visible cutover remains deliberately disabled.
+
+- [x] Additive UCS schema migration `0046_unified_conversation_system.sql` applied in production.
+- [x] Conversation Aggregate, Facet Classification, Commitment Ledger, resumable checkpoint, retry ledger, fenced projection materializer, compound-cursor read API, and six-surface iOS client seam implemented.
+- [x] Migration safety gate passed; Worker syntax passed; reliability suite passed 24 files / 199 tests; Xcode Beta production-bundle compile passed.
+- [x] Shadow scopes seeded with `dual_write_enabled=1`, `shadow_read_enabled=1`, `projection_read_enabled=0`.
+- [x] Worker deployed as `cae223bd-8dfc-4aa2-9c33-b0914a2b319e` with one-minute resumable shadow processing.
+- [x] Authoritative reads fail closed unless the checkpoint is ready, all six epoch/materializer-matched parity rows pass, and unresolved failures are zero.
+- [ ] Backfill completion and six-surface parity: still running; lease-fence failures created during aggressive concurrent preview acceleration remain retryable and prevent cutover.
+- [ ] Adversarial architecture closure: projection-native detail/actions, provider-ingest dual write, aggregate-folded multi-message display, facet invalidation, evidence-bound commitment transitions, and verified Mission provenance writer remain required.
+- [ ] Production projection flag, signed IPA, USB install, and physical-iPhone acceptance are not authorized by evidence yet and were not performed.
+
+Truthful verdict: UCS schema and shadow runtime are live, but production user-visible UCS activation is **not PASS**.
+
+## UCS Workspace 1 100% guarded rollout — 2026-07-13
+
+- [x] Normal fenced scheduler capacity corrected from one to ten UCS items per workspace cycle; expired-lease behavior remains fenced and bounded.
+- [x] Canonical receipt reuse now requires matching workspace, account, provider, canonical provider-event identity, source version, and verified evidence digest. Historical receipts bind through their canonical processing receipt when legacy message evidence linkage is absent.
+- [x] Checkpoint freshness accounting now advances to the maximum visible ledger watermark only after every visible row satisfies the strict receipt predicate.
+- [x] Worker checks passed; focused UCS tests passed 7/7; full reliability suite passed 24 files / 203 tests.
+- [x] Production Workers deployed: `44ff63cd-7368-41dc-963a-797ef3118ffd`, `95da1552-f725-465b-b40a-bce2f4fd83dc`, then final `8d7d9bc4-1dd4-4841-a471-8b8c419c4ffe`.
+- [x] Fresh production evidence: strict-invalid receipts 0, unresolved outbox 0, unresolved pipeline failures 0; Workspace 1 checkpoint/current watermark `3104`; one audit run passed all six surfaces at that watermark with zero missing, extra, content, and unexplained counts.
+- [x] Database-enforced rollout advanced Workspace 1 only from 50% to 100%; `projection_read_enabled=1`, `dual_write_enabled=1`, epoch 1. Workspace 2 remains `projection_read_enabled=0`, rollout 0%.
+- [ ] Real-iPhone acceptance: BLOCKED_BY_DEVICE_LOCK. Bill's physical iPhone 17 was USB paired and the signed Build 342 test was started, but XCTest could not launch because iOS required the device to be unlocked. Result path: `artifacts/nexora-v3/NEXORA-v3.03-build342-ucs-authoritative.xcresult`; no PASS claimed.
+
+Verdict: **PARTIAL — Workspace 1 authoritative production rollout is database-gated and live; user-visible real-iPhone acceptance remains blocked by the device security boundary.**
+
+## Active Increment — Enterprise Attention and durable manual mailbox moves (2026-07-12)
+
+Status: IN_PROGRESS. User reported that right-swipe Junk could appear inert and occasionally surfaced `mail_state_version_conflict`. The active correction makes manual moves authoritative, versioned, auditable, and visible only after canonical success. It must be accepted on Bill's physical iPhone; deployment and compilation are not acceptance.
+
+- [x] Discovery: confirmed a detail-page false-success path, heuristic Junk contamination, and non-audited folder moves.
+- [x] Maker: canonical `move_folder` now records a message-scoped `folder_key` override and atomically commits/reverses manual Junk disposition.
+- [x] Maker: swipe, block, V2 junk and bulk Junk route through the same canonical operation; detail waits for confirmed success before presenting success/dismissing.
+- [x] Checker: Xcode Beta production-target compile, worker syntax, 23-file/194-test reliability suite.
+- [x] Worker deployed as `26e7e836-b141-49da-b1eb-c04275508b8c`.
+- [ ] Build 331, USB install, and physical-device acceptance: right-swipe Junk removes source row, appears only in Junk, survives refresh, Undo returns it, and no version-conflict toast.
+# Active — Gmail authorized-state and content-recovery closure
+
+- Scope: all Gmail / Google Workspace accounts use one canonical OAuth authorization-generation, capability, and content-recovery state machine. No mailbox-specific code path or exception is permitted.
+- Evidence: `fastonecanada@gmail.com` has current-generation verified Gmail read/send scopes and successful provider probes, but a listed-message recovery gap was incorrectly promoted to `first_import_failed` after repeated attempts.
+- In progress: preserve verified OAuth evidence through recoverable content gaps; keep those gaps in bounded `sync_required` recovery; derive send eligibility from the current OAuth credential scope rather than content-page retry state.
+- Acceptance: deploy, repair only accounts matching the verified-generation recovery predicate, run all-Gmail freshness/capability evidence, then build/install and validate the Accounts state on Bill's iPhone 17.
+
+## Compliant Build 342 UCS acceptance checkpoint — 2026-07-13
+
+- [x] Preserved immutable failure: `artifacts/nexora-v3/NEXORA-v3.03-build342-ucs-authoritative-resume-20260713.xcresult` is an acceptance-path failure; it did not explicitly select merged All Mail.
+- [x] Corrected harness selects merged All Mail before asserting projection-native rows.
+- [x] Quarantined the automatically provisioned runner: `artifacts/nexora-v3/quarantined-derived-build342-ucs-allmail-auto-profile-rejected`.
+- [ ] BLOCKED_BY_REQUIRED_SIGNING_ASSET: `/Users/billtin/Documents/cloudmail/profile` is absent and no approved profile directory exists under the repository. Do not use automatic provisioning. Workspace 1 remains 100%; Workspace 2 remains shadow-only at 0%.
+
+## Authorized XCTest runner signing audit — 2026-07-13
+
+- [x] Authorized production profile audited: UUID `0855a35a-f46c-4ddf-95ca-a841a9c27bc1`; Team `4GGH43VE67`; app identifier `4GGH43VE67.app.wangbei8554.pingguo736`; expiry `2026-09-18T07:27:16Z`; it is production-app-only and does not authorize an XCTest runner.
+- [x] Existing acceptance target is inadmissible: host `com.saercpku.nexora.acceptance.host`, test bundle `com.saercpku.nexora.acceptance.tests`, and its automatic-signing teams are not Team `4GGH43VE67`.
+- [x] No valid installed Apple Development identity or Team `4GGH43VE67` development provisioning profile was found. The only matching Team identity is Apple Distribution and cannot sign the XCTest runner.
+- [ ] BLOCKED_BY_APPLE_DEVELOPER_AUTHORIZATION: obtain and install into `profile` an Apple Development certificate plus development provisioning profiles for Team `4GGH43VE67`, device `00008150-000629623EC0401C`, and Team-owned acceptance host/test-runner identifiers. Do not use automatic provisioning, the quarantined runner, or the production bundle identifier for the runner.
+
+## Backend continuation with deferred device gate — 2026-07-13
+
+- Device outcome: **DEFERRED_BLOCKED_BY_APPLE_TEAM_MEMBERSHIP**. The corrected explicit merged-All-Mail path and all historical XCTest bundles are preserved; no real-iPhone PASS is claimed.
+- Workspace 1 remains authoritative at 100% with dual-write enabled. Workspace 2 remains shadow-only at 0%.
+- [ ] BACKEND GATE BLOCKED: live ingest advanced to watermark 3114 while Workspace 1 held two expired processing leases and Workspace 2 held three pending records. No failures or strict-invalid receipts were present, but checkpoints were not current/settled. No queue record was manually changed and Workspace 2 was not activated.
+- Device resume checkpoint: require Team `4GGH43VE67` Apple Development identity plus manual development profiles for Team-owned acceptance host, test bundle, and XCTest runner; target `00008150-000629623EC0401C`; rerun corrected `testNexoraUCSAuthoritativeProjectionRealIPhone` after a fresh backend watermark gate.
+
+## UCS repair and production-app acceptance checkpoint — 2026-07-13
+
+- [x] Diagnosed the live lease loop from Worker Tail: version `8d7d9bc4-1dd4-4841-a471-8b8c419c4ffe` was terminated as `exceededCpu` before the UCS step. A paid-plan CPU-limit deployment was rejected by Cloudflare (`100328`); no version was created by that rejected configuration.
+- [x] Deployed Free-plan-safe repair: resume incomplete observations from their persisted Facet snapshot, mint the normal strict receipt only after projection materialization, and prioritize bounded UCS work ahead of general cron maintenance. Current Worker: `da4dfe28-42f6-4a44-978b-95314be57852`.
+- [x] Checker: `npm run check`, focused UCS tests 7/7, and full reliability suite 203/203 passed before deployment.
+- [x] Normal fenced processing converged without direct queue mutation. Both workspaces are `ready` at watermark `3120`, have zero non-processed outbox rows and zero unresolved pipeline failures.
+- [x] Same-watermark six-surface parity passed: Workspace 1 audit `ucs-audit:3f4c9ae0-9fd4-4221-87cd-c79fb5fb07ef`; Workspace 2 audit `ucs-audit:17d09948-8265-4a6a-87b0-9a0ef4f834d9`; each is 6/6 with zero missing, extra, content, or unexplained differences. Workspace 1 remains authoritative at 100%; Workspace 2 remains shadow-only at 0%.
+- [x] Production-app audit: IPA `artifacts/nexora-v3/export-build342-ucs-authoritative/NEXORA.ipa`, SHA-256 `ceec48c7117499033590e8b3b9337233cff3399f76fe833f1ec0f5dd34b85681`, bundle `app.wangbei8554.pingguo736`, build `342`, Team `4GGH43VE67`, embedded profile `0855a35a-f46c-4ddf-95ca-a841a9c27bc1`. Installed production app is Build 342 on physical device `70CD0BB3-0832-5A94-BA91-82A634A54CF8`.
+- [x] Production app launched through USB and screenshot evidence captured at `artifacts/nexora-v3/production-app-real-iphone-20260713/launch.png`. It restored Goals; no existing deep link routes to Mail / merged All Mail.
+- [ ] REAL_IPHONE_PRODUCTION_APP_PARTIAL: only the minimum non-XCTest touch boundary remains—open **Email**, then choose **All Mail**. After that capture, continue automated evidence correlation. `XCTEST_AUTOMATION_DEFERRED` remains unchanged; no XCTest PASS is claimed.
+
+## Production-app Workspace 1 correlation repair — 2026-07-13
+
+- [x] Captured the completed Build 342 Email → All Mail state at `artifacts/nexora-v3/production-app-real-iphone-20260713/all-mail-selected.png`. The UI honestly showed All Mail, but only 50 visible items.
+- [x] Diagnosed a real correlation defect: default-workspace resolution selected the distinct Workspace 2 (`admin Workspace`), which correctly remains shadow-only at 0%; the 50-item UI was therefore legacy fallback, not Workspace 1 authoritative projection rendering. Workspace 2 was not advanced to conceal this.
+- [x] Added an app-native, persisted, membership-checked Workspace selector. It resolves the server membership list, permits only listed workspace IDs, and refreshes the six projection surfaces for the selected workspace. It does not alter server defaults or rollout flags.
+- [x] Checker: Xcode Beta unsigned Release build succeeded. Manual production archive/export succeeded for Build 343. IPA: `artifacts/nexora-v3/export-build343-workspace-selector/NEXORA.ipa`; SHA-256 `06205cc20f8cc3a2fe5a9c12f1e0f1fb7c3a0d0c6b634182ce93fc9027f95e79`; bundle `app.wangbei8554.pingguo736`; Team `4GGH43VE67`; profile `0855a35a-f46c-4ddf-95ca-a841a9c27bc1`.
+- [x] Installed Build 343 over USB and captured launch evidence at `artifacts/nexora-v3/production-app-real-iphone-20260713/build343-launch.png` on physical device `70CD0BB3-0832-5A94-BA91-82A634A54CF8`.
+- [ ] REAL_IPHONE_PRODUCTION_APP_PARTIAL: the corrected UI needs one minimal manual selection—Email → mailbox selector → Workspace **NEXORA Runtime Validation** → All Mail—then leave the resulting list open for USB screenshot/API correlation. `XCTEST_AUTOMATION_DEFERRED` remains unchanged; no user-visible PASS is claimed.
+
+## Move All From Sender authoritative classification loop — 2026-07-13
+
+Status: IN_PROGRESS. Iteration cap: five Maker–Checker rounds.
+
+- [x] Discovery: current menus are hard-coded to six `LocalMailBoxKind` values and `AppState.moveAllFromSender` loops through locally cached raw messages using display-address equality. It cannot offer Promotions or custom Facet categories and does not establish Workspace/account scope, durable idempotency, preview, provider truth, UCS provenance, or projection rematerialization.
+- [x] Evaluator: independent adversarial review confirmed the client-loop path also leaves UCS stale because canonical mutations do not enqueue the `conversation_ingest_outbox`. It identified missing exact sender identity policy, operation-level fencing/retry/progress/undo, provider capability truth, destructive confirmation, and duplicate-conversation protection. The unchanged path is rejected for deployment.
+- [ ] Maker: introduce a Workspace-authorized destination/preview contract and durable sender-scoped bulk execution that distinguishes mailbox, workflow, and Facet classification destinations.
+- [ ] Maker: route all visible sender bulk menus through the contract, with localization, accessibility, preview/confirmation, progress, truthful provider degradation, and one-time scope behavior.
+- [ ] Checker: execute focused and full reliability tests, migration checks, production watermark/parity gates, production deploy, production-app build/install, and real-iPhone evidence. Keep `XCTEST_AUTOMATION_DEFERRED` separate.
+
+### Sender bulk implementation checkpoint — 2026-07-13
+
+- [x] Added migration `0052_ucs_sender_bulk_classification.sql` and applied it to remote D1.
+- [x] Added the Workspace-authorized `/v3/sender-bulk` destination, preview, execution, and operation APIs. The supported production path is exact-normalized-address, one-time, non-destructive Facet Classification; it records operation/action/mission/outcome IDs, per-conversation before/after evidence, audit rows, explicit provider `not_requested` state, and rematerialized Conversation Projections. Existing Commitment heads are not changed.
+- [x] Added contract-driven iOS sender menus in Inbox and message detail with mailbox/workflow/classification sections, bilingual labels, stable accessibility identifiers, disabled explanations, loading state, and a scope preview before execution.
+- [x] Checker: Worker check; focused sender/UCS tests 9/9; full reliability suite 25 files / 205 tests; Xcode Beta unsigned Release build all pass.
+- [x] Production deploy: Worker `45cd86a9-9c7e-4b5f-8abb-be527c3ab4a3`. Build 344 IPA `artifacts/nexora-v3/export-build344-sender-bulk-classification/NEXORA.ipa`, SHA-256 `650b668a9914bb0e93d9fc4a00080fa1b8466a81768f199ecbebae61b17bd5d9`, is signed for `app.wangbei8554.pingguo736` by Team `4GGH43VE67`, installed over USB, and launch evidence is `artifacts/nexora-v3/production-app-real-iphone-20260713/build344-sender-bulk-launch.png`.
+- [x] Fresh production preflight: both checkpoints ready at watermark `3153`; no unresolved outbox records and no unresolved pipeline failures. Workspace 1 remains 100% authoritative; Workspace 2 remains 0% shadow-only.
+- [ ] REAL_IPHONE_PRODUCTION_APP_PARTIAL: request a low-risk representative sender menu only; capture the authoritative destinations before any mutation. `XCTEST_AUTOMATION_DEFERRED` remains unchanged.
+
+## Sender bulk strict-integrity gate — 2026-07-13
+
+- [x] USB evidence: Build 344 is installed on Bill's physical iPhone 17 and the production app exposed the contract-driven **Move All From Sender** menu. Mailbox and workflow destinations were visibly disabled with truthful unavailability; no user-visible operation was asserted as complete.
+- [x] Runtime gate: Workspace 1 remains authoritative at 100%; Workspace 2 remains shadow-only at 0%. Both checkpoints are ready at watermark `3153`, and each has a same-watermark six-surface parity run with 6/6 passed, zero unresolved outbox rows, and zero unresolved pipeline failures.
+- [ ] BLOCKED_BY_DATA_INTEGRITY_GATE: an independent strict receipt audit found W1 `117` invalid historical receipts (`106` point to a superseded/non-current projection; `11` have no matching current observation) and W2 `131` (`120` / `11`). This is incompatible with a new authoritative bulk classification write.
+- [ ] BLOCKED_BY_CANONICAL_COVERAGE_GATE: W1 has `1576/1576` observed messages without a durable `mail_canonical_state`; W2 has `1574/1636` fallback-only observations. Projection folder keys are populated, but fallback derivation is not sufficient evidence for an irreversible sender-bulk mutation.
+- [ ] No sender-bulk preview or execution was recorded for the representative sender. The menu-preview screenshot did not contain a confirmation result, so it cannot be treated as a mutation proof. Do not repair receipts, synthesize canonical rows, or change rollout flags by direct D1 mutation.
+
+Verdict: **PARTIAL — production UI installation and read-only menu evidence are complete; the requested sender-wide action is deliberately blocked pending fenced receipt/projection repair and canonical-state coverage.**
+
+### Strict-integrity gate correction — 2026-07-13
+
+- [x] The preceding `117`/`131` count was a rejected audit query, not a production defect: it incorrectly required a receipt's historical `projection_id` to remain the current projection after normal rematerialization.
+- [x] Re-evaluation against the deployed strict receipt contract found `0` invalid receipts in both workspaces. All `1587` W1 and `1647` W2 receipts bind verified evidence and a current projection for the same conversation; all also retain an equivalent canonical provider-event observation.
+- [x] Missing `mail_canonical_state` rows are compatibility fallback for unmutated historical messages, not a prerequisite for a non-provider Facet classification. The classification operation remains eligible under the deployed contract.
+- [ ] AUTOMATION_BOUNDARY: `devicectl` does not support touch injection. The available Apple Development identities belong to Team `P6VKJM76BJ`, while the required production Team `4GGH43VE67` has only its Distribution identity; no compliant XCTest runner can be signed. Do not read `profile/密码.txt`, import the P12, use automatic provisioning, or repurpose the production profile for a runner.
+
+Corrected verdict: **PARTIAL — the Promotions operation is backend-eligible, but direct real-iPhone confirmation/execution remains blocked only by the authorized Apple XCTest signing boundary.**
+
+## Build 347 sender-bulk stable-surface checkpoint — 2026-07-13
+
+- [x] Replaced the unreliable nested SwiftUI `Menu` mutation route with one independent `SenderBulkClassificationSheet`, used by both Inbox context actions and email-detail actions. It renders server-authoritative scope, enabled/disabled destinations with reasons, preview counts, account scope, provider effect, reversibility, and an explicit Apply button before it calls the production mutation endpoint.
+- [x] Production app build: Xcode Beta Release compile and UCS migration guard passed. Signed archive/export used Team `4GGH43VE67`, bundle `app.wangbei8554.pingguo736`, profile `0855a35a-f46c-4ddf-95ca-a841a9c27bc1`; IPA `artifacts/nexora-v3/export-build347-sender-bulk-stable-sheet/NEXORA.ipa`, SHA-256 `67751737ac181ce710659545257c201c1b19d1cfcb2e9d76449fca9535d65c03`.
+- [x] Installed Build 347 through USB on physical device `70CD0BB3-0832-5A94-BA91-82A634A54CF8` (installation sequence `6012`) and captured `artifacts/nexora-v3/production-app-real-iphone-20260713/build347-mail-search-boundary.png`.
+- [x] Read-only production check found no `conversation_sender_bulk_operations`; no sender classification, Action, Mission, Evidence, Facet, Projection, Commitment, provider, or audit state was changed during the unsuccessful Build 346 menu attempts or the Build 347 navigation.
+- [ ] Real-device canary remains incomplete: iPhone Mirroring can open the production Mail surface but its current text-input delivery only retained partial search keystrokes, so The Children’s Place was not precisely selected. No bulk write was attempted against another sender. `XCTEST_AUTOMATION_DEFERRED` remains separate.
+
+Verdict: **PARTIAL** — Build 347 fixes the dead nested action surface and is installed on the real iPhone; the required exact-sender Promotions operation, refresh/restart persistence, and production provenance correlation have not yet executed.
+
+## Elements Outfitters real-device category closure — 2026-07-13
+
+- [x] Root cause fixed and deployed in Worker `88247cd4-9313-4ea4-8bf8-dcce8c6f7329`: reusable immutable `conversation_evidence` no longer collides with the sender-bulk operation ledger primary key. The ledger now writes an operation/item-scoped evidence ID while preserving the verified source-evidence reference.
+- [x] Worker checker: `npm run check` and `npm run test:rc` passed (`221` tests).
+- [x] Real iPhone (production bundle `app.wangbei8554.pingguo736`, Build 348) acceptance: opened Elements Outfitters, opened **Move All From Sender**, selected **Promotions**, reviewed 1 eligible conversation across 12 authorized accounts, and pressed **Apply Promotions**. The device visibly confirmed: `Moved 1 conversations to Promotions.`
+- [x] Production ledger corroboration: operation `sender-bulk:66905140d5587f70b483f1fac1209d54f5de8f9eb36c20032ab571879fc53024` is `completed`, `1/1` completed, `0` failed.
+- [x] Authority check: all three Elements conversations now have `Category=promotions`; their current overlay facets are `unread` only—there is no `Overlay=vip`. The Inbox's `VIP & Priority` grouping is a combined ranking section, so a Priority row is not a VIP classification.
+- [x] Real-iPhone VIP-filter evidence: after the sender-wide success alert was dismissed, Mirroring returned to production Mail, selected the **VIP** filter, and visibly rendered `No Messages Visible` with `Visible Count 0`. Elements Outfitters is absent from the actual VIP view, matching the authoritative Facet result.
+- [ ] The Build 349 explicit durable-receipt category confirmation is source-complete and unsigned Release-compiled, but its signed archive/export has not yet completed; it is not installed and no Build 349 device claim is made.
+
+Verdict: **PARTIAL** — the requested Elements sender-wide Promotions move is real-device PASS with durable production evidence; full all-menu closure and direct VIP-filter view regression remain in progress.
+
+## Elements priority/fence follow-up — 2026-07-13
+
+- [x] Worker `e7a030a5-8e8f-4bc0-9ccf-756ebc77995a` deployed after moving sender-bulk operation insertion behind the shared materialization fence, adding bounded shared-fence retry, and returning only a retryable busy condition rather than persisting a false failed operation or exposing the raw fence name.
+- [x] Checker: `npm run check`, full `npm run test:rc` (`221` tests), and focused sender-bulk test (`15` tests) passed. Xcode Beta unsigned Release compile passed.
+- [x] Build 352 production IPA is signed, installed, and launched on Bill's iPhone 17: `artifacts/nexora-v3/export-build352-projection-version-adapter/NEXORA.ipa`, SHA-256 `d81ebf0cc1d8a9276d81cc84c108e6e11babaaf5fb98c5f40f760e93bb7b0901`.
+- [x] Real-device check: VIP filter rendered `No Messages Visible`, Visible Count `0`.
+- [ ] Real-device All Mail remains inconsistent: Elements rendered in **VIP & Priority**. Production evidence shows the current device path was reading Workspace 1's older `updates` Projection while the completed Promotions mutation was in Workspace 2; Workspace isolation prevents copying the other workspace's classification. Build 352 now selects the newest projection version per source row, but current-workspace Promotions execution/restart evidence is incomplete.
+- [ ] The last Mirroring attempt returned to Home before selecting Promotions; no mail mutation occurred and no PASS is claimed for this retry.
+
+Verdict: **PARTIAL** — Build 352 and the Worker repair are installed/deployed; the complete current-workspace sender mutation and post-refresh All Mail absence from VIP & Priority still require a successful real-device interaction.
+
+## Workspace 1 mail-row interaction repair — 2026-07-14
+
+- [x] Discovery and independent adversarial review identified nested SwiftUI buttons in the legacy/shadow All Mail row: the outer detail-navigation Button contained EmailRow's star Button, which can swallow the row tap on iOS.
+- [x] Maker repair separates the detail-navigation and star controls into sibling controls. The global edge-drawer gesture remains unchanged because its minimum-distance and left-edge guard cannot consume normal taps.
+- [x] Checker: Xcode Beta unsigned Release build passed after the change.
+- [ ] Build 353 production archive/install and real-iPhone row-tap regression remain required. No Workspace 1 category mutation has been made by this repair.
+
+## Build 353 signing and device acceptance attempt — 2026-07-14
+
+- [x] Signed production IPA exported: `artifacts/nexora-v3/export-build353-mail-row-interaction/NEXORA.ipa`, SHA-256 `f7da495b486762fe495251f346b16a040d6cb785da721ce0aab240c6e8db5f1b`.
+- [x] Installed and launched through USB on Bill's iPhone 17 Pro Max using production bundle `app.wangbei8554.pingguo736`.
+- [ ] Real-device interaction acceptance blocked before mail-row validation: after launch, the bottom **Email** tab did not respond to repeated iPhone Mirroring taps. No mail row, star control, sender-bulk sheet, or Workspace 1 category mutation was invoked; no acceptance state was changed.
+
+Verdict: **PARTIAL — CP1/CP2 pass; CP3–CP6 are not satisfied because the production app's tab interaction did not reach Mail.**
+
+## Importance First category order — 2026-07-14
+
+- [x] Discovery: the Inbox bar previously began `All, Unread, Starred, VIP, Attachments`; `Newsletter` existed as a filter but was omitted from the bar. The source is `InboxView.visibleInboxFilters`.
+- [x] Maker: presentation-only reorder is now `VIP → Priority → Action → Unread → Starred → Attachments → Notifications → Newsletters → … → All Mail`. Existing filter raw values, classification predicates, counts, and AI rules are unchanged. The selected-filter fallback is inserted before the final archive item, so persisted/dynamic filters cannot move All Mail ahead of the Importance First sequence.
+- [x] Product labels now match the information architecture: `Action`, `Newsletters`, and `All Mail`.
+- [x] Checker: Xcode Beta unsigned Release build passed. Build 354 was manually archived/exported for Team `4GGH43VE67`, production bundle `app.wangbei8554.pingguo736`; immutable IPA: `artifacts/nexora-v3/export-build354-importance-first-category-order/NEXORA.ipa`, SHA-256 `5759da927c60a5115b9f4d5db3be25b2e941e7a9c0d91e6d672e809bb9bb3e47`.
+- [x] Real iPhone evidence: Build 354 installed via USB and launched on device `70CD0BB3-0832-5A94-BA91-82A634A54CF8` (installation sequence `6324`). iPhone Mirroring visibly showed the leading `VIP, Priority, Action, Unread, Starred` chips in order. Tapping `Priority` rendered `10 visible` real messages, proving the reordered control remains interactive. Evidence: `artifacts/nexora-v3/production-app-real-iphone-20260714/build354-priority-filter-10-visible.jpeg`, SHA-256 `f2cd4ee1b74b685a61f23ef1d5551e90f54741d3471499f83f525990c9f2f642`.
+- [ ] Full classification acceptance is not yet satisfied: when Conversation Projection is authoritative, `VIP`, `Unread`, `Starred`, and `Attachments` have no projection-native membership mapping and currently return an empty list. That is a pre-existing projection-contract gap, not a result of this visual reorder. It prevents a truthful PASS for all required category switch/data checks. The horizontal bar is scroll-based and has no fixed chip width; the required device accessibility-size regression is still pending.
+
+Verdict: **PARTIAL — Build 354 is compiled, signed, installed, and its Importance First leading order plus Priority interaction are verified on a real iPhone. FULL_PASS is withheld until the projection-native membership contract and remaining device scroll/accessibility checks are verified.**
+
+## Email Tab interaction repair — 2026-07-14
+
+- [x] Root cause: iOS used a bespoke `safeAreaInset`/`HStack` bar, not a native `TabView`; it had no UIKit tab semantics or stable automation identity. Source review found no disabled state or competing gesture. The prior failure was reproducible as an unreliable Mirroring coordinate/hit path, so the custom control was an unacceptable primary-navigation boundary.
+- [x] Repair: replace the iOS custom primary bar with `TabView(selection:)`; UIKit now owns tab hit-testing and accessibility. Email maps directly to `InboxView`; the pre-existing `mainTabBarHidden` behavior is retained through the system tab-bar toolbar visibility. Build 355 additionally records stable custom control identifiers but Build 356 is the authoritative navigation repair.
+- [x] Checker: Xcode Beta Release build passed. Build 356 production IPA `artifacts/nexora-v3/export-build356-native-email-tab/NEXORA.ipa`, SHA-256 `73e8d3913b4f01ae47d40b685723a34f6c119e81e8b758627eb0f453dfdcebd9`, signed by Team `4GGH43VE67`, installed and launched on Bill's iPhone 17 Pro Max (USB sequence `6340`).
+- [x] Real-device result: iPhone Mirroring opened Email from Goals and rendered Inbox with the All Mail mailbox entry and visible category bar. Evidence: `artifacts/nexora-v3/production-app-real-iphone-20260714/build356-email-tab-inbox.jpeg`, SHA-256 `1ef5194cde3adac2a53b2194de1d9b951fafe025f849e1d988cd633f92ae4b53`.
+
+Verdict: **PASS — Email Tab → Inbox → All Mail workspace path is restored and verified on the real iPhone. Mail-row acceptance remains a separate downstream mission.**
+
+## Importance First classification system revalidation — 2026-07-14
+
+- [x] Post-navigation-repair real-iPhone check on Build 356 confirmed Inbox opens and the leading visible chip order remains `VIP → Priority → Action → Unread → Starred`.
+- [x] Source audit confirms the complete presentation order continues through `Attachments → Notifications → Newsletters` and appends `All Mail` absolutely last, after dynamic/persisted filters. No classification predicate, count, AI rule, or mail data was changed by this work.
+- [ ] Current Workspace 1 device state rendered zero rows after selecting Priority. This is not sufficient to demonstrate every filter's data path. The earlier non-empty Priority proof remains Build 354 evidence; it does not substitute for the required fresh all-category device loop.
+- [ ] Do not claim FULL_PASS: projection-authoritative `VIP`, `Unread`, `Starred`, and `Attachments` lack projection-native membership mappings, so their selection currently resolves to empty. Fixing that requires a separately authorized UCS projection-state contract, not a UI-order change.
+
+Verdict: **PARTIAL — Importance First presentation and Email Tab access are verified on a real iPhone; full classification-system acceptance remains blocked by the projection membership contract and incomplete all-chip device validation.**
+
+### Build 346 requested-device retry — 2026-07-13
+
+- [x] At the user's explicit request, reinstalled the immutable Build 346 production IPA (`bc58003d2d2ba4319390f03e656f067c2941f80b2678db08cfd30500e9901d68`) over USB and relaunched `app.wangbei8554.pingguo736` on the real device (installation sequence `6020`).
+- [ ] iPhone Mirroring reached Mail, but its current text-input path retained/reordered only partial search keystrokes. It did not permit a reliable exact selection of The Children's Place. No other sender was substituted and no `conversation_sender_bulk_operations` write was performed.
+- [ ] `XCTEST_AUTOMATION_DEFERRED`: no XCTest result is claimed.
+
+### Build 346 Movoto Promotions canary — 2026-07-13
+
+- [x] User explicitly authorized Movoto as the canary. On the real iPhone, opened a Movoto conversation, opened **More → Move All From Sender**, and selected **Promotions · 促销** through iPhone Mirroring.
+- [x] Captured device state at `artifacts/nexora-v3/production-app-real-iphone-20260713/build346-movoto-promotions-selected-no-operation.png`.
+- [x] Read-only production checks immediately and after eight seconds returned zero rows from `conversation_sender_bulk_operations`. Therefore the Build 346 destination selection is a confirmed dead action: it neither previewed nor executed a durable classification operation. No Facet, Projection, Action, Mission, Evidence, Commitment, provider, or audit record changed.
+
+Verdict: **PARTIAL** — real-device reproduction confirms the Build 346 execution defect. Do not treat the rendered menu or its dismissal as a user-visible success.
+
+## Build 347 Movoto stable-sheet canary — 2026-07-13
+
+- [x] Real-iPhone Mirroring opened the independent Build 347 sheet, safely scrolled only through its content, and displayed a matching review: Promotions, 26 conversations, 12 accounts, one-time scope, `nexora_classification_only`, reversible.
+- [x] Applying through the real production app created exactly one durable operation `sender-bulk:74f0ba493dcf5b494541dd44dd84565e23b898df940de556b7f1e81769ab1c52`, with Mission and Action IDs, proving the Build 346 transient-menu dead action is fixed.
+- [ ] The operation is Workspace 2 and terminated `partial`: total `26`, completed `0`, failed `26`. Each item was fenced by `conversation_projection_scope_or_fence_rejected` (`SQLITE_CONSTRAINT_TRIGGER`). No category facet was successfully changed.
+- [ ] Stop further senders, refresh/restart acceptance, and any cutover claim. This is an authoritative projection/fence integrity anomaly, not a UI success. `XCTEST_AUTOMATION_DEFERRED` remains.
+# NEXORA_CONVERSATION_PROJECTION_CLASSIFICATION_COMPLETION — 2026-07-14
+
+## Current verdict: PARTIAL
+
+- Applied production migration `0056_projection_membership_contract.sql` and deployed Worker `994be1b8-250e-4432-8a14-235372f63f86`.
+- Added immutable `membership_keys_json` to Conversation Projection. `vip`, `unread`, `starred`, and `attachments` are now separate portable UCS state memberships; `category_keys_json` remains Facet Category only.
+- Materialization uses `mail_canonical_state` (`is_vip`, `is_read`, `is_starred`) and normalized attachment records, with no provider-label, folder, or client-side fallback.
+- Added fenced `ucs-projection-membership-v2` refresh, append-only successor projections, and four membership parity audits. Projection reads/cutover settings were not enabled or broadened.
+- Verification passed locally: Worker syntax check; 8 UCS contract tests; full reliability suite 222/222; migration safety and UCS gate; unsigned iOS Release compile.
+- Remaining acceptance gates: production refresh completion, zero-mismatch same-epoch parity for all four keys, signed Build 357 installation, and real-iPhone category evidence. Until then no FULL_PASS claim.
+
+## Canonical coverage repair — 2026-07-14
+
+- Completed a production-only, idempotent canonical baseline backfill from the normalized authorized mail ledger. It inserted 7,576 missing `mail_canonical_state` rows without rewriting an existing canonical state.
+- Coverage verification: Workspace 1 missing canonical rows = 0; Workspace 2 missing canonical rows = 0.
+- Canonical membership inputs now exist: Workspace 1 has 1,511 unread rows; Workspace 2 has 1,490 unread rows and one starred row. No VIP state has been fabricated.
+- This repairs input coverage only. The v2 fenced projection refresh and same-epoch membership parity remain required before real-device acceptance. Verdict remains `PARTIAL`.
+
+## NEXORA_V2_PROJECTION_REFRESH_AND_MEMBERSHIP_PARITY_ACCEPTANCE — 2026-07-14
+
+- Worker `a04d61f5-40e0-47a2-9b22-63d19b18df06` now uses an isolated fenced membership refresh batch of 100 while live ingest and the original backfill remain at two items per scheduled turn.
+- Production evidence: the v2 checkpoint is actively running for Workspace 1; its materialized membership rows increased from 8 to 52 without quarantine. Workspace 2 remains queued behind the same fenced process.
+- No cutover switch, parity result, or iPhone PASS has been asserted. Build 357 has been incremented and Release compilation is the next build gate after refresh parity.
+
+## Refresh-runtime safety correction — 2026-07-15
+
+- Production observation established that a 500-item membership batch held a fenced lease while `processed_count` did not commit. This is not completion evidence, so the deployment was rolled back first to 100 (`a1b350e9-2e8e-405f-8cba-55542b00d210`) and then to the bounded 25-item commit batch (`7d7fef4b-ef23-4335-8b48-a96936be2a65`).
+- The 5-minute lease renewal and generation fence remain; only batch size changed. Syntax checking, the eight UCS contract tests, and migration safety passed before the first corrective deployment; syntax checking and the eight UCS tests passed again before the final deployment.
+- At 2026-07-15 03:20:58 UTC, Workspace 2 successfully reclaimed its expired lease at generation 23. Workspace 1's former lease had expired and awaited scheduled reclaim. There were zero unresolved `conversation_pipeline_failures`.
+- This is runtime-safety evidence only. Refresh completion, lease release, same-epoch parity, Projection Audit, Build 357 IPA, and real-iPhone acceptance remain unproven. Verdict: **PARTIAL**.
+- Follow-up observation proved 25 items also exceed the scheduled CPU window: at 03:22:05 UTC both checkpoints renewed but their durable `processed_count` remained unchanged. Worker `9325bd2a-0efb-49ef-8793-0819ec61a13c` now runs exactly one fenced membership conversation per turn, matching the runtime's documented CPU budget. Checks and 8/8 UCS tests passed before deployment. Await durable post-expiry checkpoint commit evidence.
+
+## Local transactional D1 transport — 2026-07-15
+
+- Added `scripts/d1-transactional-http-transport.mjs`. It maps the Worker D1 prepared-statement shape to Cloudflare's documented D1 Query API and sends `batch()` as one `{ batch: [...] }` HTTP request; it does not execute statements sequentially or render values into SQL.
+- `scripts/ucs-local-runtime.mjs --transport=http` can now select this transport while reusing `refreshProjectionMemberships`, `materialize`, lease fencing, checkpoint, parity, and audit code unchanged.
+- Local transport contract check passed (`d1_http_batch_contract=PASS`). Production execution remains deliberately blocked pending an explicitly injected API token limited to D1 Read/D1 Write. No token was read, displayed, inferred from Wrangler, or persisted.
+- Verdict: **PARTIAL — implementation and local contract evidence exist; production transactional connectivity, commit/rollback proof, and all downstream refresh gates remain open.**
+
+## Authorization-gate preservation — 2026-07-15
+
+- Read-only authorization check: `NEXORA_D1_API_TOKEN=absent`. No token contents were read, displayed, stored, exported, inferred, or retrieved from Wrangler, Keychain, configuration files, or another implicit source.
+- No production HTTP D1 request, materialization, refresh, parity/audit run, Build 357 build/export, IPA installation, or real-device validation was started while the authorization boundary was closed.
+- Resume point: inject an explicitly authorized short-lived token with only D1 Read and D1 Write into the execution environment, then start at production transaction commit/rollback verification using `d1-transactional-http-transport.mjs`. The UCS materializer, lease, generation fence, checkpoint, parity, and audit contracts remain unchanged and resumable.
+- Verdict: **PARTIAL — AUTHORIZATION_GATE_SAFELY_PAUSED.**
+
+## External authorization stop condition — 2026-07-15
+
+- Authorization state evidence: `NEXORA_D1_API_TOKEN=absent` in the active execution environment.
+- Blocker: `EXTERNAL_AUTHORIZATION_BLOCKED`. No new authorization mechanism, execution channel, or permission source exists. No production write was attempted.
+- Resume readiness: all UCS authority and integrity contracts remain intact; resume exactly at Production HTTP Batch Commit Verification, followed by Rollback Verification, only after explicit token injection.
+- Verdict: **PARTIAL — EXTERNAL_AUTHORIZATION_BLOCKED.**
+
+## Runtime token propagation verification — 2026-07-15
+
+- Presence-only checks in the active Codex execution boundary: shell `ABSENT`; Node child process `ABSENT`; runtime user `billtin`.
+- Launch evidence: the parent is the ChatGPT/Codex `app-server` process, so it is a separate environment from the terminal session reported by the user. PM2 is not installed/running in this execution boundary.
+- No token content was read, emitted, written, or retrieved from another source. The propagation failure is therefore at the terminal-to-Codex-app-server boundary, not in the UCS runtime or HTTP transport.
+- Resume requirement: restart/relaunch the Codex execution host with `NEXORA_D1_API_TOKEN` injected into that host environment (not merely a separate terminal), then rerun the presence-only check and begin Commit Verification.
+- Verdict: **TOKEN_PROPAGATION_FAILURE_IDENTIFIED.**
+
+## UCS_WORKSPACE2_V2_LEASE_RECOVERY_AND_FRESHNESS — 2026-07-15
+
+- Production before snapshot for `ucs-projection-membership:1:2`: `state=running`, `lease_owner=83f08e92-2aaf-4f08-95af-7dd082ca1ac7`, `lease_generation=41`, `lease_until=2026-07-15 13:18:34 UTC`, `updated_at=2026-07-15 13:13:34 UTC`, `processed_count=1530`, cursor `conversation:d1d2c9d0-4cec-4c1b-ac6c-10e6e029601f`; its remaining aggregate lag was 318. The lease was expired and neither heartbeat nor cursor had advanced.
+- Safe recovery performed once with a conditional production update requiring the same checkpoint to still be `running` with an expired lease. It changed only `state` to `paused`, cleared `lease_owner` and `lease_until`, and updated the timestamp. It preserved `cursor_json`, `processed_count=1530`, and `lease_generation=41`; it made no projection-row mutation. The predicate affected exactly one row.
+- The configured production Worker was then syntax-checked and redeployed without an intended UCS behavior change to restore scheduled delivery. Current Worker version: `5df32977-1f5f-48d9-b25a-63c6cf8eae30`; deployment reports both schedules, including `* * * * *`.
+- Checker evidence after deployment: the checkpoint remains `paused` and unclaimed at the preserved cursor and count, lag remains 318, and the newest persisted `unifiedConversation` telemetry is still `2026-07-15 13:16:30 UTC` (before recovery). Thus Cron configuration/deployment exists but scheduled-event delivery has not resumed; no reclaim, generation increase, or pipeline progress can be claimed.
+
+Verdict: **PARTIAL — SCHEDULED_TRIGGER_NON_DELIVERY_BLOCKS_WORKSPACE_2_V2_FRESHNESS.** V3 rematerialization remains explicitly unstarted; do not introduce another projection writer or mutate projection rows.
+
+## UCS_WORKSPACE2_SCHEDULED_DELIVERY_ROOT_CAUSE — 2026-07-15
+
+- Read-only production scope audit: both `(tenant_id=1, workspace_id=1)` and `(1,2)` are present in `conversation_cutover_state`; Workspace 2 has `dual_write_enabled=1`, `projection_read_enabled=0`, and rollout `0`. `monitorScheduled()` selects every `dual_write_enabled=1` scope, independently of projection-read rollout, then calls `refreshProjectionMemberships()` for each. Workspace 2 is not excluded by scope discovery, rollout, checkpoint selection, or dual-write filtering.
+- Runtime-entry audit: the minute-cron branch in `scheduled()` awaits `runStep('unifiedConversation', () => monitorScheduled(...))` before the concurrent maintenance set. `runStep` is wrapped by persistent runtime telemetry when `CLOUDMAIL_RUNTIME_TELEMETRY_AUDIT_ENABLED=true` (verified in the deployed configuration).
+- Telemetry interpretation correction: `unifiedConversation` emits one event per scheduled invocation containing an array for *both* workspaces. The latest record at `2026-07-15 13:16:30 UTC` contains Workspace 1 and Workspace 2, including Workspace 2 membership `{claimed:false, processed:0, ready:false}`. There is no separate expected Workspace 2 telemetry row.
+- Deployment `5df32977-1f5f-48d9-b25a-63c6cf8eae30` explicitly reports the `* * * * *` trigger, but after release/redeployment the audit ledger contains no runtime-step records of any kind later than 13:16:41 UTC. Thus no evidence establishes entry to `scheduled()` or `runStep('unifiedConversation')` after recovery; the paused reclaimable Workspace 2 checkpoint cannot be selected or claimed.
+
+Verdict: **OTHER_VERIFIED_CAUSE — scheduled-event delivery is absent before the Worker handler entry.** This is not a Workspace 2 filtering defect and not a Workspace-specific telemetry defect. Keep V3 unstarted and retain the checkpoint unchanged until scheduled delivery is restored.
+
+## CLOUDFLARE_SCHEDULED_EVENT_DELIVERY_ROOT_CAUSE — 2026-07-15
+
+- Correction based on later production evidence: deployment `e394d646-23a1-46fb-97a4-42eeb815702e` routes Worker version `5df32977-1f5f-48d9-b25a-63c6cf8eae30` at 100%. It reports the minute cron binding. Persistent telemetry then recorded successful `scheduled` → `unifiedConversation` invocations at 13:35:38 and 13:36:38 UTC, proving event generation, routing, Worker-version receipt, handler entry, and telemetry emission.
+- Workspace 2 was reclaimed by a concurrent production invocation: checkpoint generation `41 → 42`, owner set to `7bf7a2ca-0e23-450d-b915-b57e51d24ec7`, `processed_count 1530 → 1609`, cursor advanced to `conversation:dc053772-52c2-458e-8b61-2b1a884baee7`, and lag fell `318 → 239`. The `membership.claimed=false` fields in the logged 13:35/13:36 invocations correctly mean another invocation already held the fenced lease; they do not indicate a delivery or selection failure.
+- The earlier no-delivery finding is superseded: the temporary telemetry gap cannot establish a persistent Cloudflare delivery failure. No Cloudflare configuration, binding, version routing, telemetry, Workspace scope, or checkpoint-selection defect remains evidenced.
+
+Verdict: **OTHER_VERIFIED_CAUSE — transient observation gap superseded by verified scheduled delivery and a concurrent fenced lease holder.** Continue observing the existing single production writer to freshness; do not start V3 yet.
+
+## UCS_WORKSPACE2_FRESHNESS_COMPLETION_AND_V3_RELEASE — 2026-07-15
+
+- Natural v2 progress was observed first: generation `42 → 43`, processed `1609 → 1687`, and cursor lag `239 → 162`. This confirms the existing production scheduler and fence can make durable progress without a competing writer.
+- That generation then failed to commit/release before its five-minute lease ended (`lease_until=13:47:44 UTC`; unchanged cursor/count observed at 13:48:05). A single conditional stale-lease release affected exactly one row, preserving generation 43, count 1687, and cursor. No projection was modified.
+- The recovery remains unclaimed in the next observation: checkpoint is `paused`, owner null, lag 162. The newest persisted `unifiedConversation` telemetry is 13:43:35 UTC, before the release. Freshness is therefore not demonstrated and V3 remains disallowed.
+
+Verdict: **PARTIAL — WORKSPACE_2_V2_REPEATED_STALE_LEASE_BLOCKS_V3_RELEASE.**
+
+## UCS authoritative production-state reconciliation — 2026-07-16
+
+- Snapshot `2026-07-16 00:52:06 UTC`: both v2 membership checkpoints are ready with cursor=head and lag 0 (W1 generation 272; W2 generation 127). This supersedes prior stale-lease/freshness conclusions.
+- `processed_count=372` identifies only `ucs-projection-rematerialize-v3:1:1` (W1, generation 114); W2 had no V3 checkpoint because scheduler source excluded it with `workspaceId===1`.
+- Coverage and correctness remain separate: W1 V3 979/1968 (49.75%), W2 V3 229/2012 (11.38%). The authoritative parity contract is 10 surfaces (six workflow plus four membership).
+- Repair: schedule every dual-write scope through the existing bounded fenced V3 materializer; correctly attribute future V3 failures and resolve only a matching retryable V3 record after successful normal rematerialization. Projection reads remain 0%.
+- Checker: syntax, focused UCS contracts 9/9, and package unit checks pass. Verdict: **PARTIAL — deployment, durable V3 completion, and post-repair certification pending**.
+
+## UCS Workspace 2 V3 scheduler delivery certification — 2026-07-16
+
+- Independent snapshot at 01:07:23 UTC: Worker `40ff8b98-911d-49de-82b4-97ae6a374ad0` remains 100% routed. Telemetry 1845–1915 proves minute-cron → `unifiedConversation` → Workspace 2 selection → fenced V3 execution, with five processed and zero failed in every observed bounded turn.
+- Durable checkpoint `ucs-projection-rematerialize-v3:1:2` is independently reread at generation 11, processed 55, quarantined 0, paused/no-owner between turns, with a persisted cursor. Workspace 1 has a separate checkpoint key; current-projection uniqueness is 100% in both workspaces.
+- Workspace 2 current V3 projection count is 314/2034; cursor remaining is 1979. Measured capacity is five durable rows/completed cron cycle; forecast is 396 cycles, nominally 6h36m at the existing one-minute cadence, conditional on continuing throughput and no target growth.
+- No Workspace 2 native V3 failure exists. Historical Workspace 1 local-adapter retryables are separate; matching-resolution behavior was not exercised here. Scheduler delivery verdict: **SCHEDULER_DELIVERY_AND_CHECKPOINT_PASS**. Parity, projection-read canary, and FULL_PRODUCTION_PASS remain blocked by separate gates.
+
+## UCS Workspace 2 V3 execution evidence — 2026-07-16
+
+- Worker `40ff8b98-911d-49de-82b4-97ae6a374ad0` deployed at 00:55:09 UTC and is 100% routed with the minute Cron.
+- Scheduler telemetry IDs 1845 (00:56:45), 1852 (00:57:28), and 1859 (00:58:27) independently report Workspace 2 `v3={claimed:true,processed:5,failed:0}`. This proves repeated scheduler execution, not Workspace 1 result reuse.
+- Final snapshot 00:59:30 UTC: `ucs-projection-rematerialize-v3:1:2` exists, generation 4, `running`, processed 18, quarantined 0, cursor persisted, cursor lag 2002, and unresolved native V3 failures 0.
+- Forecast: 2002 cursor-remaining / 5 observed rows per successful run = 401 cycles, approximately 6h41m at the configured one-minute cadence, conditional on no new target growth. This is traversal capacity only.
+- Verdict: **PARTIAL — SCHEDULER REPAIR PRODUCTION-VERIFIED; V3 completion, same-epoch parity, canary, and real-device acceptance remain open.**
+
+## UCS_V3_GENERATION_103_TO_114_ZERO_COMMIT_FORENSICS_AND_RECOVERY — 2026-07-16
+
+- Authoritative checkpoint: `ucs-projection-rematerialize-v3:1:1`, pipeline `ucs-projection-rematerialize-v3`, Workspace 1. Generations 103–114 changed only fenced ownership; `processed_count=372`, cursor `conversation:2faea359-c02f-49dd-9bf8-d03be67098f6`, and quarantine count remained unchanged.
+- The last native scheduled V3 telemetry is audit ID 1838 at `2026-07-15 22:05:43 UTC` (`processed=5`). No later Worker telemetry exists. There are 1,587 eligible aggregates after the durable cursor; the first is `conversation:2fc802b3-4ec7-4f89-91f9-4ef19c553afc`.
+- Projection provenance has zero V3 rows for generations 103–114. The final durable checkpoint-linked V3 projection is generation 92 at `22:29:09 UTC`, which matches count 372 and the current cursor. No authoritative-pipeline V3 failure was recorded; the 25 historical local-adapter failures are separate and predate the native path.
+- Root cause: **OTHER_VERIFIED_CAUSE — out-of-band local-adapter claim-only invocation/termination.** The sole repository V3 path outside the native scheduled handler was `scripts/ucs-v3-rematerialize.mjs`; it bypassed telemetry and used a Wrangler-backed adapter. It is now fail-closed. The checkpoint schema has no lifecycle history, so individual historical owner UUIDs cannot be attributed beyond this evidence.
+- Recovery rule: only the native scheduled Worker may reclaim V3. No checkpoint reset, cursor rewind, direct projection mutation, or fence bypass was performed. Durable recovery still requires a telemetry-linked generation above 114, count above 372, cursor advance, and normal release.
+
+### Post-repair verification
+
+- Fresh native Worker `1134b1cb-171f-419e-b35f-be5752352af5` was deployed with Cron bindings `* * * * *` and `0 16 * * *`; the local-adapter CLI guard was verified to fail before any D1 operation.
+- Native telemetry IDs `1866` (`00:59:33 UTC`) and `1873` (`01:00:32 UTC`) each recorded `v3.claimed=true`, `v3.processed=5`, and `v3.ready=false`.
+- Checkpoint generation reached `117`, `processed_count` advanced `372 → 382`, cursor advanced to `conversation:31bbc16f-7b82-40a4-954b-31fcf39da5e0`, and the checkpoint released normally (`state=paused`, owner/lease `NULL`).
+- This closes the durable-execution recovery gate only. V3 is not complete; parity and FULL_PRODUCTION_PASS remain unasserted.
+
+## UCS V3 counter identity reconciliation and scheduler continuity — 2026-07-16
+
+- Raw D1 facts resolve the counter conflict: `lease_generation=132, processed_count=457` belongs to Workspace 1 checkpoint `ucs-projection-rematerialize-v3:1:1`; Workspace 2's authoritative checkpoint is `ucs-projection-rematerialize-v3:1:2`, tenant 1, workspace 2, pipeline `ucs-projection-rematerialize-v3`.
+- The unscoped heartbeat was a monitor-query defect: it mislabeled Workspace 1 values as Workspace 2. `lease_generation` is fencing/lease generation and `processed_count` is durable rematerialization work; neither is a projection count nor native-batch telemetry generation.
+- A global runtime-telemetry delivery gap followed the 01:14:34 UTC native batch. After fresh Worker deployment `a81acb6e-03f6-4e00-a06e-5ecaf4e03603`, native minute-cron records at 01:28:34 and 01:29:34 UTC each show Workspace 2 V3 `claimed=true, processed=5, failed=0`.
+- Durable continuity matches those events: Workspace 2 advanced `lease_generation 19→20→21`, `processed_count 95→100→105`, with distinct cursors and normal paused/no-owner release between cycles. No cursor reset, competing writer, direct projection rewrite, or parity execution was performed.
+- Verdict: **COUNTER_IDENTITY_RECONCILED_AND_PROGRESSING**. Projection reads remain 0%; parity and FULL_PRODUCTION_PASS remain prohibited until terminal ready and a fresh same-epoch audit.
+
+## Failed Workspace 2 ingest outbox remediation — 2026-07-16
+
+- Read-only production evidence identifies `ucs-canonical:1:2:104:1` as a deleted source email with no conversation binding, not a V3 checkpoint failure.
+- Worker `338018fc-7c51-4740-80e4-fc0388357441` adds only the existing `source_removed` terminal path for that exact semantic condition. Checks: syntax, focused UCS contracts 10/10, package test passed.
+- No direct outbox, checkpoint, cursor, or projection write was performed. The normal cron must claim the row before it can be recorded as resolved; at 01:42:53 UTC no post-deploy runtime telemetry existed. Mission remains **IN_PROGRESS**.
+
+## UCS V3 convergence sample — 2026-07-16 02:14 UTC
+
+- Corrected remote production D1 read-only command succeeded (nine SELECTs, `rows_written=0`, exit 0). Tombstone `ucs-canonical:1:2:104:1` is now `processed/source_removed` at 01:43:12 UTC, attempt 62, with no lease or later retry.
+- Workspace 2 V3 checkpoint is not ready: generation 39, processed 192, zero quarantine, but running under an owner whose lease expired at 01:56:22 UTC; its cursor is persisted at `conversation:18755c4f-c921-47ca-acf4-a7f2f7884995`.
+- Scheduler telemetry is globally absent after 01:55:28 UTC. The five prior W2 V3 telemetry records report `claimed=false, processed=0`, so there is no evidence of an automatic expired-lease reclaim. Target/current/missing V3 are 2068/522/1546; outbox is pending 1742 / processed 890. Keep Mission **IN_PROGRESS** and parity prohibited.
+
+## UCS native V3 lease recovery — 2026-07-16
+
+- Native recovery is production-proven without any manual state change. The post-expiry first observed W2 V3 claim is telemetry 2174 at 02:19:30 UTC; it and subsequent cycles report claimed true, five processed, zero failed.
+- Durable checkpoint continuity: `lease_generation/processed_count 39/192 → 55/272`, persisted cursor advances, then paused/no-owner/no-lease release at 03:05:27 UTC. Workspace 1 remains a separate checkpoint and writer boundary.
+- The prior claimed-false telemetry 2111–2139 predates lease expiry and correctly reflects an active lease. Source CAS permits `running` reclaim after lease expiry; recovered production behavior confirms it.
+- Classification: **CRON_DELIVERY_GAP (intermittent, recovered)**. Recovery passes; completion remains blocked by target 2069, missing V3 1451, cursor remaining 1793, and pending outbox 1715. No parity or read enablement.
+
+## UCS completion monitor authorization interruption — 2026-07-16
+
+- Repository boundary and automation memory were read successfully. The next remote read-only D1 query was rejected before SQL execution by Cloudflare API 403/7403 for the configured production D1 account path.
+- `wrangler whoami` confirms an OAuth identity and advertised D1 scope; the debug log proves the query endpoint rejected authorization. No production state was read or changed, and this must not be interpreted as scheduler, telemetry, or checkpoint evidence.
+- Resume with the same identity-constrained SELECT bundle after production D1 query access is restored. Mission remains **IN_PROGRESS**; parity and reads stay disabled.
+# UCS Workspace 2 V3 completion monitor — 2026-07-16 02:13 UTC
+
+- Repository boundary check passed before all other task actions.
+- Read-only production samples queried exactly checkpoint `ucs-projection-rematerialize-v3:1:2` with `tenant_id=1`, `workspace_id=2`, and `pipeline_key=ucs-projection-rematerialize-v3`. At `02:13:27 UTC`, the raw checkpoint remained `state=running`, `lease_generation=39`, `processed_count=192`, quarantine 0, cursor `conversation:18755c4f-c921-47ca-acf4-a7f2f7884995`, owner `56edb71a-b802-4e70-b007-246e62b2db1a`, and lease expiry `01:56:22 UTC`; the lease is expired but still recorded, not active or released.
+- Workspace 2 coverage is unchanged: target 2,068, current V3 522, missing V3 1,546, cursor remaining 1,873, duplicate current V3 rows 0, orphan current V3 rows 0, and unresolved failures 0.
+- Outbox is unchanged at `pending=1,742`, `processed=890`, `failed=0`. Target row `ucs-canonical:1:2:104:1` remains naturally resolved through minute-cron ingest as `processed/source_removed` at `01:43:12 UTC`, attempt 62, with no lease. No direct outbox mutation occurred.
+- Latest completed Workspace 2 `unifiedConversation` telemetry remains ID 2139 at `01:55:24 UTC`: live ingest claimed 2 / failed 0, membership ready, and V3 unclaimed / processed 0 / ready false. No runtime-step telemetry of any kind completed after `gmailSync` ID 2145 at `01:55:28 UTC`, despite the separate Workspace 1 checkpoint being active at generation 161 / processed 586 / quarantine 25 at `02:13:27 UTC`.
+- Workspace 2 remains shadow-only: projection reads disabled, rollout 0%, cutover epoch 1. The readiness gate is false because the checkpoint is not ready or released, cursor/missing coverage/outbox gates are nonzero, and telemetry/progress is stale. No formal same-epoch 10-surface audit, post-audit recheck, manual materializer, cursor reset, projection/checkpoint/telemetry edit, read enablement, or `FULL_PRODUCTION_PASS` occurred.
+
+## D1 read authorization recovery — 2026-07-16
+
+- Existing Wrangler OAuth refresh restored production D1 access after the prior pre-SQL 403/7403; no credential material changed or was exposed. Remote `SELECT 1` and an eleven-query scoped sample succeeded with `rows_written=0`.
+- Fresh W2 checkpoint: paused/unowned, no lease, 78/387, quarantine 0. Target/current/missing are 2097/775/1322; cursor remaining 1701; pending outbox 1690; no other non-processed state or unresolved failures; tombstone is still processed/source_removed attempt 62.
+- From the 04:27 baseline: generation +23, processed +115, target +28, current V3 +157, missing -129, cursor remaining -92, net backlog -25. Latest matching telemetry is 10:31:32 UTC; the 341-cycle figure is conditional only. Mission remains IN_PROGRESS.
+
+## Post-10:31 continuity determination — 2026-07-16
+
+- Fresh 13:17 UTC SELECT-only sample (all `rows_written=0`) is unchanged from 13:05. W2 has neither telemetry nor durable checkpoint/outbox/coverage movement after 10:31.
+- Audit logs contain no runtime step after global Gmail telemetry at 10:31:36; current Worker `338018fc-7c51-4740-80e4-fc0388357441` remains 100% routed with the minute cron configured. The scope is global, not Workspace 2-specific.
+- Classification: **CHECKPOINT_NOT_ADVANCING** with a global runtime-observability gap. Cron delivery and scheduled-handler entry cannot be separated with current evidence, so no unsupported scheduler-failure claim or repair is made. All parity gates remain closed.
+
+## Generation-243 identity correction — 2026-07-16 13:24 UTC
+
+- Fresh production D1 evidence used nine remote `SELECT` statements only (exit `0`, `rows_written=0`). The exact `13:18:57 UTC` claim with `lease_generation=243`, `processed_count=789`, and `lease_until=13:19:57 UTC` is Workspace 1 checkpoint `ucs-projection-rematerialize-v3:1:1`, not W2.
+- Exact W2 remains `ucs-projection-rematerialize-v3:1:2`, tenant 1/workspace 2, paused/unowned/unleased at generation `78`, processed `387`, quarantine `0`, and its unchanged `10:31:24 UTC` cursor. Classification: **MONITOR_FIELD_OR_EPOCH_MISMATCH**.
+- Keep the separate post-10:31 global runtime-observability gap open. The W1 claim/expiry is excluded from W2 recovery, throughput, and completion evidence. No manual runtime action, parity audit, or read enablement occurred.

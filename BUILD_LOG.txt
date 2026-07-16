@@ -1,0 +1,46 @@
+CLOUDMAIL_REAL_DEVICE_EVIDENCE_CAPTURE_AND_RELEASE_SIGNOFF
+BUILD_LOG
+
+timestamp_utc=2026-07-01T19:10:32Z
+repository=/Users/billtin/Documents/cloudmail
+
+Repository check:
+REPOSITORY_CHECK
+repository=cloudmail
+cwd=/Users/billtin/Documents/cloudmail
+git_root=N/A
+branch=N/A
+source_of_truth=true
+SUCCESS: Repository check passed.
+
+Full Xcode check:
+command=xcodebuild -version
+exit_code=1
+output=xcode-select: error: tool 'xcodebuild' requires Xcode, but active developer directory '/Library/Developer/CommandLineTools' is a command line tools instance
+
+Device discovery check:
+command=xcrun xctrace list devices
+exit_code=72
+output=xcrun: error: unable to find utility "xctrace", not a developer tool or in PATH
+
+Swift parse check:
+command=swiftc -parse files/GlassMail-project/GlassMail/Models/Models.swift files/GlassMail-project/GlassMail/Services/AppState.swift files/GlassMail-project/GlassMail/Views/AIView.swift
+exit_code=0
+output=<none>
+
+Release verifier:
+command=REQUIRE_DEVICE=1 REQUIRE_GMAIL=0 REQUIRE_SAME_DOMAIN_ATTACH=0 ./verify.sh
+exit_code=1
+summary=Backend checks passed; authenticated device login and DEVICE_XCRESULT gates failed.
+failure_1=no CLOUDMAIL_DEVICE_EMAIL/PASSWORD set - auth loop NOT proven
+failure_2=DEVICE_XCRESULT is required
+
+Release verifier with stale candidate:
+command=DEVICE_XCRESULT=artifacts/loop5-current-validation/CloudMail-Gmail-Real-iPhone-Current.xcresult REQUIRE_DEVICE=1 REQUIRE_GMAIL=0 REQUIRE_SAME_DOMAIN_ATTACH=0 ./verify.sh
+exit_code=1
+summary=Backend checks passed; auth missing; device bundle rejected as stale and not green/current.
+failure_1=no CLOUDMAIL_DEVICE_EMAIL/PASSWORD set - auth loop NOT proven
+failure_2=device evidence is stale
+failure_3=device tests not green/current
+
+DEVICE_BUILD_PASS=false

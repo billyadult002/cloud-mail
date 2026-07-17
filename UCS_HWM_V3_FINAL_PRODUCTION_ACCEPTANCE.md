@@ -93,6 +93,18 @@ without a current projection).
   Cloudflare scheduled-event gaps that self-resume via native reclaim. No manual lease action taken.
 - Worker/flag/reads unchanged and authorized; frozen-snapshot scope intact (outbox future 27 excluded).
 
+## Update — 2026-07-17 00:15 UTC long-interval checkpoint: NATIVE_RECLAIM_CONFIRMED_CONVERGENCE_IN_PROGRESS
+
+- Interval gate satisfied (~266 min since last obs). Worker `525681a1` (reconciled), flag true, reads 0%.
+- **Native reclaim confirmed:** telemetry 2821→2934 (@23:43:33); V3 gen 132→148, proc 649→729, cursor
+  03:20:14→03:39:55. Watermark immutable; backfill/membership READY; integrity 0 (dups/orphans/failures/
+  current-quarantine). contentMismatch 1336→1261; outbox_le_w 1650→1618; unexplained 1618 (=outbox_le_w+0);
+  outbox_global 1663 = le_w 1618 + future(>3807) 45. parity passed=0.
+- **Revised completion window (observed rates):** contentMismatch ~76 h; ≤W outbox drain ~228 h (~9.5 d,
+  dominant long-pole due to intermittent scheduler gaps). Native parity PASS is ~1 week+ out absent a
+  throughput change (out of scope). Verdict remains IN_PROGRESS; not BLOCKED (healthy native progress);
+  not PARITY_PASS (passed=0). Real-iPhone/cutover unchanged (not in scope).
+
 ## Follow-up to reach FULL_PRODUCTION_PASS
 
 Observe (read-only) until V3 latches READY and a `conversation_projection_parity` row shows

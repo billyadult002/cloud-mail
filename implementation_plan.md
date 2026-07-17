@@ -1,5 +1,9 @@
 # NEXORA Communication OS + Goal-Driven OS Continuous Plan
 
+## UCS HWM V3 long-interval checkpoint — 2026-07-17 00:15 UTC (NATIVE_RECLAIM_CONFIRMED_CONVERGENCE_IN_PROGRESS)
+
+- Native reclaim confirmed (telemetry 2821→2934; V3 gen 132→148, proc 649→729, cursor →2026-07-13 03:39:55). Watermark immutable; backfill/membership READY; integrity 0; reads 0%; Worker 525681a1; flag true. contentMismatch 1336→1261, outbox_le_w 1650→1618, unexplained=outbox_le_w. Observed rates: ≤W outbox drain ~228h (~9.5d) is the dominant long-pole → native parity PASS ~1 week+ out absent a (forbidden) throughput change. Next: bounded read-only checkpoint after another ≥1h interval.
+
 ## UCS HWM V3 production activation — 2026-07-16 19:27 UTC
 
 - HWM completion enabled in production for W2 (Worker `525681a1`, tag `v2026.07-ucs-hwm-v3-enabled`). Backfill READY-latched at hw=3807; V3 composite watermark `2026-07-16 19:23:13|conversation:623f0b8a…` frozen; V3 natively re-materializing ≤W. Verdict PRODUCTION_CONVERGENCE_IN_PROGRESS; reads 0%; FULL_PRODUCTION_PASS not declared.

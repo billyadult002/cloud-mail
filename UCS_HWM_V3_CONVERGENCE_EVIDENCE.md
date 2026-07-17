@@ -62,6 +62,50 @@ Backfill both times: `ready / unowned / hw=3807 / cursor=3807 / quar=24`. Member
   same ≤W snapshot's outbox+failures; no >W leakage.
 - Integrity flat: duplicates=0, orphans=0, unresolved_failures=0 across observations (V14–V17).
 
+## Long-interval checkpoint — 2026-07-17 00:15–00:17 UTC (read-only, rows_written=0)
+
+Verdict: **NATIVE_RECLAIM_CONFIRMED_CONVERGENCE_IN_PROGRESS**.
+
+| field | value |
+|-------|-------|
+| observation UTC | 2026-07-17 00:15–00:17 |
+| previous valid observation | 2026-07-16 19:48:18 (metric baseline 19:43:53) |
+| elapsed interval | ~266 min (~4h27m) — interval gate ≥1h satisfied |
+| production Worker | `525681a1` (reconciled — see note; the authorized version, active) |
+| HWM flag | `UCS_HWM_COMPLETION_ENABLED=true` |
+| projection_read_enabled / rollout | 0 / 0% |
+| latest scheduled telemetry | audit **2934** @ 2026-07-16 23:43:33 UTC (advanced from 2821 @ 19:41:26 — telemetry recovered) |
+| telemetry continuity | 2821→2934 (+113 rows) since the 19:41 gap ⇒ native reclaim confirmed; a fresh ~33-min gap at observation (23:43→00:17) is another intermittent window, not a blocker |
+| Backfill | ready / UNOWNED / hw=3807 / cursor=3807 / gen 1638 / proc 2224 / lifetime-quar 24 |
+| Membership | ready / UNOWNED |
+| V3 | paused / UNOWNED / gen **148** / proc **729** / hw `2026-07-16 19:23:13\|conversation:623f0b8a-…` (unchanged) / cursor cts **2026-07-13 03:39:55** |
+| contentMismatch | **1261** (was 1336) |
+| outbox_global / le_w / future_gt_w | 1663 / **1618** / 45 (1663 = 1618 + 45) |
+| unexplained | **1618** (== outbox_le_w 1618 + unresolved_failures 0) |
+| missing (attachments) | 5 |
+| duplicates / orphans / unresolved_failures | 0 / 0 / 0 |
+| current unresolved quarantine | 0 (lifetime counter: backfill 24, V3/membership 0) |
+| parity passed / parity hw / materializer | 0 / 3807 / (per MATERIALIZER_VERSION) |
+
+**Native reclaim confirmed (ADR-3/ADR-6):** telemetry advanced 2821→2934, and V3 gen 132→148,
+processed 649→729, cursor 2026-07-13 03:20:14 → 03:39:55 (monotonic, within ≤W). Watermark immutable
+(ADR-5). Backfill READY latched at 3807 (no revert). Integrity intact. The 19:41 gap self-resolved
+via native reclaim — not a blocker (V21: a single gap is insufficient for BLOCKED).
+
+**Drain rates (vs 19:43:53 baseline, ~271 min) & revised window (E7):**
+- V3 processed: 0.295/min (~17.7/hr).
+- contentMismatch: 0.277/min → 0 in ~76 h.
+- outbox_le_w / unexplained: **0.118/min → 0 in ~228 h (~9.5 days)** — the dominant long-pole, well
+  below the 2/invocation cap due to intermittent scheduler gaps. At observed rates, native parity PASS
+  is on the order of **~1 week+** out (bounded by the ≤W outbox drain), absent any throughput change
+  (which is out of scope).
+
+**Worker-version reconciliation:** an initial `deployments list | grep -A2 '100%' | head -1` returned
+`42a6ebe3` (a chronologically-earlier deployment block), which momentarily looked like an unregistered
+Worker change. A definitive re-read of the list tail shows the newest/active deployment is `525681a1`
+(2026-07-16 19:22:33, author saercpku) — the authorized version. No unregistered production change;
+the earlier value was a grep artifact, disclosed here for auditability.
+
 ## Observation 19:47:46 / 19:48:18 UTC — scheduler telemetry gap (read-only, rows_written=0)
 
 | field | value |

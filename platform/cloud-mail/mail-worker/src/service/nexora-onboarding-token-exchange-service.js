@@ -16,6 +16,25 @@ function tokenEndpointFor(provider, tenantHint) {
 	return spec.tokenEndpoint.replace('{tenant}', tenantHint || 'organizations');
 }
 
+// Decodes (does NOT cryptographically verify) the id_token's payload claims -- signature
+// verification against the provider's JWKS is a real network/crypto dependency out of this
+// pass's logic-complete scope (same distinction as the token endpoint itself). This is
+// sufficient to wire identity (`sub`/`email`) and Microsoft tenant (`tid`) binding logic
+// deterministically; a production hardening pass should add JWKS signature verification
+// before treating these claims as fully authoritative.
+function decodeIdTokenClaims(idToken) {
+	if (!idToken) return null;
+	const parts = String(idToken).split('.');
+	if (parts.length !== 3) return null;
+	try {
+		const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+		const padded = payload + '='.repeat((4 - (payload.length % 4)) % 4);
+		return JSON.parse(atob(padded));
+	} catch {
+		return null;
+	}
+}
+
 async function parseTokenResponse(response) {
 	let body;
 	try {
@@ -79,5 +98,5 @@ async function refreshAccessToken(env, { provider, refreshToken, tenantHint = nu
 	return parseTokenResponse(response);
 }
 
-export { CLIENT_SECRET_ENV, tokenEndpointFor };
+export { CLIENT_SECRET_ENV, tokenEndpointFor, decodeIdTokenClaims };
 export default { exchangeAuthorizationCode, refreshAccessToken };

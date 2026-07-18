@@ -6,8 +6,8 @@
 // mission_runtime_missions run, with no further user action required.
 import durableMissionRuntime from './durable-mission-runtime-service.js';
 import onboardingStateMachine from './nexora-onboarding-state-machine.js';
-import onboardingOAuth, { insertAuthorizationSession, validateGrantedScopes } from './nexora-onboarding-oauth-service.js';
-import tokenExchange from './nexora-onboarding-token-exchange-service.js';
+import onboardingOAuth, { insertAuthorizationSession, validateGrantedScopes, validateIdentity, validateMicrosoftTenant } from './nexora-onboarding-oauth-service.js';
+import tokenExchange, { decodeIdTokenClaims } from './nexora-onboarding-token-exchange-service.js';
 import tokenStorage from './nexora-onboarding-token-storage-service.js';
 import onboardingSync from './nexora-onboarding-sync-service.js';
 
@@ -62,10 +62,26 @@ async function startOnboarding(c, scope, { provider, capabilities, idempotencyKe
 // user action required beyond the provider consent screen itself. The Mission's underlying
 // mission_runtime_runs lease is claimed here (real, fenced, per durable-mission-runtime-service)
 // so this is restart-safe the same way every other Mission Runtime step is.
-async function handleCallback(c, scope, { state, verifier, code = null, redirectUri = null, callbackFingerprint, fetchImpl }) {
+async function handleCallback(c, scope, { state, verifier, code = null, redirectUri = null, callbackFingerprint, fetchImpl, loginHint = null, allowedMicrosoftTenantIds = [] }) {
 	const consumption = await onboardingOAuth.consumeCallback(c, scope, { state, verifier, receivedCallbackFingerprint: callbackFingerprint });
 	if (!consumption.ok) return { ok: false, reason: consumption.reason };
-	if (consumption.duplicate) return { ok: true, duplicate: true, resumeCheckpoint: consumption.resumeCheckpoint };
+	if (consumption.duplicate) {
+		// Restart-safety fix: a session can legitimately be 'consumed' while no token was ever
+		// stored, if the process was evicted between exchangeAuthorizationCode() succeeding and
+		// storeTokens() completing (both are plain sequential awaits with no intermediate
+		// checkpoint -- nothing running in memory survives a Worker eviction). Rather than
+		// stranding the Mission, a resupplied `code` on the "duplicate" delivery is used to
+		// retry the exchange+storage steps instead of short-circuiting. A genuinely-already-
+		// stored token (the normal duplicate-delivery case) is still a true no-op.
+		const missionId = consumption.onboardingMissionId;
+		const alreadyStored = missionId ? await c.env.db.prepare(`SELECT 1 FROM nexora_onboarding_tokens WHERE onboarding_mission_id=?1`).bind(missionId).first() : null;
+		if (alreadyStored || !code || !redirectUri || !missionId) {
+			return { ok: true, duplicate: true, resumeCheckpoint: consumption.resumeCheckpoint };
+		}
+		// Fall through to the exchange path below using the resupplied code -- this mission was
+		// never actually completed.
+		return handleCallbackExchange(c, scope, { missionId, provider: consumption.provider, code, verifier, redirectUri, fetchImpl, loginHint, allowedMicrosoftTenantIds, resumeCheckpoint: consumption.resumeCheckpoint, run: await reclaimMissionRun(c, scope, missionId) });
+	}
 
 	const missionId = consumption.onboardingMissionId;
 	const provider = consumption.provider;
@@ -75,27 +91,51 @@ async function handleCallback(c, scope, { state, verifier, code = null, redirect
 	const afterConsent = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first();
 	if (onboardingStateMachine.allowed(afterConsent.phase, 'authorization_received')) await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'authorization_received' });
 
-	// Automatic Mission continuation: claim/advance the underlying durable Mission run so the
-	// caller never has to separately "resume" anything.
+	const run = await reclaimMissionRun(c, scope, missionId);
+	return handleCallbackExchange(c, scope, { missionId, provider, code, verifier, redirectUri, fetchImpl, loginHint, allowedMicrosoftTenantIds, resumeCheckpoint: consumption.resumeCheckpoint, run });
+}
+
+// Automatic Mission continuation: claim/advance the underlying durable Mission run so the
+// caller never has to separately "resume" anything.
+async function reclaimMissionRun(c, scope, missionId) {
 	const runId = `onboarding-run:${missionId}`;
 	await c.env.db.prepare(`INSERT OR IGNORE INTO mission_runtime_runs(id,mission_id,tenant_id,workspace_id,state) VALUES(?1,?2,?3,?4,'runnable')`).bind(runId, missionId, scope.tenantId, scope.workspaceId).run();
 	const run = await durableMissionRuntime.claimRun(c, scope, runId).catch(() => null);
 	if (run) {
-		await c.env.db.prepare(`UPDATE mission_runtime_missions SET state='running',version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND state='runnable'`).bind(missionId, scope.tenantId, scope.workspaceId).run();
+		await c.env.db.prepare(`UPDATE mission_runtime_missions SET state='running',version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND state IN ('runnable','running')`).bind(missionId, scope.tenantId, scope.workspaceId).run();
 	}
+	return run;
+}
 
-	// Required Output #4: automatic capability-discovery-to-initial-sync continuation using
-	// the REAL provider adapter contract (exchangeAuthorizationCode), not stub-only
-	// intermediate data. Only runs when the caller actually has an authorization `code` (a
-	// duplicate callback or a state/PKCE-only test does not) -- exchange, storage, and
-	// capability discovery all use genuinely obtained data from here on.
+// Required Output #4 + identity/tenant validation: automatic capability-discovery-to-initial-
+// sync continuation using the REAL provider adapter contract, with identity and (for
+// Microsoft) tenant validation actually enforced against the decoded id_token before any
+// token is trusted -- not just available as an untested helper. Shared by both the normal
+// callback path and the restart-safe duplicate-retry path in handleCallback() above, so a
+// Worker eviction between exchange and storage is recoverable via a resupplied callback
+// rather than stranding the Mission.
+async function handleCallbackExchange(c, scope, { missionId, provider, code, verifier, redirectUri, fetchImpl, loginHint, allowedMicrosoftTenantIds, resumeCheckpoint, run }) {
 	let tokenExchangeResult = null;
 	let capabilityStatus = null;
 	let syncDispatched = false;
 	if (code && redirectUri) {
 		tokenExchangeResult = await tokenExchange.exchangeAuthorizationCode(c.env, { provider, code, verifier, redirectUri }, fetchImpl);
 		if (tokenExchangeResult.ok) {
-			await tokenStorage.storeTokens(c, scope, { onboardingMissionId: missionId, provider, providerAccountHash: await hash(`${provider}:${missionId}`), refreshToken: tokenExchangeResult.refreshToken || '', accessToken: tokenExchangeResult.accessToken, accessTokenExpiresAt: tokenExchangeResult.expiresAt, grantedScopes: tokenExchangeResult.grantedScopes });
+			const claims = decodeIdTokenClaims(tokenExchangeResult.idToken);
+			const identityResult = validateIdentity({ expectedLoginHint: loginHint, providerSubject: claims?.sub, providerEmail: claims?.email });
+			const tenantResult = provider === 'microsoft' ? validateMicrosoftTenant({ allowedTenantIds: allowedMicrosoftTenantIds, observedTenantId: claims?.tid }) : { valid: true };
+
+			if (!identityResult.valid || !tenantResult.valid) {
+				// A real, precise conflict -- never silently proceed with a mismatched identity
+				// or a disallowed tenant, and never store the token for it.
+				const current = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first();
+				if (onboardingStateMachine.allowed(current.phase, 'validating_authority')) await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'validating_authority' });
+				const revalidated = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first();
+				if (onboardingStateMachine.allowed(revalidated.phase, 'blocked')) await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'blocked', blockedReason: !identityResult.valid ? identityResult.reason : tenantResult.reason, requiredHumanActor: 'end_user' });
+				return { ok: true, duplicate: false, missionId, resumeCheckpoint, phase: (await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first()).phase, missionResumed: Boolean(run), tokenExchangeAttempted: true, tokenExchangeOk: true, identityValid: false, capabilityStatus: null, syncDispatched: false };
+			}
+
+			await tokenStorage.storeTokens(c, scope, { onboardingMissionId: missionId, provider, providerAccountHash: await hash(claims?.sub || `${provider}:${missionId}`), refreshToken: tokenExchangeResult.refreshToken || '', accessToken: tokenExchangeResult.accessToken, accessTokenExpiresAt: tokenExchangeResult.expiresAt, grantedScopes: tokenExchangeResult.grantedScopes });
 
 			const sessionRow = await c.env.db.prepare(`SELECT scopes_json FROM nexora_onboarding_authorization_sessions WHERE onboarding_mission_id=?1 ORDER BY created_at DESC LIMIT 1`).bind(missionId).first();
 			const requiredScopes = JSON.parse(sessionRow?.scopes_json || '[]');
@@ -126,7 +166,7 @@ async function handleCallback(c, scope, { state, verifier, code = null, redirect
 		}
 	}
 
-	return { ok: true, duplicate: false, missionId, resumeCheckpoint: consumption.resumeCheckpoint, phase: (await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first()).phase, missionResumed: Boolean(run), tokenExchangeAttempted: Boolean(code), tokenExchangeOk: tokenExchangeResult?.ok ?? null, capabilityStatus, syncDispatched };
+	return { ok: true, duplicate: false, missionId, resumeCheckpoint, phase: (await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first()).phase, missionResumed: Boolean(run), tokenExchangeAttempted: Boolean(code), tokenExchangeOk: tokenExchangeResult?.ok ?? null, capabilityStatus, syncDispatched };
 }
 
 // Restart recovery entry point: re-reads authoritative D1 state (never trusts caller-held

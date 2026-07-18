@@ -165,7 +165,7 @@ async function consumeCallback(c, scope, { state, verifier, receivedCallbackFing
 	const stateHash = await hexHash(state);
 	const session = await c.env.db.prepare(`SELECT * FROM nexora_onboarding_authorization_sessions WHERE tenant_id=?1 AND workspace_id=?2 AND state_hash=?3`).bind(scope.tenantId, scope.workspaceId, stateHash).first();
 	if (!session) return { ok: false, reason: 'INVALID_STATE' }; // fails closed -- never guesses which session this belongs to
-	if (session.status === 'consumed') return { ok: true, duplicate: true, alreadyConsumed: true, resumeCheckpoint: session.resume_checkpoint };
+	if (session.status === 'consumed') return { ok: true, duplicate: true, alreadyConsumed: true, resumeCheckpoint: session.resume_checkpoint, onboardingMissionId: session.onboarding_mission_id, provider: session.provider };
 	if (session.status !== 'pending') return { ok: false, reason: `SESSION_${session.status.toUpperCase()}` };
 	if (Date.parse(session.expires_at) <= Date.now()) {
 		await c.env.db.prepare(`UPDATE nexora_onboarding_authorization_sessions SET status='expired' WHERE id=?1 AND status='pending'`).bind(session.id).run();
@@ -180,7 +180,7 @@ async function consumeCallback(c, scope, { state, verifier, receivedCallbackFing
 	if (!result.meta?.changes) {
 		// Lost the race to a concurrent consumer (e.g. duplicate delivery arriving at the exact
 		// same instant) -- treat exactly like an already-consumed duplicate, not an error.
-		return { ok: true, duplicate: true, alreadyConsumed: true, resumeCheckpoint: `resume:${session.onboarding_mission_id}` };
+		return { ok: true, duplicate: true, alreadyConsumed: true, resumeCheckpoint: `resume:${session.onboarding_mission_id}`, onboardingMissionId: session.onboarding_mission_id, provider: session.provider };
 	}
 	return { ok: true, duplicate: false, onboardingMissionId: session.onboarding_mission_id, provider: session.provider, resumeCheckpoint: `resume:${session.onboarding_mission_id}` };
 }

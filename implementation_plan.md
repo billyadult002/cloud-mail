@@ -657,3 +657,26 @@ Remaining Cloudflare work (Checkpoints 4-11 of the extended mission, none starte
 Verdict: PARTIAL_ZERO_TOUCH_OAUTH_AND_DOMAIN_PROVISIONING_FOUNDATION (Google/Microsoft logic-complete
 sub-portion is real and tested; Cloudflare is foundation-only). LOGIC_COMPLETE_PARTIAL remains withheld per
 the mission's own rule until the Cloudflare items above close.
+
+## Continued — 2026-07-18, same Mission (NEXORA GOOGLE AND MICROSOFT ZERO-TOUCH ONBOARDING COMPLETION AND
+## CLOUDFLARE SCOPE CONTAINMENT)
+
+Full audit reconciliation against the original Zero-Touch onboarding requirement list (not just the prior
+execution summary). Result: the prior "Checkpoint 2 fully closed" claim was correct for what it explicitly
+covered, but two callback-path gaps existed that the summary didn't surface — both closed in commit `867c523`:
+1. Identity/tenant validation now actually enforced in `handleCallbackExchange` via real `id_token` claim
+   decoding, not just available as untested helpers.
+2. A crash between token exchange succeeding and token storage completing is now recoverable via a resupplied
+   authorization code on a retried/duplicate callback, rather than stranding the Mission permanently.
+
+**Verdict updated: LOGIC_COMPLETE_PARTIAL for Google/Microsoft** (was PARTIAL_ZERO_TOUCH_OAUTH_AND_DOMAIN_
+PROVISIONING_FOUNDATION). Full suite 431/431. Cloudflare remains frozen at foundation-only
+(`3b76d37`) with independently re-verified zero write capability — no further Cloudflare work was done or is
+authorized until a separate future Mission is opened for it, per this mission's explicit scope-containment
+boundary.
+
+Remaining for FULL PASS (external, not code-level): production Google/Microsoft OAuth app registration
+(requires the user's own Google Cloud Console / Microsoft Entra access), real provider refresh/revocation
+observation, authenticated desktop acceptance, real iPhone acceptance — see
+`NEXORA_PROVIDER_ACCEPTANCE_RUNBOOK.md` Steps 3-9 for the exact remaining sequence, requiring no further
+architecture or code redesign.

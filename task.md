@@ -906,3 +906,31 @@ Verdict: **PARTIAL — WORKSPACE_2_V2_REPEATED_STALE_LEASE_BLOCKS_V3_RELEASE.**
   bootstrap package are all still MISSING, honestly not claimed done.
 - Next executable step: Email Worker ingestion contract (tenant isolation, duplicate-delivery protection,
   size/attachment limits) and routing-rule/destination-address execution against the change planner's output.
+
+## NEXORA Google/Microsoft completion audit + gap closure; Cloudflare freeze confirmed — 2026-07-18
+
+- Mission NEXORA GOOGLE AND MICROSOFT ZERO-TOUCH ONBOARDING COMPLETION AND CLOUDFLARE SCOPE CONTAINMENT
+  (same authoritative Mission, continued). Reproduced commits `e3a71df`/`e64db49`/`3b76d37` and the 427/427
+  suite directly from HEAD; confirmed none of the three touched `jwt-utils.js` or
+  `jwt-verify-missing-token.test.mjs` (that fix runs independently in `task_35752626`).
+- Audit found two real code-level gaps the prior "Checkpoint 2 fully closed" claim had not covered: identity/
+  tenant validation built but never called from the real callback; no restart-safe checkpoint between token
+  exchange and token storage. **Both closed in commit `867c523`**, not deferred — 4 new real tests, full suite
+  431/431.
+- **Verdict: LOGIC_COMPLETE_PARTIAL for Google/Microsoft.** Every item in the original Zero-Touch onboarding
+  scope (state machine, all 8 HTTP routes, durable sessions, token lifecycle, provider discovery, capability
+  discovery, initial sync, restart recovery, ordinary-user surface, operational visibility, scorecard) is now
+  VERIFIED against real D1/deterministic-fixture tests. Only external production registration (Google Cloud
+  Console / Microsoft Entra) and real-device acceptance remain — see `NEXORA_PROVIDER_ACCEPTANCE_RUNBOOK.md`.
+- Cloudflare foundation (`3b76d37`) independently re-verified as frozen/write-incapable: zero `fetch()` calls
+  in any Cloudflare service file, no HTTP route registered, all mutations confined to NEXORA's own local
+  planning tables. No further Cloudflare scope was added this Mission, per its explicit boundary. Full
+  Cloudflare frozen-scope inventory in `NEXORA_GMOAUTH_COMPLETION_AND_CLOUDFLARE_FREEZE_REPORT.md`.
+- Production credential blockers (unchanged): real Google/Microsoft OAuth app registration requires the
+  user's own Google Cloud Console / Microsoft Entra access — cannot be self-granted. Real-device acceptance
+  requires physical hardware and user presence.
+- Next executable checkpoint: production registration (external, per the admin bootstrap packages) →
+  `NEXORA_PROVIDER_ACCEPTANCE_RUNBOOK.md` Steps 3-9. A future, separately authorized Mission may resume
+  Cloudflare scope (Email Routing execution, Worker ingestion, routing-rule execution, drift repair, HTTP
+  routes, visibility, scorecard, ADR expansion) only after Google/Microsoft reaches production acceptance or
+  is explicitly reprioritized.

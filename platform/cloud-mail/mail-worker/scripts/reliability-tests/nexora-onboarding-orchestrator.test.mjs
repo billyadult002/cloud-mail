@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import onboardingOrchestrator from '../../src/service/nexora-onboarding-orchestrator-service.js';
 import onboardingStateMachine from '../../src/service/nexora-onboarding-state-machine.js';
+import tokenStorage from '../../src/service/nexora-onboarding-token-storage-service.js';
 
 const TENANT_ID = 990601;
 const WORKSPACE_ID = 990602;
@@ -58,8 +59,31 @@ const SCHEMA_STATEMENTS = [
 		callback_fingerprint TEXT, resume_checkpoint TEXT,
 		UNIQUE(tenant_id,workspace_id,state_hash)
 	)`,
+	`CREATE TABLE nexora_onboarding_tokens (
+		id TEXT PRIMARY KEY, onboarding_mission_id TEXT NOT NULL, tenant_id INTEGER NOT NULL, workspace_id INTEGER NOT NULL,
+		provider TEXT NOT NULL CHECK(provider IN ('google','microsoft')), provider_account_hash TEXT NOT NULL,
+		refresh_token_ciphertext TEXT NOT NULL, access_token_ciphertext TEXT, access_token_expires_at TEXT,
+		granted_scopes_json TEXT NOT NULL, rotation_generation INTEGER NOT NULL DEFAULT 1,
+		connection_health TEXT NOT NULL DEFAULT 'healthy' CHECK(connection_health IN ('healthy','degraded','revoked','unknown')),
+		last_successful_refresh_at TEXT, last_failed_refresh_at TEXT, refresh_failure_count INTEGER NOT NULL DEFAULT 0,
+		revoked_at TEXT, revoked_reason TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(onboarding_mission_id)
+	)`,
+	`CREATE TABLE nexora_onboarding_capabilities (
+		id TEXT PRIMARY KEY, onboarding_mission_id TEXT NOT NULL, tenant_id INTEGER NOT NULL, workspace_id INTEGER NOT NULL,
+		provider TEXT NOT NULL, capability_key TEXT NOT NULL,
+		status TEXT NOT NULL CHECK(status IN ('SUPPORTED','UNSUPPORTED','CONSENT_REQUIRED','ADMIN_APPROVAL_REQUIRED','POLICY_DENIED','TEMPORARILY_UNAVAILABLE','DEGRADED')),
+		reason_codes_json TEXT NOT NULL DEFAULT '[]', observed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(onboarding_mission_id, capability_key)
+	)`,
+	`CREATE TABLE nexora_autonomy_jobs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, domain TEXT COLLATE NOCASE, job_type TEXT NOT NULL, idempotency_key TEXT NOT NULL UNIQUE,
+		state TEXT NOT NULL CHECK(state IN ('QUEUED','RUNNING','RETRYING','SUCCEEDED','BLOCKED','FAILED')) DEFAULT 'QUEUED', attempt_count INTEGER NOT NULL DEFAULT 0,
+		lease_until TEXT, input_json TEXT NOT NULL DEFAULT '{}', result_json TEXT NOT NULL DEFAULT '{}', blocker_code TEXT, next_attempt_at TEXT,
+		created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`,
 ];
-const TABLES = ['mission_runtime_missions', 'mission_runtime_runs', 'mission_runtime_events', 'nexora_onboarding_state', 'nexora_onboarding_authorization_sessions'];
+const TABLES = ['mission_runtime_missions', 'mission_runtime_runs', 'mission_runtime_events', 'nexora_onboarding_state', 'nexora_onboarding_authorization_sessions', 'nexora_onboarding_tokens', 'nexora_onboarding_capabilities', 'nexora_autonomy_jobs'];
 
 async function resetSchema() {
 	await env.db.batch(TABLES.map((t) => env.db.prepare(`DROP TABLE IF EXISTS ${t}`)));
@@ -186,5 +210,73 @@ describe('NEXORA onboarding orchestrator — end-to-end real D1 (Checkpoint 4/8)
 		const repaired = await onboardingOrchestrator.repairOnboarding(c, scope, { missionId: started.missionId });
 		expect(repaired.ok).toBe(true);
 		expect(repaired.phase).toBe('validating_authority');
+	});
+});
+
+describe('NEXORA onboarding orchestrator — full real chain: callback code -> token exchange -> storage -> capability discovery -> sync dispatch', () => {
+	function fixtureFetch(scopeString) {
+		return async () => ({ ok: true, status: 200, json: async () => ({ access_token: 'fixture-access-token', refresh_token: 'fixture-refresh-token', expires_in: 3600, scope: scopeString }) });
+	}
+
+	it('Required Output #4: a callback WITH a real authorization code drives the chain all the way to starting_initial_sync, with encrypted tokens stored and capability SUPPORTED', async () => {
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', jwt_secret: 'test-only-pool-workers-encryption-secret' } };
+		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'chain-1' });
+		expect(started.ok).toBe(true);
+
+		const result = await onboardingOrchestrator.handleCallback(c, scope, {
+			state: started.state,
+			verifier: started.verifier,
+			code: 'fixture-authorization-code',
+			redirectUri: 'https://nexora.example/callback/google',
+			callbackFingerprint: 'fp-chain-1',
+			fetchImpl: fixtureFetch('openid email https://www.googleapis.com/auth/gmail.readonly'),
+		});
+
+		expect(result.ok).toBe(true);
+		expect(result.tokenExchangeAttempted).toBe(true);
+		expect(result.tokenExchangeOk).toBe(true);
+		expect(result.capabilityStatus).toBe('SUPPORTED');
+		expect(result.syncDispatched).toBe(true);
+		expect(result.phase).toBe('starting_initial_sync');
+
+		// Real encrypted token storage -- round-trips correctly, ciphertext at rest.
+		const health = await tokenStorage.connectionHealth(c, scope, { onboardingMissionId: started.missionId });
+		expect(health.exists).toBe(true);
+		expect(health.health).toBe('healthy');
+		const tokenRow = await env.db.prepare(`SELECT refresh_token_ciphertext FROM nexora_onboarding_tokens WHERE onboarding_mission_id=?1`).bind(started.missionId).first();
+		expect(tokenRow.refresh_token_ciphertext).not.toContain('fixture-refresh-token');
+
+		const capabilityRow = await env.db.prepare(`SELECT status FROM nexora_onboarding_capabilities WHERE onboarding_mission_id=?1 AND capability_key='mail_read'`).bind(started.missionId).first();
+		expect(capabilityRow.status).toBe('SUPPORTED');
+
+		const job = await env.db.prepare(`SELECT COUNT(*) n FROM nexora_autonomy_jobs WHERE idempotency_key=?1`).bind(`sync:${started.missionId}`).first();
+		expect(Number(job.n)).toBe(1);
+	});
+
+	it('insufficient granted scope blocks with CAPABILITY_SCOPE_INSUFFICIENT rather than falsely proceeding to sync', async () => {
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', jwt_secret: 'test-only-pool-workers-encryption-secret' } };
+		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'chain-2' });
+		// Provider grants only 'openid' -- not the requested gmail.readonly scope (e.g. user
+		// denied part of the consent screen).
+		const result = await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-code-2', redirectUri: 'https://x/callback', callbackFingerprint: 'fp-chain-2', fetchImpl: fixtureFetch('openid') });
+		expect(result.capabilityStatus).not.toBe('SUPPORTED');
+		expect(result.syncDispatched).toBe(false);
+		expect(result.phase).toBe('blocked');
+		const phaseRow = await env.db.prepare(`SELECT blocked_reason,required_human_actor FROM nexora_onboarding_state WHERE mission_id=?1`).bind(started.missionId).first();
+		expect(phaseRow.blocked_reason).toBe('CAPABILITY_SCOPE_INSUFFICIENT');
+		expect(phaseRow.required_human_actor).toBe('end_user');
+	});
+
+	it('a token-exchange failure (e.g. invalid_grant for a reused code) drives the phase to failed with the real error code, not silently ignored', async () => {
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', jwt_secret: 'test-only-pool-workers-encryption-secret' } };
+		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'chain-3' });
+		const failingFetch = async () => ({ ok: false, status: 400, json: async () => ({ error: 'invalid_grant', error_description: 'Code was already redeemed.' }) });
+		const result = await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'reused-code', redirectUri: 'https://x/callback', callbackFingerprint: 'fp-chain-3', fetchImpl: failingFetch });
+		expect(result.tokenExchangeOk).toBe(false);
+		expect(result.phase).toBe('failed');
+		const phaseRow = await env.db.prepare(`SELECT blocked_reason FROM nexora_onboarding_state WHERE mission_id=?1`).bind(started.missionId).first();
+		expect(phaseRow.blocked_reason).toBe('invalid_grant');
+		const tokenCount = await env.db.prepare(`SELECT COUNT(*) n FROM nexora_onboarding_tokens WHERE onboarding_mission_id=?1`).bind(started.missionId).first();
+		expect(Number(tokenCount.n)).toBe(0); // no token stored for a failed exchange
 	});
 });

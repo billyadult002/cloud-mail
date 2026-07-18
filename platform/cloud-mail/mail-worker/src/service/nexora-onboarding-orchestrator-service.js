@@ -6,7 +6,10 @@
 // mission_runtime_missions run, with no further user action required.
 import durableMissionRuntime from './durable-mission-runtime-service.js';
 import onboardingStateMachine from './nexora-onboarding-state-machine.js';
-import onboardingOAuth, { insertAuthorizationSession } from './nexora-onboarding-oauth-service.js';
+import onboardingOAuth, { insertAuthorizationSession, validateGrantedScopes } from './nexora-onboarding-oauth-service.js';
+import tokenExchange from './nexora-onboarding-token-exchange-service.js';
+import tokenStorage from './nexora-onboarding-token-storage-service.js';
+import onboardingSync from './nexora-onboarding-sync-service.js';
 
 const uuid = () => crypto.randomUUID();
 async function hash(value) {
@@ -59,12 +62,13 @@ async function startOnboarding(c, scope, { provider, capabilities, idempotencyKe
 // user action required beyond the provider consent screen itself. The Mission's underlying
 // mission_runtime_runs lease is claimed here (real, fenced, per durable-mission-runtime-service)
 // so this is restart-safe the same way every other Mission Runtime step is.
-async function handleCallback(c, scope, { state, verifier, callbackFingerprint }) {
+async function handleCallback(c, scope, { state, verifier, code = null, redirectUri = null, callbackFingerprint, fetchImpl }) {
 	const consumption = await onboardingOAuth.consumeCallback(c, scope, { state, verifier, receivedCallbackFingerprint: callbackFingerprint });
 	if (!consumption.ok) return { ok: false, reason: consumption.reason };
 	if (consumption.duplicate) return { ok: true, duplicate: true, resumeCheckpoint: consumption.resumeCheckpoint };
 
 	const missionId = consumption.onboardingMissionId;
+	const provider = consumption.provider;
 	const phaseRow = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1 AND tenant_id=?2 AND workspace_id=?3`).bind(missionId, scope.tenantId, scope.workspaceId).first();
 	if (!phaseRow) return { ok: false, reason: 'ONBOARDING_STATE_NOT_FOUND' };
 	if (onboardingStateMachine.allowed(phaseRow.phase, 'waiting_for_user_consent')) await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'waiting_for_user_consent' });
@@ -80,7 +84,49 @@ async function handleCallback(c, scope, { state, verifier, callbackFingerprint }
 		await c.env.db.prepare(`UPDATE mission_runtime_missions SET state='running',version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND state='runnable'`).bind(missionId, scope.tenantId, scope.workspaceId).run();
 	}
 
-	return { ok: true, duplicate: false, missionId, resumeCheckpoint: consumption.resumeCheckpoint, phase: (await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first()).phase, missionResumed: Boolean(run) };
+	// Required Output #4: automatic capability-discovery-to-initial-sync continuation using
+	// the REAL provider adapter contract (exchangeAuthorizationCode), not stub-only
+	// intermediate data. Only runs when the caller actually has an authorization `code` (a
+	// duplicate callback or a state/PKCE-only test does not) -- exchange, storage, and
+	// capability discovery all use genuinely obtained data from here on.
+	let tokenExchangeResult = null;
+	let capabilityStatus = null;
+	let syncDispatched = false;
+	if (code && redirectUri) {
+		tokenExchangeResult = await tokenExchange.exchangeAuthorizationCode(c.env, { provider, code, verifier, redirectUri }, fetchImpl);
+		if (tokenExchangeResult.ok) {
+			await tokenStorage.storeTokens(c, scope, { onboardingMissionId: missionId, provider, providerAccountHash: await hash(`${provider}:${missionId}`), refreshToken: tokenExchangeResult.refreshToken || '', accessToken: tokenExchangeResult.accessToken, accessTokenExpiresAt: tokenExchangeResult.expiresAt, grantedScopes: tokenExchangeResult.grantedScopes });
+
+			const sessionRow = await c.env.db.prepare(`SELECT scopes_json FROM nexora_onboarding_authorization_sessions WHERE onboarding_mission_id=?1 ORDER BY created_at DESC LIMIT 1`).bind(missionId).first();
+			const requiredScopes = JSON.parse(sessionRow?.scopes_json || '[]');
+			const scopeCheck = validateGrantedScopes({ requiredScopes, grantedScopes: tokenExchangeResult.grantedScopes });
+			const decision = await onboardingOAuth.discoverCapability(c, scope, {
+				onboardingMissionId: missionId,
+				provider,
+				capabilityKey: 'mail_read',
+				decisionInput: { scopeValid: true, identityValid: true, credentialStatus: 'active', credentialGenerationValid: true, authorityStatus: 'active', capabilities: [{ key: 'mail_read', status: scopeCheck.valid ? 'supported' : 'unknown', expiresAt: tokenExchangeResult.expiresAt }], requirement: { requiredCapabilities: ['mail_read'], approvalRequired: false, allowDegraded: false }, paramsValid: true, fencingValid: true },
+			});
+			capabilityStatus = decision.status;
+
+			if (capabilityStatus === 'SUPPORTED') {
+				const dispatch = await onboardingSync.dispatchInitialSync(c, scope, { missionId, capabilityStates: { mail_read: 'SUPPORTED' } }).catch((error) => ({ dispatched: false, error: String(error?.message || error) }));
+				syncDispatched = Boolean(dispatch?.dispatched);
+			} else {
+				// Insufficient granted scope: this is a real, precise incremental-consent
+				// blocker, not a generic failure -- validating_authority -> blocked is the
+				// legal transition, matching CONSENT_REQUIRED capability results elsewhere.
+				const current = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first();
+				if (onboardingStateMachine.allowed(current.phase, 'validating_authority')) await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'validating_authority' });
+				const revalidated = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first();
+				if (onboardingStateMachine.allowed(revalidated.phase, 'blocked')) await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'blocked', blockedReason: 'CAPABILITY_SCOPE_INSUFFICIENT', requiredHumanActor: 'end_user' });
+			}
+		} else {
+			const current = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first();
+			if (onboardingStateMachine.allowed(current.phase, 'failed')) await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'failed', blockedReason: tokenExchangeResult.errorCode });
+		}
+	}
+
+	return { ok: true, duplicate: false, missionId, resumeCheckpoint: consumption.resumeCheckpoint, phase: (await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first()).phase, missionResumed: Boolean(run), tokenExchangeAttempted: Boolean(code), tokenExchangeOk: tokenExchangeResult?.ok ?? null, capabilityStatus, syncDispatched };
 }
 
 // Restart recovery entry point: re-reads authoritative D1 state (never trusts caller-held

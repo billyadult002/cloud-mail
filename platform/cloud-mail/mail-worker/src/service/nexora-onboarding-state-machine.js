@@ -62,6 +62,14 @@ async function advancePhase(c, scope, { missionId, to, blockedReason = null, req
 		.bind(missionId, to, blockedReason, requiredHumanActor, resumeToken, scope.tenantId, scope.workspaceId, row.phase, row.phase_version)
 		.run();
 	if (!result.meta?.changes) throw new Error('nexora_onboarding_phase_conflict');
+	// Evidence Requirement #5: every material transition is recorded, reusing the same
+	// append-only mission_runtime_events audit table the Durable Mission Runtime already
+	// writes to -- one evidence trail, not a second parallel one.
+	await c.env.db
+		.prepare(`INSERT INTO mission_runtime_events(id,mission_id,tenant_id,workspace_id,event_type,from_state,to_state,detail_json) VALUES(?1,?2,?3,?4,'ONBOARDING_PHASE_TRANSITION',?5,?6,?7)`)
+		.bind(uuid(), missionId, scope.tenantId, scope.workspaceId, row.phase, to, JSON.stringify({ blocked_reason: blockedReason, required_human_actor: requiredHumanActor }))
+		.run()
+		.catch(() => {}); // evidence logging must never block a legitimate state transition
 	return { from: row.phase, to, phaseVersion: row.phase_version + 1 };
 }
 

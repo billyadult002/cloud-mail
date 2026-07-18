@@ -83,4 +83,40 @@ async function handleCallback(c, scope, { state, verifier, callbackFingerprint }
 	return { ok: true, duplicate: false, missionId, resumeCheckpoint: consumption.resumeCheckpoint, phase: (await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first()).phase, missionResumed: Boolean(run) };
 }
 
-export default { startOnboarding, handleCallback };
+// Restart recovery entry point: re-reads authoritative D1 state (never trusts caller-held
+// state) and, if the underlying Mission run has an expired/absent lease, reclaims it -- this
+// is what lets a client (or a retried request after a Worker restart) safely call resume
+// without knowing or caring whether anything actually crashed.
+async function resumeOnboarding(c, scope, { missionId }) {
+	const phaseRow = await c.env.db.prepare(`SELECT * FROM nexora_onboarding_state WHERE mission_id=?1 AND tenant_id=?2 AND workspace_id=?3`).bind(missionId, scope.tenantId, scope.workspaceId).first();
+	if (!phaseRow) return { ok: false, reason: 'ONBOARDING_STATE_NOT_FOUND' };
+	if (onboardingStateMachine.isTerminal(phaseRow.phase)) return { ok: true, resumed: false, phase: phaseRow.phase, reason: 'ALREADY_TERMINAL' };
+	const runId = `onboarding-run:${missionId}`;
+	const run = await durableMissionRuntime.claimRun(c, scope, runId).catch(() => null);
+	return { ok: true, resumed: Boolean(run), phase: phaseRow.phase, blockedReason: phaseRow.blocked_reason, requiredHumanActor: phaseRow.required_human_actor };
+}
+
+// Cancellation is only legal from non-terminal phases per the phase machine's own transition
+// table -- this function does not add a second cancellation policy, it just surfaces the
+// existing guard's rejection cleanly instead of throwing past the API layer.
+async function cancelOnboarding(c, scope, { missionId }) {
+	const phaseRow = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1 AND tenant_id=?2 AND workspace_id=?3`).bind(missionId, scope.tenantId, scope.workspaceId).first();
+	if (!phaseRow) return { ok: false, reason: 'ONBOARDING_STATE_NOT_FOUND' };
+	if (!onboardingStateMachine.allowed(phaseRow.phase, 'cancelled')) return { ok: false, reason: 'CANCELLATION_NOT_SAFE_FROM_CURRENT_PHASE', phase: phaseRow.phase };
+	await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'cancelled' });
+	await c.env.db.prepare(`UPDATE mission_runtime_missions SET state='cancelled',version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND state IN ('created','runnable','running')`).bind(missionId, scope.tenantId, scope.workspaceId).run();
+	return { ok: true, phase: 'cancelled' };
+}
+
+// Repair re-enters the validating_authority step from degraded -- the same automatic-repair
+// loop the phase machine defines (connected<->degraded), entered explicitly rather than only
+// after a failed refresh, so an operator/UI-triggered repair and an automatic one share one path.
+async function repairOnboarding(c, scope, { missionId }) {
+	const phaseRow = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1 AND tenant_id=?2 AND workspace_id=?3`).bind(missionId, scope.tenantId, scope.workspaceId).first();
+	if (!phaseRow) return { ok: false, reason: 'ONBOARDING_STATE_NOT_FOUND' };
+	if (!onboardingStateMachine.allowed(phaseRow.phase, 'validating_authority')) return { ok: false, reason: 'REPAIR_NOT_ELIGIBLE_FROM_CURRENT_PHASE', phase: phaseRow.phase };
+	await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'validating_authority' });
+	return { ok: true, phase: 'validating_authority' };
+}
+
+export default { startOnboarding, handleCallback, resumeOnboarding, cancelOnboarding, repairOnboarding };

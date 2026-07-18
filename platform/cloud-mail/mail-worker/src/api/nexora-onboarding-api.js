@@ -1,12 +1,34 @@
-// NEXORA Zero-Touch onboarding: start + callback HTTP surface. Wires the already-tested
-// createAuthorizationSession/consumeCallback/advancePhase logic to real requests. The PKCE
-// verifier is expected from the client-side redirect-completion page (retrieved from the
-// short-lived client session that originated the request, e.g. sessionStorage set at
-// /v3/onboarding/start time) — never persisted server-side in cleartext, per ADR-6.
+// NEXORA Zero-Touch onboarding HTTP surface (Required Output #6). Wires the already-tested
+// service-layer logic (discoverProvider/createAuthorizationSession/consumeCallback/
+// advancePhase/resumeOnboarding/cancelOnboarding/repairOnboarding) to real requests. All
+// routes go through the SAME global auth middleware as every other CloudMail API (see
+// nexora-onboarding-http-routes.test.mjs) -- no separate onboarding authority.
 import app from '../hono/hono';
 import result from '../model/result';
 import userContext from '../security/user-context';
 import onboardingOrchestrator from '../service/nexora-onboarding-orchestrator-service';
+import providerDiscovery from '../service/nexora-onboarding-provider-discovery-service';
+import missionRuntimeStatusService from '../service/mission-runtime-status-service';
+
+function readCookie(c, name) {
+	const header = c.req.header('Cookie') || '';
+	for (const part of header.split(';')) {
+		const idx = part.indexOf('=');
+		if (idx === -1) continue;
+		if (part.slice(0, idx).trim() === name) return decodeURIComponent(part.slice(idx + 1).trim());
+	}
+	return null;
+}
+
+app.post('/v3/onboarding/discover', async (c) => {
+	const tenantId = userContext.getUserId(c);
+	const q = c.req.query();
+	const body = await c.req.json().catch(() => ({}));
+	const workspaceId = Number(q.workspace_id || body.workspace_id);
+	// Discovery is safe, non-secret metadata evaluation -- no provider is contacted here.
+	const data = await providerDiscovery.discoverProvider(c, { tenantId, workspaceId }, { onboardingMissionId: String(body.onboarding_mission_id || 'discovery-only'), email: body.email || null, existingConnectionProvider: body.existing_connection_provider || null, organizationPolicyProvider: body.organization_policy_provider || null, microsoftTenantHint: body.microsoft_tenant_hint || null, capabilityProbeResult: body.capability_probe_result || null });
+	return c.json(result.ok(data));
+});
 
 app.post('/v3/onboarding/start', async (c) => {
 	const tenantId = userContext.getUserId(c);
@@ -26,12 +48,56 @@ app.post('/v3/onboarding/start', async (c) => {
 	return c.json(result.ok(safeData));
 });
 
+app.get('/v3/onboarding/status/:missionId', async (c) => {
+	const tenantId = userContext.getUserId(c);
+	const q = c.req.query();
+	const data = await missionRuntimeStatusService.missionStatus(c, { tenantId, workspaceId: Number(q.workspace_id) }, c.req.param('missionId'));
+	return c.json(result.ok(data));
+});
+
+async function handleProviderCallback(c, expectedProvider) {
+	const tenantId = userContext.getUserId(c);
+	const q = c.req.query();
+	const workspaceId = Number(q.workspace_id);
+	const verifier = readCookie(c, 'nexora_pkce_verifier') || '';
+	const data = await onboardingOrchestrator.handleCallback(c, { tenantId, workspaceId }, { state: String(q.state || ''), verifier, callbackFingerprint: q.code ? String(q.code).slice(0, 12) : null });
+	if (data.ok) c.header('Set-Cookie', `nexora_pkce_verifier=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/v3/onboarding`); // single-use, clear immediately
+	c.header('Cache-Control', 'private, no-store');
+	return c.json(result.ok({ ...data, provider: expectedProvider }));
+}
+app.get('/v3/onboarding/providers/google/callback', (c) => handleProviderCallback(c, 'google'));
+app.get('/v3/onboarding/providers/microsoft/callback', (c) => handleProviderCallback(c, 'microsoft'));
+
+// Kept for direct/test-mode POST-based callback delivery (e.g. a client-side redirect
+// completion page that already has code_verifier in hand, per ADR-6) alongside the real
+// provider GET redirect routes above.
 app.post('/v3/onboarding/callback', async (c) => {
 	const tenantId = userContext.getUserId(c);
 	const q = c.req.query();
 	const body = await c.req.json().catch(() => ({}));
 	const workspaceId = Number(q.workspace_id || body.workspace_id);
 	const data = await onboardingOrchestrator.handleCallback(c, { tenantId, workspaceId }, { state: String(body.state || ''), verifier: String(body.code_verifier || ''), callbackFingerprint: body.callback_fingerprint || null });
+	return c.json(result.ok(data));
+});
+
+app.post('/v3/onboarding/resume/:missionId', async (c) => {
+	const tenantId = userContext.getUserId(c);
+	const q = c.req.query();
+	const data = await onboardingOrchestrator.resumeOnboarding(c, { tenantId, workspaceId: Number(q.workspace_id) }, { missionId: c.req.param('missionId') });
+	return c.json(result.ok(data));
+});
+
+app.post('/v3/onboarding/cancel/:missionId', async (c) => {
+	const tenantId = userContext.getUserId(c);
+	const q = c.req.query();
+	const data = await onboardingOrchestrator.cancelOnboarding(c, { tenantId, workspaceId: Number(q.workspace_id) }, { missionId: c.req.param('missionId') });
+	return c.json(result.ok(data));
+});
+
+app.post('/v3/onboarding/repair/:missionId', async (c) => {
+	const tenantId = userContext.getUserId(c);
+	const q = c.req.query();
+	const data = await onboardingOrchestrator.repairOnboarding(c, { tenantId, workspaceId: Number(q.workspace_id) }, { missionId: c.req.param('missionId') });
 	return c.json(result.ok(data));
 });
 

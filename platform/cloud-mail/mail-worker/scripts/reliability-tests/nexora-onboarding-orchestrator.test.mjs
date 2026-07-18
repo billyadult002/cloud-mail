@@ -5,6 +5,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import onboardingOrchestrator from '../../src/service/nexora-onboarding-orchestrator-service.js';
+import onboardingStateMachine from '../../src/service/nexora-onboarding-state-machine.js';
 
 const TENANT_ID = 990601;
 const WORKSPACE_ID = 990602;
@@ -120,5 +121,70 @@ describe('NEXORA onboarding orchestrator — end-to-end real D1 (Checkpoint 4/8)
 		expect(duplicate.duplicate).toBe(true);
 		const phaseAfterDuplicate = await env.db.prepare(`SELECT phase,phase_version FROM nexora_onboarding_state WHERE mission_id=?1`).bind(started.missionId).first();
 		expect(phaseAfterDuplicate.phase).toBe('authorization_received');
+	});
+
+	it('E31/V8: resume after a simulated restart reclaims the Mission run and reports the authoritative current phase', async () => {
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' } };
+		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-3' });
+		await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, callbackFingerprint: 'fp-resume-1' });
+		// Simulate a crashed worker holding the run's lease.
+		await env.db.prepare(`UPDATE mission_runtime_runs SET lease_until=datetime('now','-1 minutes') WHERE mission_id=?1`).bind(started.missionId).run();
+		const resumed = await onboardingOrchestrator.resumeOnboarding(c, scope, { missionId: started.missionId });
+		expect(resumed.ok).toBe(true);
+		expect(resumed.resumed).toBe(true);
+		expect(resumed.phase).toBe('authorization_received');
+	});
+
+	it('resume on an already-terminal onboarding reports ALREADY_TERMINAL without attempting to reclaim anything', async () => {
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' } };
+		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-4' });
+		await onboardingOrchestrator.cancelOnboarding(c, scope, { missionId: started.missionId });
+		const resumed = await onboardingOrchestrator.resumeOnboarding(c, scope, { missionId: started.missionId });
+		expect(resumed.resumed).toBe(false);
+		expect(resumed.reason).toBe('ALREADY_TERMINAL');
+	});
+
+	it('cancellation before execution succeeds from a waiting phase and terminates both the phase and the underlying Mission', async () => {
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' } };
+		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-5' });
+		const cancelled = await onboardingOrchestrator.cancelOnboarding(c, scope, { missionId: started.missionId });
+		expect(cancelled.ok).toBe(true);
+		const phase = await env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(started.missionId).first();
+		expect(phase.phase).toBe('cancelled');
+		const mission = await env.db.prepare(`SELECT state FROM mission_runtime_missions WHERE id=?1`).bind(started.missionId).first();
+		expect(mission.state).toBe('cancelled');
+	});
+
+	it('cancellation after safe cancellation is no longer possible (already terminal) is rejected, not silently no-op', async () => {
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' } };
+		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-6' });
+		await onboardingOrchestrator.cancelOnboarding(c, scope, { missionId: started.missionId });
+		const second = await onboardingOrchestrator.cancelOnboarding(c, scope, { missionId: started.missionId });
+		expect(second.ok).toBe(false);
+		expect(second.reason).toBe('CANCELLATION_NOT_SAFE_FROM_CURRENT_PHASE');
+	});
+
+	it('repair re-enters validating_authority only from a repair-eligible phase (degraded), not from an arbitrary earlier phase', async () => {
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' } };
+		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-7' });
+		const rejected = await onboardingOrchestrator.repairOnboarding(c, scope, { missionId: started.missionId });
+		expect(rejected.ok).toBe(false);
+		expect(rejected.reason).toBe('REPAIR_NOT_ELIGIBLE_FROM_CURRENT_PHASE');
+
+		await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, callbackFingerprint: 'fp-repair-1' });
+		// Manually drive to a repair-eligible phase for this test (real driver is
+		// nexora-onboarding-sync-service under a failed capability/connection check).
+		await onboardingStateMachine.advancePhase(c, scope, { missionId: started.missionId, to: 'validating_authority' });
+		await onboardingStateMachine.advancePhase(c, scope, { missionId: started.missionId, to: 'discovering_capabilities' });
+		await onboardingStateMachine.advancePhase(c, scope, { missionId: started.missionId, to: 'provisioning' });
+		await onboardingStateMachine.advancePhase(c, scope, { missionId: started.missionId, to: 'verifying_connection' });
+		await onboardingStateMachine.advancePhase(c, scope, { missionId: started.missionId, to: 'starting_initial_sync' });
+		await onboardingStateMachine.advancePhase(c, scope, { missionId: started.missionId, to: 'verifying_initial_sync' });
+		await onboardingStateMachine.advancePhase(c, scope, { missionId: started.missionId, to: 'connected' });
+		await onboardingStateMachine.advancePhase(c, scope, { missionId: started.missionId, to: 'degraded' });
+
+		const repaired = await onboardingOrchestrator.repairOnboarding(c, scope, { missionId: started.missionId });
+		expect(repaired.ok).toBe(true);
+		expect(repaired.phase).toBe('validating_authority');
 	});
 });

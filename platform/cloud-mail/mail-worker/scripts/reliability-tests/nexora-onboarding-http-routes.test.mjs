@@ -39,6 +39,27 @@ describe('NEXORA onboarding HTTP routes — real Hono app, real auth boundary', 
 		expect(body.code).not.toBe(200);
 	});
 
+	it('POST /v3/onboarding/discover, GET /v3/onboarding/status/:id, GET providers/{google,microsoft}/callback, and resume/cancel/repair are all registered and auth-gated', async () => {
+		const paths = [
+			['/v3/onboarding/discover?workspace_id=1', 'POST'],
+			['/v3/onboarding/status/some-id?workspace_id=1', 'GET'],
+			['/v3/onboarding/providers/google/callback?workspace_id=1&state=x', 'GET'],
+			['/v3/onboarding/providers/microsoft/callback?workspace_id=1&state=x', 'GET'],
+			['/v3/onboarding/resume/some-id?workspace_id=1', 'POST'],
+			['/v3/onboarding/cancel/some-id?workspace_id=1', 'POST'],
+			['/v3/onboarding/repair/some-id?workspace_id=1', 'POST'],
+		];
+		const denialCodes = new Set();
+		for (const [path, method] of paths) {
+			const res = await app.request(path, { method, headers: { 'content-type': 'application/json' }, body: method === 'POST' ? '{}' : undefined }, env);
+			expect(res.status).toBe(200);
+			const body = await res.json();
+			expect(body.code).not.toBe(200); // no route bypasses auth
+			denialCodes.add(body.code);
+		}
+		expect(denialCodes.size).toBe(1); // every route denies with the exact same code -- one authority, not per-route inconsistency
+	});
+
 	it('GET /v3/mission-runtime/missions/:id (operational visibility) is registered', async () => {
 		const res = await app.request('/v3/mission-runtime/missions/some-id?workspace_id=1', { method: 'GET' }, env);
 		expect(res.status).toBe(200);

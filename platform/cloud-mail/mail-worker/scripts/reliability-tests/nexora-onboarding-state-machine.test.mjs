@@ -24,10 +24,17 @@ const SCHEMA = `CREATE TABLE nexora_onboarding_state (
 	)),
 	phase_version INTEGER NOT NULL DEFAULT 1
 )`;
+const EVENTS_SCHEMA = `CREATE TABLE mission_runtime_events (
+	id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, run_id TEXT, step_id TEXT, action_id TEXT,
+	tenant_id INTEGER NOT NULL, workspace_id INTEGER NOT NULL, event_type TEXT NOT NULL,
+	from_state TEXT, to_state TEXT, expected_version INTEGER, fencing_token INTEGER,
+	detail_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`;
 
 async function resetSchema() {
-	await env.db.prepare(`DROP TABLE IF EXISTS nexora_onboarding_state`).run();
+	await env.db.batch([env.db.prepare(`DROP TABLE IF EXISTS nexora_onboarding_state`), env.db.prepare(`DROP TABLE IF EXISTS mission_runtime_events`)]);
 	await env.db.prepare(SCHEMA).run();
+	await env.db.prepare(EVENTS_SCHEMA).run();
 }
 
 const c = { env };
@@ -115,6 +122,16 @@ describe('Real D1 phase persistence — restart-safe, optimistic-concurrency gua
 		expect(rejected).toHaveLength(1);
 		const row = await env.db.prepare(`SELECT phase_version FROM nexora_onboarding_state WHERE mission_id='ob-sm-4'`).first();
 		expect(row.phase_version).toBe(2); // advanced exactly once, not twice
+	});
+
+	it('E5: every material phase transition is persisted as evidence in mission_runtime_events, correlated to the mission', async () => {
+		await onboardingStateMachine.ensureOnboardingState(c, scope, { missionId: 'ob-sm-6', targetProvider: 'google', targetAccountOrDomainHash: 'hash-6' });
+		await onboardingStateMachine.advancePhase(c, scope, { missionId: 'ob-sm-6', to: 'provider_identified' });
+		await onboardingStateMachine.advancePhase(c, scope, { missionId: 'ob-sm-6', to: 'authorization_path_selected' });
+		const rows = await env.db.prepare(`SELECT event_type,from_state,to_state FROM mission_runtime_events WHERE mission_id='ob-sm-6' ORDER BY created_at`).all();
+		expect(rows.results).toHaveLength(2);
+		expect(rows.results[0]).toEqual({ event_type: 'ONBOARDING_PHASE_TRANSITION', from_state: 'discovering', to_state: 'provider_identified' });
+		expect(rows.results[1]).toEqual({ event_type: 'ONBOARDING_PHASE_TRANSITION', from_state: 'provider_identified', to_state: 'authorization_path_selected' });
 	});
 
 	it('cross-tenant scope is enforced on advancePhase', async () => {

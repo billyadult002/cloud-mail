@@ -27,6 +27,12 @@ async function missionStatus(c, scope, missionId) {
 	const evidenceRows = await c.env.db.prepare(`SELECT id,claim_key,source_type,status,observed_at,evidence_type FROM mission_runtime_evidence WHERE mission_id=?1 ORDER BY observed_at DESC LIMIT 10`).bind(missionId).all();
 	const latestVerification = await c.env.db.prepare(`SELECT id,state,verifier,created_at,reason_codes_json FROM mission_runtime_verifications WHERE mission_id=?1 ORDER BY created_at DESC LIMIT 1`).bind(missionId).first();
 	const outcome = await c.env.db.prepare(`SELECT id,state,claim_key,created_at FROM mission_runtime_outcomes WHERE mission_id=?1 ORDER BY created_at DESC LIMIT 1`).bind(missionId).first();
+	const compensation = await c.env.db.prepare(`SELECT state,final_state,attempt,reason,completed_at FROM mission_runtime_compensations WHERE mission_id=?1 ORDER BY started_at DESC LIMIT 1`).bind(missionId).first();
+	// Onboarding-specific projection (Required Output #31) -- only present for
+	// kind='ZERO_TOUCH_ONBOARDING' missions; every other mission kind gets onboarding:null.
+	const onboarding = mission.kind === 'ZERO_TOUCH_ONBOARDING' ? await c.env.db.prepare(`SELECT * FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first() : null;
+	const authorizationSession = onboarding ? await c.env.db.prepare(`SELECT id,provider,status,expires_at,consumed_at FROM nexora_onboarding_authorization_sessions WHERE onboarding_mission_id=?1 ORDER BY created_at DESC LIMIT 1`).bind(missionId).first() : null;
+	const capabilityRows = onboarding ? await c.env.db.prepare(`SELECT capability_key,status,reason_codes_json FROM nexora_onboarding_capabilities WHERE onboarding_mission_id=?1`).bind(missionId).all() : null;
 
 	// Blocked/waiting reason: derived from the most recent DISPATCH_DENIED / approval-boundary
 	// audit event for this mission, if one exists -- mission_runtime_missions itself has no
@@ -62,10 +68,27 @@ async function missionStatus(c, scope, missionId) {
 		evidence_references: (evidenceRows.results || []).map((row) => ({ evidence_id: row.id, claim_key: row.claim_key, evidence_type: row.evidence_type, status: row.status, observed_at: row.observed_at })),
 		retry_eligible: retryEligible,
 		cancellation_state: mission.state === 'cancelled' ? 'cancelled' : 'not_cancelled',
-		// Compensation is not yet implemented in the runtime (no COMPENSATING/COMPENSATED
-		// mission state exists) -- reported explicitly as unsupported rather than inferred.
-		compensation_state: 'not_supported',
-		final_verdict: TERMINAL_MISSION_STATES.has(mission.state) ? (outcome ? { state: outcome.state, claim_key: outcome.claim_key, outcome_id: outcome.id, at: outcome.created_at } : { state: mission.state, outcome: null }) : null,
+		compensation_state: compensation ? { state: compensation.state, final_state: compensation.final_state, attempt: compensation.attempt, reason: compensation.reason, completed_at: compensation.completed_at } : 'not_requested',
+		final_verdict: TERMINAL_MISSION_STATES.has(mission.state) || mission.state === 'compensated' ? (outcome ? { state: outcome.state, claim_key: outcome.claim_key, outcome_id: outcome.id, at: outcome.created_at } : { state: mission.state, outcome: null }) : null,
+		onboarding: onboarding
+			? {
+					phase: onboarding.phase,
+					target_provider: onboarding.target_provider,
+					discovery_state: onboarding.discovery_state,
+					authorization_state: onboarding.authorization_state,
+					approval_state: onboarding.approval_state,
+					connection_state: onboarding.connection_state,
+					capability_state: onboarding.capability_state,
+					sync_state: onboarding.sync_state,
+					verification_state: onboarding.verification_state,
+					blocked_reason: onboarding.blocked_reason,
+					required_human_actor: onboarding.required_human_actor,
+					resume_token: onboarding.resume_token,
+					authorization_session: authorizationSession ? { session_id: authorizationSession.id, provider: authorizationSession.provider, status: authorizationSession.status, expires_at: authorizationSession.expires_at, consumed: Boolean(authorizationSession.consumed_at) } : null,
+					capability_discovery: (capabilityRows?.results || []).map((row) => ({ capability: row.capability_key, status: row.status, reason_codes: JSON.parse(row.reason_codes_json || '[]') })),
+					provider_acceptance_blocker: onboarding.phase === 'blocked' && onboarding.blocked_reason === 'PROVIDER_APPLICATION_MISSING' ? 'PRODUCTION_OAUTH_APPLICATION_NOT_REGISTERED' : null,
+				}
+			: null,
 	};
 }
 

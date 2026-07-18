@@ -340,7 +340,7 @@ describe('NEXORA Mission Runtime operational visibility (Required Output #11)', 
 		expect(status.blocked_reason.detail.result).toBe('policy_denied');
 		expect(status.evidence_references).toHaveLength(1);
 		expect(status.evidence_references[0].evidence_id).toBe('evv1');
-		expect(status.compensation_state).toBe('not_supported'); // honestly reported, not fabricated
+		expect(status.compensation_state).toBe('not_requested'); // compensation is now implemented; none was requested for this mission
 		expect(status.final_verdict).toBeNull(); // not a terminal state yet
 	});
 

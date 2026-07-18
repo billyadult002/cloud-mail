@@ -12,6 +12,7 @@ import '../api/p32c-enterprise-governance-api';
 import '../api/p32d-runtime-validation-api';
 import '../api/nexora-v3-api';
 import '../api/mission-runtime-status-api';
+import '../api/nexora-onboarding-api';
 import '../api/global-mail-ledger-api';
 import '../api/gmail-api';
 import '../api/gmail-platform-v2-api';

@@ -106,6 +106,30 @@ Test Files  35 passed (35)
 grep -riE "sk-|AIza|ya29\.|BEGIN (RSA|EC) PRIVATE" <all new/changed files> → clean (verified before each commit this pass)
 ```
 
+## Addendum (2026-07-18, continued session) — commits `7d4d290`, prior `165d44d`/`b72f2ec`/`7a0ffd0`/`94607c3`
+
+Further checkpoints closed without production credentials, superseding the classifications above:
+
+| # | Requirement | Was | Now | Evidence |
+|---|---|---|---|---|
+| 2 | Onboarding state machine (18 states) | MISSING | **VERIFIED** | `nexora-onboarding-state-machine.js` + migration 0059, 10 real-D1 tests (restart-safe, optimistic-concurrency, connected↔degraded repair loop) |
+| — | Automatic Mission continuation (#20) | PARTIAL (mechanism existed, unwired) | **VERIFIED** | `nexora-onboarding-orchestrator-service.js`: a real callback (via `handleCallback`) advances the phase AND claims/advances `mission_runtime_runs`/`mission_runtime_missions` with zero further caller action; end-to-end real-D1 test including duplicate-callback idempotency |
+| 7 (partial) | Administrator bootstrap workflow — credential-missing detection | PARTIAL | **VERIFIED (detection only)** | `startOnboarding` fails honestly with `PROVIDER_APPLICATION_MISSING`, blocks the phase with `required_human_actor='workspace_administrator'`, real-D1 tested. Admin-consent-URL construction and request tracking remain MISSING |
+| 11 | Token storage/refresh/rotation/revocation | MISSING | **PARTIAL** | `nexora-onboarding-token-lifecycle-service.js`: deterministic health classification, revoked-vs-outage-vs-throttled-vs-missing-scope classification, bounded backoff planning, precise minimal revocation-repair scope set — all real-tested. Actual token storage/encryption and the real refresh HTTP call remain MISSING (need a real client_secret) |
+| 15 (partial) | Autonomous repair — revoked consent, provider outage, missing scope | MISSING | **PARTIAL** | Classification/decision logic verified (9 tests); the network call and storage write that would execute the repair are not implemented |
+| 16/31 | Operational visibility (onboarding fields) | MISSING | **VERIFIED** | `mission-runtime-status-service.js` extended with `onboarding: {phase, sub-states, authorization_session, capability_discovery, provider_acceptance_blocker}`; `compensation_state` corrected to reflect the real ledger instead of a stale placeholder |
+| — | Callback HTTP surface | not present | **IMPLEMENTED_NOT_VERIFIED** | `/v3/onboarding/start`, `/v3/onboarding/callback` routes wired and registered; exercised via the orchestrator service directly in tests, not via an actual HTTP request through the Hono router (no route-level test added this pass) |
+
+Suite after this addendum: **350/350** (38 test files). Verdict remains **LOGIC_COMPLETE_PARTIAL** — the newly
+closed items are all achievable-without-credentials logic; production registration, real token exchange,
+initial sync, and desktop/real-iPhone acceptance remain BLOCKED exactly as before, per
+`NEXORA_PROVIDER_ACCEPTANCE_RUNBOOK.md`.
+
+Still MISSING after this addendum: provider discovery (domain/MX/OIDC signals, Required Output #3), admin-
+consent-URL construction and tracking (rest of #7), actual token storage/refresh HTTP call (rest of #11),
+initial sync flow (#13), Zero-Touch scorecard (#17), Comail migration (#18, by recorded choice), BYO-App admin
+UI (rest of #6), route-level HTTP tests for the new API endpoints.
+
 ## Audit answers
 
 - What could be completed without production credentials? Compensation states/tests, PKCE, authorization-

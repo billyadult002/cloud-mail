@@ -113,6 +113,18 @@ describe('Scheduled sync execution — foreground-before-background, independent
 		expect(state.phase).toBe('degraded');
 	});
 
+	it('persists background completion in a separately leased job and reclaims it after a simulated restart', async () => {
+		const missionId = await dispatchedMission('ob-sync-background');
+		await onboardingSync.runScheduledSync({ env }, { adapter: async () => ({ foregroundReady: true, backgroundEnqueued: true, backgroundJobId: 'provider-bg-1' }) });
+		await env.db.prepare(`UPDATE nexora_autonomy_jobs SET state='RUNNING',lease_until=datetime('now','-1 minutes') WHERE idempotency_key=?1`).bind(`background-sync:${missionId}`).run();
+		const result = await onboardingSync.runScheduledBackgroundSync({ env }, { adapter: async () => ({ complete: true }) });
+		expect(result.completed).toBe(1);
+		const state = await env.db.prepare(`SELECT sync_state FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first();
+		expect(state.sync_state).toBe('background_complete');
+		const job = await env.db.prepare(`SELECT state FROM nexora_autonomy_jobs WHERE idempotency_key=?1`).bind(`background-sync:${missionId}`).first();
+		expect(job.state).toBe('SUCCEEDED');
+	});
+
 	it('a foreground-not-ready adapter result fails the sync cleanly (not silently marked connected)', async () => {
 		const missionId = await dispatchedMission('ob-sync-6');
 		const result = await onboardingSync.runScheduledSync({ env }, { adapter: async () => ({ foregroundReady: false }) });

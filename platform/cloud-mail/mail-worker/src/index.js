@@ -15,6 +15,8 @@ import nexoraV3Service from './service/nexora-v3-service';
 import durableMissionRuntimeService from './service/durable-mission-runtime-service';
 import classificationIntelligenceService from './service/classification-intelligence-service';
 import unifiedConversationBackfillService from './service/unified-conversation-backfill-service';
+import onboardingRefreshScheduler from './service/nexora-onboarding-refresh-scheduler-service';
+import onboardingSync from './service/nexora-onboarding-sync-service';
 
 async function runAutomaticGmailSync(env, scheduled) {
 	try {
@@ -304,6 +306,9 @@ export default {
 				runStep('echartsCache', () => analysisService.refreshEchartsCache({ env })),
 				runStep('nexoraAutonomy', () => nexoraV3Service.monitorScheduled({ env }, { limit: 10 })),
 				runStep('durableMissionRuntime', () => durableMissionRuntimeService.monitorScheduled({ env }, { limit: 2 })),
+				runStep('nexoraTokenRefresh', () => onboardingRefreshScheduler.runScheduledRefresh({ env }, { limit: 5 })),
+				runStep('nexoraInitialSync', () => onboardingSync.runScheduledSync({ env }, { limit: 5 })),
+				runStep('nexoraBackgroundSync', () => onboardingSync.runScheduledBackgroundSync({ env }, { limit: 5 })),
 				runStep('classificationIntelligence', () => classificationIntelligenceService.monitorScheduled({ env }, { limit: 2 })),
 			]);
 			return;
@@ -319,6 +324,9 @@ export default {
 			runStep('syncRouting', () => cloudMailV2Service.syncRouting({ env, req: { header: () => null } })),
 			runStep('nexoraAutonomy', () => nexoraV3Service.monitorScheduled({ env }, { limit: 10 })),
 			runStep('durableMissionRuntime', () => durableMissionRuntimeService.monitorScheduled({ env }, { limit: 2 })),
+			runStep('nexoraTokenRefresh', () => onboardingRefreshScheduler.runScheduledRefresh({ env }, { limit: 5 })),
+			runStep('nexoraInitialSync', () => onboardingSync.runScheduledSync({ env }, { limit: 5 })),
+			runStep('nexoraBackgroundSync', () => onboardingSync.runScheduledBackgroundSync({ env }, { limit: 5 })),
 			runStep('classificationIntelligence', () => classificationIntelligenceService.monitorScheduled({ env }, { limit: 2 })),
 			runStep('unifiedConversation', () => unifiedConversationBackfillService.monitorScheduled({ env }, { limit: 10 })),
 		]);

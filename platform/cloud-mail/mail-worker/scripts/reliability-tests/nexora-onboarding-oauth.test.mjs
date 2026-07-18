@@ -14,6 +14,7 @@ import onboardingOAuth, {
 	randomVerifier,
 	pkceChallengeFor,
 	buildAuthorizationUrl,
+	buildMicrosoftAdminConsentUrl,
 	insertAuthorizationSession,
 	validateIdentity,
 	validateMicrosoftTenant,
@@ -23,6 +24,7 @@ import onboardingOAuth, {
 
 const TENANT_ID = 990301;
 const WORKSPACE_ID = 990302;
+const GOOGLE_OAUTH_ENV = { NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: 'https://nexora.example/v3/onboarding/providers/google/callback' };
 
 const SCHEMA = [
 	`CREATE TABLE nexora_onboarding_authorization_sessions (
@@ -44,10 +46,19 @@ const SCHEMA = [
 		reason_codes_json TEXT NOT NULL DEFAULT '[]', observed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		UNIQUE(onboarding_mission_id, capability_key)
 	)`,
+	`CREATE TABLE nexora_onboarding_callback_correlations (
+		id TEXT PRIMARY KEY, state_hash TEXT NOT NULL UNIQUE, authorization_session_id TEXT NOT NULL UNIQUE,
+		onboarding_mission_id TEXT NOT NULL, tenant_id INTEGER NOT NULL, workspace_id INTEGER NOT NULL, provider TEXT NOT NULL,
+		redirect_uri_id TEXT NOT NULL, redirect_uri_hash TEXT NOT NULL, requested_scopes_json TEXT NOT NULL, requested_capabilities_json TEXT NOT NULL DEFAULT '[]', scope_plan_reference TEXT, pkce_challenge TEXT NOT NULL, pkce_challenge_reference TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'pending', claim_token TEXT, claimed_at TEXT, claimed_by TEXT, claim_expires_at TEXT, claim_generation INTEGER NOT NULL DEFAULT 0,
+		callback_fingerprint TEXT, resume_checkpoint TEXT, evidence_references_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, expires_at TEXT NOT NULL, consumed_at TEXT, cancelled_at TEXT
+	)`,
+	`CREATE TABLE nexora_onboarding_callback_claims (id TEXT PRIMARY KEY, correlation_id TEXT NOT NULL UNIQUE, authorization_session_id TEXT NOT NULL, onboarding_mission_id TEXT NOT NULL, tenant_id INTEGER NOT NULL, workspace_id INTEGER NOT NULL, provider TEXT NOT NULL, lease_owner TEXT, lease_acquired_at TEXT, lease_expires_at TEXT, fencing_token INTEGER NOT NULL DEFAULT 0, attempt INTEGER NOT NULL DEFAULT 0, recovery_mode TEXT NOT NULL DEFAULT 'EXECUTION', claim_status TEXT NOT NULL DEFAULT 'AVAILABLE', last_heartbeat_at TEXT, takeover_count INTEGER NOT NULL DEFAULT 0, evidence_references_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+	`CREATE TABLE nexora_onboarding_callback_checkpoints (id TEXT PRIMARY KEY, correlation_id TEXT NOT NULL, claim_id TEXT NOT NULL, fencing_token INTEGER NOT NULL, step TEXT NOT NULL, status TEXT NOT NULL, attempt INTEGER NOT NULL DEFAULT 0, started_at TEXT, observed_at TEXT, persisted_at TEXT, completed_at TEXT, provider_operation_reference TEXT, token_generation_reference INTEGER, connection_reference TEXT, sync_job_reference TEXT, mission_checkpoint_reference TEXT, evidence_references_json TEXT NOT NULL DEFAULT '[]', last_error_code TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(correlation_id,step))`,
 ];
 
 async function resetSchema() {
-	await env.db.batch([env.db.prepare(`DROP TABLE IF EXISTS nexora_onboarding_authorization_sessions`), env.db.prepare(`DROP TABLE IF EXISTS nexora_onboarding_capabilities`)]);
+	await env.db.batch([env.db.prepare(`DROP TABLE IF EXISTS nexora_onboarding_callback_checkpoints`), env.db.prepare(`DROP TABLE IF EXISTS nexora_onboarding_callback_claims`), env.db.prepare(`DROP TABLE IF EXISTS nexora_onboarding_callback_correlations`), env.db.prepare(`DROP TABLE IF EXISTS nexora_onboarding_authorization_sessions`), env.db.prepare(`DROP TABLE IF EXISTS nexora_onboarding_capabilities`)]);
 	for (const sql of SCHEMA) await env.db.prepare(sql).run();
 }
 
@@ -100,7 +111,7 @@ describe('Minimum-scope planning and incremental consent — deterministic', () 
 
 describe('Authorization URL construction — deterministic, contains no client secret', () => {
 	it('builds a Google URL with PKCE, state, and no client secret', () => {
-		const url = buildAuthorizationUrl('google', { clientId: 'test-client-id.apps.googleusercontent.com', state: 'state-abc', nonce: 'nonce-abc', challenge: 'challenge-abc', scopes: ['openid', 'email'], tenantHint: null, loginHint: null });
+		const url = buildAuthorizationUrl('google', { clientId: 'test-client-id.apps.googleusercontent.com', redirectUri: GOOGLE_OAUTH_ENV.NEXORA_GOOGLE_OAUTH_REDIRECT_URI, state: 'state-abc', nonce: 'nonce-abc', challenge: 'challenge-abc', scopes: ['openid', 'email'], tenantHint: null, loginHint: null });
 		expect(url).toContain('accounts.google.com');
 		expect(url).toContain('code_challenge=challenge-abc');
 		expect(url).toContain('code_challenge_method=S256');
@@ -109,8 +120,15 @@ describe('Authorization URL construction — deterministic, contains no client s
 	});
 
 	it('builds a Microsoft URL scoped to the given tenant hint', () => {
-		const url = buildAuthorizationUrl('microsoft', { clientId: 'ms-client-id', state: 'state-xyz', nonce: null, challenge: 'challenge-xyz', scopes: ['Mail.Read'], tenantHint: 'contoso-tenant-id', loginHint: null });
+		const url = buildAuthorizationUrl('microsoft', { clientId: 'ms-client-id', redirectUri: 'https://nexora.example/v3/onboarding/providers/microsoft/callback', state: 'state-xyz', nonce: null, challenge: 'challenge-xyz', scopes: ['Mail.Read'], tenantHint: 'contoso-tenant-id', loginHint: null });
 		expect(url).toContain('login.microsoftonline.com/contoso-tenant-id/');
+		expect(url).not.toContain('client_secret');
+	});
+
+	it('builds an administrator-consent URL without exposing a client secret', () => {
+		const url = buildMicrosoftAdminConsentUrl({ tenantId: 'tenant-a', clientId: 'client-a', redirectUri: 'https://nexora.example/callback' });
+		expect(url).toContain('/tenant-a/adminconsent');
+		expect(url).toContain('client_id=client-a');
 		expect(url).not.toContain('client_secret');
 	});
 });
@@ -161,7 +179,7 @@ describe('Durable authorization session — real D1 persistence, restart-safe, r
 	});
 
 	it('E14/V17: a created session survives being re-read after a simulated restart (fresh read from D1, not in-memory)', async () => {
-		const fakeEnv = { NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' };
+		const fakeEnv = GOOGLE_OAUTH_ENV;
 		const created = await onboardingOAuth.createAuthorizationSession(fakeEnv, { onboardingMissionId: 'ob-3', tenantId: TENANT_ID, workspaceId: WORKSPACE_ID, provider: 'google', capabilities: ['mail_read'] });
 		expect(created.ok).toBe(true);
 		await insertAuthorizationSession(c, created.row);
@@ -172,7 +190,7 @@ describe('Durable authorization session — real D1 persistence, restart-safe, r
 	});
 
 	it('V8/V11: a valid callback consumes the session exactly once (state + PKCE verifier must both match)', async () => {
-		const fakeEnv = { NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' };
+		const fakeEnv = GOOGLE_OAUTH_ENV;
 		const created = await onboardingOAuth.createAuthorizationSession(fakeEnv, { onboardingMissionId: 'ob-4', tenantId: TENANT_ID, workspaceId: WORKSPACE_ID, provider: 'google', capabilities: ['mail_read'] });
 		await insertAuthorizationSession(c, created.row);
 
@@ -192,14 +210,15 @@ describe('Durable authorization session — real D1 persistence, restart-safe, r
 		const duplicate = await onboardingOAuth.consumeCallback(c, scope, { state: created.state, verifier: created.verifier, receivedCallbackFingerprint: 'fp-1' });
 		expect(duplicate.ok).toBe(true);
 		expect(duplicate.duplicate).toBe(true);
-		expect(duplicate.alreadyConsumed).toBe(true);
+		expect(duplicate.inProgress).toBe(true);
+		expect(duplicate.alreadyConsumed).toBe(false);
 
 		const consumedCount = await env.db.prepare(`SELECT COUNT(*) n FROM nexora_onboarding_authorization_sessions WHERE id=?1 AND status='consumed'`).bind(created.row.id).first();
 		expect(Number(consumedCount.n)).toBe(1); // exactly one consumption, no duplicate side effect
 	});
 
 	it('V7: state cannot be replayed across a different authorization session (INVALID_STATE, fails closed)', async () => {
-		const fakeEnv = { NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' };
+		const fakeEnv = GOOGLE_OAUTH_ENV;
 		const created = await onboardingOAuth.createAuthorizationSession(fakeEnv, { onboardingMissionId: 'ob-5', tenantId: TENANT_ID, workspaceId: WORKSPACE_ID, provider: 'google', capabilities: ['mail_read'] });
 		await insertAuthorizationSession(c, created.row);
 		const result = await onboardingOAuth.consumeCallback(c, scope, { state: 'a-state-that-was-never-issued', verifier: created.verifier, receivedCallbackFingerprint: 'fp-x' });
@@ -207,8 +226,19 @@ describe('Durable authorization session — real D1 persistence, restart-safe, r
 		expect(result.reason).toBe('INVALID_STATE');
 	});
 
+	it('correlates a provider callback from durable state, never an asserted workspace', async () => {
+		const created = await onboardingOAuth.createAuthorizationSession(GOOGLE_OAUTH_ENV, { onboardingMissionId: 'ob-correlation', tenantId: TENANT_ID, workspaceId: WORKSPACE_ID, provider: 'google', capabilities: ['mail_read'] });
+		await insertAuthorizationSession(c, created.row);
+		const consumed = await onboardingOAuth.consumeCallback(c, null, { state: created.state, verifier: created.verifier, expectedProvider: 'google' });
+		expect(consumed.ok).toBe(true);
+		expect(consumed.scope).toEqual(scope);
+		const wrongScope = await onboardingOAuth.consumeCallback(c, { tenantId: TENANT_ID, workspaceId: WORKSPACE_ID + 1 }, { state: created.state, verifier: created.verifier, expectedProvider: 'google' });
+		expect(wrongScope.ok).toBe(false);
+		expect(wrongScope.reason).toBe('INVALID_STATE');
+	});
+
 	it('V10: an expired authorization session does not exchange codes, even with a correct verifier', async () => {
-		const fakeEnv = { NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' };
+		const fakeEnv = GOOGLE_OAUTH_ENV;
 		const created = await onboardingOAuth.createAuthorizationSession(fakeEnv, { onboardingMissionId: 'ob-6', tenantId: TENANT_ID, workspaceId: WORKSPACE_ID, provider: 'google', capabilities: ['mail_read'], ttlSeconds: 60 });
 		await insertAuthorizationSession(c, created.row);
 		await env.db.prepare(`UPDATE nexora_onboarding_authorization_sessions SET expires_at=datetime('now','-1 minutes') WHERE id=?1`).bind(created.row.id).run();
@@ -220,7 +250,7 @@ describe('Durable authorization session — real D1 persistence, restart-safe, r
 	});
 
 	it('cancellation before callback: a pending session can be cancelled and can never later be consumed', async () => {
-		const fakeEnv = { NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' };
+		const fakeEnv = GOOGLE_OAUTH_ENV;
 		const created = await onboardingOAuth.createAuthorizationSession(fakeEnv, { onboardingMissionId: 'ob-7', tenantId: TENANT_ID, workspaceId: WORKSPACE_ID, provider: 'google', capabilities: ['mail_read'] });
 		await insertAuthorizationSession(c, created.row);
 		const cancelled = await onboardingOAuth.cancelAuthorizationSession(c, scope, created.row.id);
@@ -231,7 +261,7 @@ describe('Durable authorization session — real D1 persistence, restart-safe, r
 	});
 
 	it('scope guard: real query row never contains a raw client secret, access token, refresh token, or PKCE verifier', async () => {
-		const fakeEnv = { NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' };
+		const fakeEnv = GOOGLE_OAUTH_ENV;
 		const created = await onboardingOAuth.createAuthorizationSession(fakeEnv, { onboardingMissionId: 'ob-8', tenantId: TENANT_ID, workspaceId: WORKSPACE_ID, provider: 'google', capabilities: ['mail_read'] });
 		await insertAuthorizationSession(c, created.row);
 		const row = await env.db.prepare(`SELECT * FROM nexora_onboarding_authorization_sessions WHERE id=?1`).bind(created.row.id).first();

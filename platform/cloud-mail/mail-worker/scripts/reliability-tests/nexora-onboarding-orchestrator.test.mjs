@@ -69,6 +69,16 @@ const SCHEMA_STATEMENTS = [
 		revoked_at TEXT, revoked_reason TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		UNIQUE(onboarding_mission_id)
 	)`,
+	`CREATE TABLE nexora_onboarding_callback_correlations (
+		id TEXT PRIMARY KEY, state_hash TEXT NOT NULL UNIQUE, authorization_session_id TEXT NOT NULL UNIQUE,
+		onboarding_mission_id TEXT NOT NULL, tenant_id INTEGER NOT NULL, workspace_id INTEGER NOT NULL, provider TEXT NOT NULL,
+		redirect_uri_id TEXT NOT NULL, redirect_uri_hash TEXT NOT NULL, requested_scopes_json TEXT NOT NULL, requested_capabilities_json TEXT NOT NULL DEFAULT '[]', scope_plan_reference TEXT, pkce_challenge TEXT NOT NULL, pkce_challenge_reference TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'pending', claim_token TEXT, claimed_at TEXT, claimed_by TEXT, claim_expires_at TEXT, claim_generation INTEGER NOT NULL DEFAULT 0,
+		callback_fingerprint TEXT, resume_checkpoint TEXT, evidence_references_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, expires_at TEXT NOT NULL, consumed_at TEXT, cancelled_at TEXT
+	)`,
+	`CREATE TABLE nexora_onboarding_callback_claims (id TEXT PRIMARY KEY, correlation_id TEXT NOT NULL UNIQUE, authorization_session_id TEXT NOT NULL, onboarding_mission_id TEXT NOT NULL, tenant_id INTEGER NOT NULL, workspace_id INTEGER NOT NULL, provider TEXT NOT NULL, lease_owner TEXT, lease_acquired_at TEXT, lease_expires_at TEXT, fencing_token INTEGER NOT NULL DEFAULT 0, attempt INTEGER NOT NULL DEFAULT 0, recovery_mode TEXT NOT NULL DEFAULT 'EXECUTION', claim_status TEXT NOT NULL DEFAULT 'AVAILABLE', last_heartbeat_at TEXT, takeover_count INTEGER NOT NULL DEFAULT 0, evidence_references_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+	`CREATE TABLE nexora_onboarding_callback_checkpoints (id TEXT PRIMARY KEY, correlation_id TEXT NOT NULL, claim_id TEXT NOT NULL, fencing_token INTEGER NOT NULL, step TEXT NOT NULL, status TEXT NOT NULL, attempt INTEGER NOT NULL DEFAULT 0, started_at TEXT, observed_at TEXT, persisted_at TEXT, completed_at TEXT, provider_operation_reference TEXT, token_generation_reference INTEGER, connection_reference TEXT, sync_job_reference TEXT, mission_checkpoint_reference TEXT, evidence_references_json TEXT NOT NULL DEFAULT '[]', last_error_code TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(correlation_id,step))`,
+	`CREATE TABLE nexora_onboarding_reauthorization_work (id TEXT PRIMARY KEY, original_correlation_id TEXT NOT NULL UNIQUE, original_authorization_session_id TEXT NOT NULL, replacement_authorization_session_id TEXT UNIQUE, replacement_correlation_id TEXT UNIQUE, replacement_token_generation INTEGER, onboarding_mission_id TEXT NOT NULL, tenant_id INTEGER NOT NULL, workspace_id INTEGER NOT NULL, provider TEXT NOT NULL, requested_capabilities_json TEXT NOT NULL DEFAULT '[]', scope_plan_reference TEXT, reason_code TEXT NOT NULL, idempotency_key TEXT NOT NULL UNIQUE, expected_token_generation INTEGER, lease_owner TEXT, lease_acquired_at TEXT, lease_expires_at TEXT, fencing_token INTEGER NOT NULL DEFAULT 0, attempt INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'PENDING', evidence_references_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TEXT)`,
 	`CREATE TABLE nexora_onboarding_capabilities (
 		id TEXT PRIMARY KEY, onboarding_mission_id TEXT NOT NULL, tenant_id INTEGER NOT NULL, workspace_id INTEGER NOT NULL,
 		provider TEXT NOT NULL, capability_key TEXT NOT NULL,
@@ -83,7 +93,7 @@ const SCHEMA_STATEMENTS = [
 		created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`,
 ];
-const TABLES = ['mission_runtime_missions', 'mission_runtime_runs', 'mission_runtime_events', 'nexora_onboarding_state', 'nexora_onboarding_authorization_sessions', 'nexora_onboarding_tokens', 'nexora_onboarding_capabilities', 'nexora_autonomy_jobs'];
+const TABLES = ['mission_runtime_missions', 'mission_runtime_runs', 'mission_runtime_events', 'nexora_onboarding_state', 'nexora_onboarding_reauthorization_work', 'nexora_onboarding_callback_checkpoints', 'nexora_onboarding_callback_claims', 'nexora_onboarding_callback_correlations', 'nexora_onboarding_authorization_sessions', 'nexora_onboarding_tokens', 'nexora_onboarding_capabilities', 'nexora_autonomy_jobs'];
 
 async function resetSchema() {
 	await env.db.batch(TABLES.map((t) => env.db.prepare(`DROP TABLE IF EXISTS ${t}`)));
@@ -91,6 +101,8 @@ async function resetSchema() {
 }
 
 const scope = { tenantId: TENANT_ID, workspaceId: WORKSPACE_ID };
+const GOOGLE_REDIRECT_URI = 'https://nexora.example/v3/onboarding/providers/google/callback';
+const MICROSOFT_REDIRECT_URI = 'https://nexora.example/v3/onboarding/providers/microsoft/callback';
 
 beforeEach(async () => {
 	await resetSchema();
@@ -109,7 +121,7 @@ describe('NEXORA onboarding orchestrator — end-to-end real D1 (Checkpoint 4/8)
 	});
 
 	it('start is idempotent: a duplicate start with the same idempotency key reuses the same Mission, not a second one', async () => {
-		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' } };
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI } };
 		const first = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-dup' });
 		const second = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-dup' });
 		expect(first.missionId).toBe(second.missionId);
@@ -118,7 +130,7 @@ describe('NEXORA onboarding orchestrator — end-to-end real D1 (Checkpoint 4/8)
 	});
 
 	it('E23/V18: a valid callback automatically resumes the originating Mission with no further user action', async () => {
-		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' } };
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-2' });
 		expect(started.ok).toBe(true);
 		expect(started.state).toBeTruthy();
@@ -148,7 +160,7 @@ describe('NEXORA onboarding orchestrator — end-to-end real D1 (Checkpoint 4/8)
 	});
 
 	it('E31/V8: resume after a simulated restart reclaims the Mission run and reports the authoritative current phase', async () => {
-		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' } };
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-3' });
 		await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, callbackFingerprint: 'fp-resume-1' });
 		// Simulate a crashed worker holding the run's lease.
@@ -160,7 +172,7 @@ describe('NEXORA onboarding orchestrator — end-to-end real D1 (Checkpoint 4/8)
 	});
 
 	it('resume on an already-terminal onboarding reports ALREADY_TERMINAL without attempting to reclaim anything', async () => {
-		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' } };
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-4' });
 		await onboardingOrchestrator.cancelOnboarding(c, scope, { missionId: started.missionId });
 		const resumed = await onboardingOrchestrator.resumeOnboarding(c, scope, { missionId: started.missionId });
@@ -169,7 +181,7 @@ describe('NEXORA onboarding orchestrator — end-to-end real D1 (Checkpoint 4/8)
 	});
 
 	it('cancellation before execution succeeds from a waiting phase and terminates both the phase and the underlying Mission', async () => {
-		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' } };
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-5' });
 		const cancelled = await onboardingOrchestrator.cancelOnboarding(c, scope, { missionId: started.missionId });
 		expect(cancelled.ok).toBe(true);
@@ -180,7 +192,7 @@ describe('NEXORA onboarding orchestrator — end-to-end real D1 (Checkpoint 4/8)
 	});
 
 	it('cancellation after safe cancellation is no longer possible (already terminal) is rejected, not silently no-op', async () => {
-		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' } };
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-6' });
 		await onboardingOrchestrator.cancelOnboarding(c, scope, { missionId: started.missionId });
 		const second = await onboardingOrchestrator.cancelOnboarding(c, scope, { missionId: started.missionId });
@@ -189,7 +201,7 @@ describe('NEXORA onboarding orchestrator — end-to-end real D1 (Checkpoint 4/8)
 	});
 
 	it('repair re-enters validating_authority only from a repair-eligible phase (degraded), not from an arbitrary earlier phase', async () => {
-		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' } };
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-7' });
 		const rejected = await onboardingOrchestrator.repairOnboarding(c, scope, { missionId: started.missionId });
 		expect(rejected.ok).toBe(false);
@@ -226,8 +238,38 @@ describe('NEXORA onboarding orchestrator — full real chain: callback code -> t
 		return async () => ({ ok: true, status: 200, json: async () => ({ access_token: 'fixture-access-token', refresh_token: 'fixture-refresh-token', expires_in: 3600, scope: scopeString, id_token: fixtureIdToken(idTokenClaims) }) });
 	}
 
+	it('Microsoft callback exchange uses the durable tenant hint selected when the authorization session was created', async () => {
+		const c = { env: { ...env, NEXORA_MICROSOFT_OAUTH_CLIENT_ID: 'test-ms-client-id', NEXORA_MICROSOFT_OAUTH_REDIRECT_URI: MICROSOFT_REDIRECT_URI, jwt_secret: 'test-only-pool-workers-encryption-secret' } };
+		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'microsoft', capabilities: ['mail_read'], idempotencyKey: 'chain-tenant-hint', tenantHint: 'contoso-tenant' });
+		let observedUrl = null;
+		const fetchImpl = async (url) => {
+			observedUrl = String(url);
+			return { ok: true, status: 200, json: async () => ({ access_token: 'fixture-at', refresh_token: 'fixture-rt', expires_in: 3600, scope: 'openid profile email Mail.Read', id_token: fixtureIdToken({ sub: 'fixture-subject-ms', email: 'user@example.com', tid: 'contoso-tenant' }) }) };
+		};
+
+		const result = await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-ms-code', redirectUri: MICROSOFT_REDIRECT_URI, callbackFingerprint: 'fp-ms-tenant-hint', allowedMicrosoftTenantIds: ['contoso-tenant'], fetchImpl });
+
+		expect(result.tokenExchangeOk).toBe(true);
+		expect(observedUrl).toContain('login.microsoftonline.com/contoso-tenant/oauth2/v2.0/token');
+	});
+
+	it('Microsoft admin-consent checkpoint uses the durable tenant hint and not the generic /common authority', async () => {
+		const c = { env: { ...env, NEXORA_MICROSOFT_OAUTH_CLIENT_ID: 'test-ms-client-id', NEXORA_MICROSOFT_OAUTH_REDIRECT_URI: MICROSOFT_REDIRECT_URI, jwt_secret: 'test-only-pool-workers-encryption-secret' } };
+		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'microsoft', capabilities: ['mail_read'], idempotencyKey: 'chain-admin-consent-tenant', tenantHint: 'admin-tenant' });
+		const fetchImpl = async () => ({ ok: false, status: 400, json: async () => ({ error: 'admin_consent_required', error_description: 'Tenant policy requires administrator consent.' }) });
+
+		const result = await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-ms-admin-code', redirectUri: MICROSOFT_REDIRECT_URI, callbackFingerprint: 'fp-ms-admin-tenant', fetchImpl });
+
+		expect(result.capabilityStatus).toBe('ADMIN_APPROVAL_REQUIRED');
+		expect(result.phase).toBe('waiting_for_admin_consent');
+		const phaseRow = await env.db.prepare(`SELECT resume_token,required_human_actor FROM nexora_onboarding_state WHERE mission_id=?1`).bind(started.missionId).first();
+		expect(phaseRow.required_human_actor).toBe('tenant_administrator');
+		expect(phaseRow.resume_token).toContain('login.microsoftonline.com/admin-tenant/adminconsent');
+		expect(phaseRow.resume_token).not.toContain('login.microsoftonline.com/common/adminconsent');
+	});
+
 	it('Required Output #4: a callback WITH a real authorization code drives the chain all the way to starting_initial_sync, with encrypted tokens stored and capability SUPPORTED', async () => {
-		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', jwt_secret: 'test-only-pool-workers-encryption-secret' } };
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI, jwt_secret: 'test-only-pool-workers-encryption-secret' } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'chain-1' });
 		expect(started.ok).toBe(true);
 
@@ -262,7 +304,7 @@ describe('NEXORA onboarding orchestrator — full real chain: callback code -> t
 	});
 
 	it('insufficient granted scope blocks with CAPABILITY_SCOPE_INSUFFICIENT rather than falsely proceeding to sync', async () => {
-		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', jwt_secret: 'test-only-pool-workers-encryption-secret' } };
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI, jwt_secret: 'test-only-pool-workers-encryption-secret' } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'chain-2' });
 		// Provider grants only 'openid' -- not the requested gmail.readonly scope (e.g. user
 		// denied part of the consent screen).
@@ -276,7 +318,7 @@ describe('NEXORA onboarding orchestrator — full real chain: callback code -> t
 	});
 
 	it('a token-exchange failure (e.g. invalid_grant for a reused code) drives the phase to failed with the real error code, not silently ignored', async () => {
-		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', jwt_secret: 'test-only-pool-workers-encryption-secret' } };
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI, jwt_secret: 'test-only-pool-workers-encryption-secret' } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'chain-3' });
 		const failingFetch = async () => ({ ok: false, status: 400, json: async () => ({ error: 'invalid_grant', error_description: 'Code was already redeemed.' }) });
 		const result = await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'reused-code', redirectUri: 'https://x/callback', callbackFingerprint: 'fp-chain-3', fetchImpl: failingFetch });
@@ -289,7 +331,7 @@ describe('NEXORA onboarding orchestrator — full real chain: callback code -> t
 	});
 
 	it('newly wired: an identity conflict (returned email does not match the login hint the user started with) blocks and stores no token', async () => {
-		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', jwt_secret: 'test-only-pool-workers-encryption-secret' } };
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI, jwt_secret: 'test-only-pool-workers-encryption-secret' } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'chain-4', loginHint: 'expected@example.com' });
 		const result = await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-code-4', redirectUri: 'https://x/callback', callbackFingerprint: 'fp-chain-4', loginHint: 'expected@example.com', fetchImpl: fixtureFetch('openid email https://www.googleapis.com/auth/gmail.readonly', { sub: 'other-subject', email: 'someone-else@example.com' }) });
 		expect(result.identityValid).toBe(false);
@@ -301,7 +343,7 @@ describe('NEXORA onboarding orchestrator — full real chain: callback code -> t
 	});
 
 	it('newly wired: a Microsoft tenant outside the allowed policy blocks and stores no token', async () => {
-		const c = { env: { ...env, NEXORA_MICROSOFT_OAUTH_CLIENT_ID: 'test-ms-client-id', jwt_secret: 'test-only-pool-workers-encryption-secret' } };
+		const c = { env: { ...env, NEXORA_MICROSOFT_OAUTH_CLIENT_ID: 'test-ms-client-id', NEXORA_MICROSOFT_OAUTH_REDIRECT_URI: MICROSOFT_REDIRECT_URI, jwt_secret: 'test-only-pool-workers-encryption-secret' } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'microsoft', capabilities: ['mail_read'], idempotencyKey: 'chain-5' });
 		const result = await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-code-5', redirectUri: 'https://x/callback', callbackFingerprint: 'fp-chain-5', allowedMicrosoftTenantIds: ['allowed-tenant'], fetchImpl: fixtureFetch('openid profile email Mail.Read', { sub: 'sub-5', tid: 'disallowed-tenant' }) });
 		expect(result.identityValid).toBe(false);
@@ -309,8 +351,8 @@ describe('NEXORA onboarding orchestrator — full real chain: callback code -> t
 		expect(phaseRow.blocked_reason).toBe('TENANT_POLICY_DENIED');
 	});
 
-	it('E28 restart-safety fix: a duplicate callback with a resupplied code retries exchange+storage when the prior attempt never completed (crash between exchange and storage)', async () => {
-		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', jwt_secret: 'test-only-pool-workers-encryption-secret' } };
+	it('E28: a duplicate callback with a resupplied code never retries exchange; it creates one fenced replacement session', async () => {
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI, jwt_secret: 'test-only-pool-workers-encryption-secret' } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'chain-6' });
 
 		// First delivery: manually mark the session consumed WITHOUT ever storing a token,
@@ -320,17 +362,28 @@ describe('NEXORA onboarding orchestrator — full real chain: callback code -> t
 		const tokenCountBefore = await env.db.prepare(`SELECT COUNT(*) n FROM nexora_onboarding_tokens WHERE onboarding_mission_id=?1`).bind(started.missionId).first();
 		expect(Number(tokenCountBefore.n)).toBe(0);
 
-		// Second delivery (e.g. the client's own retry, or a manual recovery replay) resupplies
-		// the same code -- must actually complete the missing work, not short-circuit as a no-op.
-		const result = await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-code-6', redirectUri: 'https://x/callback', callbackFingerprint: 'fp-chain-6', fetchImpl: fixtureFetch('openid email https://www.googleapis.com/auth/gmail.readonly') });
-		expect(result.tokenExchangeOk).toBe(true);
-		expect(result.capabilityStatus).toBe('SUPPORTED');
+		let calls = 0;
+		const result = await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-code-6', redirectUri: 'https://x/callback', callbackFingerprint: 'fp-chain-6', fetchImpl: async () => { calls += 1; return fixtureFetch('openid email https://www.googleapis.com/auth/gmail.readonly')(); } });
+		expect(result.duplicate).toBe(true);
+		expect(result.recovery).toBe('REAUTHORIZATION_REQUIRED');
+		expect(result.reauthorizationStatus).toBe('WAITING_FOR_USER');
+		expect(result.replacementSessionId).toBeTruthy();
+		expect(result.authorizationUrl).toContain('accounts.google.com');
+		expect(calls).toBe(0);
+		const work = await env.db.prepare(`SELECT * FROM nexora_onboarding_reauthorization_work WHERE onboarding_mission_id=?1`).bind(started.missionId).first();
+		expect(work.original_authorization_session_id).not.toBe(work.replacement_authorization_session_id);
+		expect(work.status).toBe('WAITING_FOR_USER');
+		const duplicate = await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-code-6', redirectUri: 'https://x/callback', callbackFingerprint: 'fp-chain-6-duplicate', fetchImpl: async () => { calls += 1; return fixtureFetch('openid email https://www.googleapis.com/auth/gmail.readonly')(); } });
+		expect(duplicate.reauthorizationWorkId).toBe(work.id);
+		expect(calls).toBe(0);
+		const workCount = await env.db.prepare(`SELECT COUNT(*) n FROM nexora_onboarding_reauthorization_work WHERE onboarding_mission_id=?1`).bind(started.missionId).first();
+		expect(Number(workCount.n)).toBe(1);
 		const tokenCountAfter = await env.db.prepare(`SELECT COUNT(*) n FROM nexora_onboarding_tokens WHERE onboarding_mission_id=?1`).bind(started.missionId).first();
-		expect(Number(tokenCountAfter.n)).toBe(1); // the previously-stranded Mission is now recovered
+		expect(Number(tokenCountAfter.n)).toBe(0); // recovery must inspect durable evidence or reauthorize, never replay code
 	});
 
 	it('a genuinely-already-completed duplicate callback (token already stored) remains a true no-op, does not re-exchange', async () => {
-		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', jwt_secret: 'test-only-pool-workers-encryption-secret' } };
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI, jwt_secret: 'test-only-pool-workers-encryption-secret' } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'chain-7' });
 		await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-code-7', redirectUri: 'https://x/callback', callbackFingerprint: 'fp-chain-7', fetchImpl: fixtureFetch('openid email https://www.googleapis.com/auth/gmail.readonly') });
 

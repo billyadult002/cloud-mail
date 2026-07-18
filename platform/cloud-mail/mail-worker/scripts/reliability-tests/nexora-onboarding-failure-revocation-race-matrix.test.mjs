@@ -29,7 +29,7 @@ const otherMission = 'other-mission';
 const SCHEMA = [
 	`CREATE TABLE nexora_onboarding_tokens (id TEXT PRIMARY KEY,onboarding_mission_id TEXT NOT NULL,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,provider TEXT NOT NULL,provider_account_hash TEXT NOT NULL,refresh_token_ciphertext TEXT NOT NULL,access_token_ciphertext TEXT,access_token_expires_at TEXT,granted_scopes_json TEXT NOT NULL,rotation_generation INTEGER NOT NULL DEFAULT 1,connection_health TEXT NOT NULL DEFAULT 'healthy',revoked_at TEXT,revoked_reason TEXT,last_successful_refresh_at TEXT,last_failed_refresh_at TEXT,refresh_failure_count INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(onboarding_mission_id))`,
 	`CREATE TABLE nexora_onboarding_refresh_work (id TEXT PRIMARY KEY,idempotency_key TEXT NOT NULL UNIQUE,onboarding_mission_id TEXT NOT NULL,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,provider TEXT NOT NULL,expected_token_generation INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'leased',lease_token TEXT,lease_owner TEXT,lease_expires_at TEXT,fence_generation INTEGER NOT NULL DEFAULT 1,attempt_count INTEGER NOT NULL DEFAULT 1)`,
-	`CREATE TABLE nexora_provider_outcome_results (id TEXT PRIMARY KEY,outcome_kind TEXT NOT NULL,operation_id TEXT NOT NULL,idempotency_key TEXT NOT NULL UNIQUE,authority_tuple_digest TEXT NOT NULL,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,provider TEXT NOT NULL,connection_id TEXT,mission_id TEXT NOT NULL,authorization_session_id TEXT,correlation_id TEXT,refresh_job_id TEXT,lease_owner TEXT NOT NULL,fencing_token INTEGER NOT NULL,expected_token_generation INTEGER NOT NULL,committed_token_generation INTEGER NOT NULL,expected_provider_connection_generation INTEGER,committed_provider_connection_generation INTEGER,observation_reference TEXT,normalized_reason_code TEXT NOT NULL,retry_classification TEXT NOT NULL,evidence_outbox_id TEXT)`,
+	`CREATE TABLE nexora_provider_outcome_results (id TEXT PRIMARY KEY,outcome_kind TEXT NOT NULL,operation_id TEXT NOT NULL,idempotency_key TEXT NOT NULL UNIQUE,authority_tuple_digest TEXT NOT NULL,outcome_digest TEXT NOT NULL,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,provider TEXT NOT NULL,connection_id TEXT,mission_id TEXT NOT NULL,authorization_session_id TEXT,correlation_id TEXT,refresh_job_id TEXT,lease_owner TEXT NOT NULL,fencing_token INTEGER NOT NULL,expected_token_generation INTEGER NOT NULL,committed_token_generation INTEGER NOT NULL,expected_provider_connection_generation INTEGER,committed_provider_connection_generation INTEGER,observation_reference TEXT,normalized_reason_code TEXT NOT NULL,retry_classification TEXT NOT NULL,evidence_outbox_id TEXT)`,
 	// Fingerprint-service dependency tables (kept empty/minimal here; this file's mission is
 	// the failure/revocation/race matrices, not reauthorization commit, which is already
 	// covered by nexora-onboarding-atomic-rollback.test.mjs).
@@ -154,11 +154,11 @@ describe('Checkpoint 2B — Failure matrix (14 cases) against commitRefreshFailu
 		expect((await fp()).digest).toBe(before.digest);
 	});
 
-	it('11. wrong Provider — REAL FINDING: provider is not part of the fencing predicate for commitRefreshFailureWithFence; a mismatched provider string does not block the commit (metadata only, not enforced)', async () => {
+	it('11. wrong Provider: rejected at the D1 fencing predicate', async () => {
+		const before = await fp();
 		const result = await tokenStorage.commitRefreshFailureWithFence(c, scope, { ...baseFailureArgs(), provider: 'microsoft' });
-		expect(result.committed).toBe(true); // documents the real (non-enforcing) behavior rather than asserting a false rejection
-		const outcome = await env.db.prepare(`SELECT provider FROM nexora_provider_outcome_results WHERE id=?1`).bind(result.outcomeResultId).first();
-		expect(outcome.provider).toBe('microsoft'); // stored as given, not validated against the token's real provider
+		expect(result.committed).toBe(false);
+		expect((await fp()).digest).toBe(before.digest);
 	});
 
 	it('12. wrong Mission: rejected', async () => {
@@ -180,18 +180,40 @@ describe('Checkpoint 2B — Failure matrix (14 cases) against commitRefreshFailu
 		expect(Number(outcomeCount.n)).toBe(1);
 	});
 
-	it('14. conflicting duplicate failure — REAL GAP: two calls under the SAME lease/fence with DIFFERENT health values are NOT recognized as conflicting, because the idempotency key embeds `health`; both independently succeed', async () => {
+	it('14. conflicting duplicate failure — FIXED (Defect 1): same operation key + same authority digest + DIFFERENT outcome (health) now fails closed, preserving the original outcome', async () => {
 		const first = await tokenStorage.commitRefreshFailureWithFence(c, scope, { ...baseFailureArgs(), health: 'degraded' });
-		const second = await tokenStorage.commitRefreshFailureWithFence(c, scope, { ...baseFailureArgs(), health: 'retry_scheduled' });
-		// Documents the actual (unfenced) behavior: both commit, producing two outcome rows
-		// and a health value determined by whichever call ran last -- not the fail-closed
-		// "preserve the current outcome" behavior a true conflicting-duplicate guard requires.
 		expect(first.committed).toBe(true);
-		expect(second.committed).toBe(true);
+		const winningState = await fp();
+		const second = await tokenStorage.commitRefreshFailureWithFence(c, scope, { ...baseFailureArgs(), health: 'retry_scheduled' });
+		expect(second.committed).toBe(false);
+		expect(second.reason).toBe('REFRESH_FAILURE_OUTCOME_CONFLICT');
+		expect((await fp()).digest).toBe(winningState.digest); // no second mutation, original outcome preserved
 		const outcomeCount = await env.db.prepare(`SELECT COUNT(*) n FROM nexora_provider_outcome_results WHERE refresh_job_id='work-1'`).first();
-		expect(Number(outcomeCount.n)).toBe(2); // two distinct outcome rows -- the real gap
+		expect(Number(outcomeCount.n)).toBe(1); // exactly one outcome row, not two
 		const finalToken = await tokenRow();
-		expect(finalToken.connection_health).toBe('retry_scheduled'); // last-write-wins on health, not fenced
+		expect(finalToken.connection_health).toBe('degraded'); // the FIRST (winning) outcome stands, not last-write-wins
+	});
+
+	it('14b. identical retry after a prior failure (same operation key + same authority + same outcome) is a true no-op, distinct from the conflict case above', async () => {
+		const first = await tokenStorage.commitRefreshFailureWithFence(c, scope, baseFailureArgs());
+		const second = await tokenStorage.commitRefreshFailureWithFence(c, scope, baseFailureArgs());
+		expect(second.committed).toBe(true);
+		expect(second.idempotent).toBe(true);
+		expect(second.outcomeResultId).toBe(first.outcomeResultId);
+	});
+
+	it('14c. same operation key with a DIFFERENT authority context (different provider) fails closed as an authority conflict, distinct from an outcome conflict', async () => {
+		const first = await tokenStorage.commitRefreshFailureWithFence(c, scope, { ...baseFailureArgs(), provider: 'google' });
+		expect(first.committed).toBe(true);
+		// Reset the work row to leased again so only the operation-key/authority-digest
+		// dimension differs, isolating this from the "wrong provider fenced at the WHERE
+		// clause" case tested separately below.
+		await env.db.prepare(`UPDATE nexora_onboarding_refresh_work SET status='leased' WHERE id='work-1'`).run();
+		const winningState = await fp();
+		const second = await tokenStorage.commitRefreshFailureWithFence(c, scope, { ...baseFailureArgs(), provider: 'microsoft' });
+		expect(second.committed).toBe(false);
+		expect(second.reason).toBe('REFRESH_FAILURE_AUTHORITY_CONFLICT');
+		expect((await fp()).digest).toBe(winningState.digest);
 	});
 });
 
@@ -276,9 +298,11 @@ describe('Checkpoint 2B — Revocation matrix (20 cases) against commitRevocatio
 		expect((await fp()).digest).toBe(before.digest);
 	});
 
-	it('11. wrong Provider — REAL FINDING: same non-enforcement as the failure matrix; provider is metadata only', async () => {
+	it('11. wrong Provider: rejected at the D1 fencing predicate', async () => {
+		const before = await fp();
 		const result = await tokenStorage.commitRevocationWithFence(c, scope, { ...baseRevocationArgs(), provider: 'microsoft' });
-		expect(result.committed).toBe(true);
+		expect(result.committed).toBe(false);
+		expect((await fp()).digest).toBe(before.digest);
 	});
 
 	it('12. wrong Mission: rejected', async () => {

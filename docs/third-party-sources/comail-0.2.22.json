@@ -1,0 +1,20 @@
+{
+  "source_name": "Comail",
+  "source_path": "/Users/billtin/Downloads/comail-0.2.22",
+  "version": "0.2.22",
+  "license": "AGPL-3.0-only",
+  "license_sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0",
+  "assessment_date": "2026-07-18",
+  "approved_reuse_classification_historical": "DESIGN_REUSE",
+  "authorization_status": "USER_CONFIRMED_PENDING_ARTIFACT",
+  "confirmed_by": "TinBill",
+  "confirmation_date": "2026-07-18",
+  "authorized_internal_reuse_forms": ["DIRECT_REUSE", "ADAPTED_REUSE", "SOURCE_TRANSLATION", "DEPENDENCY_INTEGRATION", "FIXTURE_REUSE", "TEST_REUSE", "PRODUCTION_INTEGRATION", "DESIGN_REUSE"],
+  "formal_artifact_required_before": ["commercial_release", "public_distribution", "external_binary_distribution", "externally_accessible_deployment"],
+  "reviewer": "Codex clean-room assessment",
+  "legal_review_status": "USER_CONFIRMED_INTERNAL_AUTHORIZATION_PENDING_FORMAL_ARTIFACT",
+  "canonical_repository_inclusion": false,
+  "build_input_inclusion": false,
+  "worker_bundle_inclusion": false,
+  "ipa_resource_inclusion": false
+}

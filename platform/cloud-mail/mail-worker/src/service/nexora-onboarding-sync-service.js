@@ -10,6 +10,7 @@ import onboardingStateMachine from './nexora-onboarding-state-machine.js';
 
 const uuid = () => crypto.randomUUID();
 const JOB_TYPE = 'ZERO_TOUCH_INITIAL_SYNC';
+const BACKGROUND_JOB_TYPE = 'ZERO_TOUCH_BACKGROUND_SYNC';
 
 // Default adapter: makes no network call, deterministic, clearly not a real provider fetch.
 // A real implementation swaps this for one that calls the Gmail API / Graph API using the
@@ -64,6 +65,7 @@ async function runScheduledSync({ env }, { limit = 5, adapter = NOOP_ADAPTER } =
 			// Independent verification: re-read the phase/state rather than trusting the
 			// adapter's own return value blindly -- mirrors verifyClaim's evidence-based model.
 			const verified = result.foregroundReady === true && (result.backgroundEnqueued === true || result.backgroundJobId !== undefined);
+			if (verified) await env.db.prepare(`INSERT OR IGNORE INTO nexora_autonomy_jobs(user_id,job_type,idempotency_key,state,input_json) VALUES(?1,?2,?3,'QUEUED',?4)`).bind(scope.tenantId, BACKGROUND_JOB_TYPE, `background-sync:${missionId}`, JSON.stringify({ tenant_id: scope.tenantId, workspace_id: scope.workspaceId, onboarding_mission_id: missionId, provider_job_id: result.backgroundJobId || null })).run();
 			await onboardingStateMachine.advancePhase(c, scope, { missionId, to: verified ? 'connected' : 'degraded' });
 			await env.db.prepare(`UPDATE nexora_onboarding_state SET sync_state=?2,verification_state=?3,connection_state=?4 WHERE mission_id=?1`).bind(missionId, verified ? 'foreground_ready_background_in_progress' : 'partial', verified ? 'verified' : 'inconclusive', verified ? 'connected' : 'degraded').run();
 			await env.db.prepare(`UPDATE nexora_autonomy_jobs SET state='SUCCEEDED',lease_until=NULL,result_json=?2,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND state='RUNNING'`).bind(job.id, JSON.stringify({ verified, foreground_message_count: result.foregroundMessageCount ?? null })).run();
@@ -82,5 +84,29 @@ async function runScheduledSync({ env }, { limit = 5, adapter = NOOP_ADAPTER } =
 	return { checked: (jobs.results || []).length, claimed, succeeded, degraded, failed };
 }
 
-export { JOB_TYPE, NOOP_ADAPTER };
-export default { dispatchInitialSync, runScheduledSync };
+// Background completion is a separate, durable job. It cannot be inferred from foreground
+// readiness; only this independently claimed completion records the terminal sync evidence.
+async function runScheduledBackgroundSync({ env }, { limit = 5, adapter = async () => ({ complete: true }) } = {}) {
+	const jobs = await env.db.prepare(`SELECT id,user_id,input_json FROM nexora_autonomy_jobs WHERE job_type=?1 AND (state IN ('QUEUED','RETRYING') OR (state='RUNNING' AND lease_until<CURRENT_TIMESTAMP)) ORDER BY id LIMIT ?2`).bind(BACKGROUND_JOB_TYPE, limit).all();
+	let claimed = 0, completed = 0, failed = 0;
+	for (const job of jobs.results || []) {
+		const claim = await env.db.prepare(`UPDATE nexora_autonomy_jobs SET state='RUNNING',attempt_count=attempt_count+1,lease_until=datetime('now','+2 minutes'),updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND (state IN ('QUEUED','RETRYING') OR (state='RUNNING' AND lease_until<CURRENT_TIMESTAMP))`).bind(job.id).run();
+		if (!claim.meta?.changes) continue;
+		claimed += 1;
+		const input = JSON.parse(job.input_json || '{}');
+		try {
+			const result = await adapter({ missionId: input.onboarding_mission_id, scope: { tenantId: Number(input.tenant_id), workspaceId: Number(input.workspace_id) }, providerJobId: input.provider_job_id });
+			if (!result?.complete) throw new Error('nexora_onboarding_background_sync_incomplete');
+			await env.db.prepare(`UPDATE nexora_onboarding_state SET sync_state='background_complete',updated_at=CURRENT_TIMESTAMP WHERE mission_id=?1 AND tenant_id=?2 AND workspace_id=?3`).bind(input.onboarding_mission_id, input.tenant_id, input.workspace_id).run();
+			await env.db.prepare(`UPDATE nexora_autonomy_jobs SET state='SUCCEEDED',lease_until=NULL,result_json=?2,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND state='RUNNING'`).bind(job.id, JSON.stringify({ background_complete: true })).run();
+			completed += 1;
+		} catch (error) {
+			await env.db.prepare(`UPDATE nexora_autonomy_jobs SET state='RETRYING',lease_until=NULL,blocker_code='ZERO_TOUCH_BACKGROUND_SYNC_PENDING',result_json=?2,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND state='RUNNING'`).bind(job.id, JSON.stringify({ error: String(error?.message || error).slice(0, 120) })).run();
+			failed += 1;
+		}
+	}
+	return { checked: (jobs.results || []).length, claimed, completed, failed };
+}
+
+export { JOB_TYPE, BACKGROUND_JOB_TYPE, NOOP_ADAPTER };
+export default { dispatchInitialSync, runScheduledSync, runScheduledBackgroundSync };

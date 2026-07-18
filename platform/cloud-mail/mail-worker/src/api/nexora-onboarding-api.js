@@ -20,6 +20,11 @@ function readCookie(c, name) {
 	return null;
 }
 
+async function callbackFingerprint(code) {
+	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code));
+	return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 app.post('/v3/onboarding/discover', async (c) => {
 	const tenantId = userContext.getUserId(c);
 	const q = c.req.query();
@@ -56,11 +61,15 @@ app.get('/v3/onboarding/status/:missionId', async (c) => {
 });
 
 async function handleProviderCallback(c, expectedProvider) {
-	const tenantId = userContext.getUserId(c);
 	const q = c.req.query();
-	const workspaceId = Number(q.workspace_id);
 	const verifier = readCookie(c, 'nexora_pkce_verifier') || '';
-	const data = await onboardingOrchestrator.handleCallback(c, { tenantId, workspaceId }, { state: String(q.state || ''), verifier, callbackFingerprint: q.code ? String(q.code).slice(0, 12) : null });
+	const redirectUri = c.env?.[expectedProvider === 'google' ? 'NEXORA_GOOGLE_OAUTH_REDIRECT_URI' : 'NEXORA_MICROSOFT_OAUTH_REDIRECT_URI'];
+	// Provider redirects are deliberately not scoped from query parameters, the active UI
+	// workspace, or the logged-in user.  `state` resolves exactly one durable correlation row.
+	const data = await onboardingOrchestrator.handleCallback(c, null, {
+		state: String(q.state || ''), verifier, code: q.code ? String(q.code) : null, redirectUri,
+		callbackFingerprint: q.code ? await callbackFingerprint(String(q.code)) : null, expectedProvider,
+	});
 	if (data.ok) c.header('Set-Cookie', `nexora_pkce_verifier=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/v3/onboarding`); // single-use, clear immediately
 	c.header('Cache-Control', 'private, no-store');
 	return c.json(result.ok({ ...data, provider: expectedProvider }));
@@ -76,7 +85,9 @@ app.post('/v3/onboarding/callback', async (c) => {
 	const q = c.req.query();
 	const body = await c.req.json().catch(() => ({}));
 	const workspaceId = Number(q.workspace_id || body.workspace_id);
-	const data = await onboardingOrchestrator.handleCallback(c, { tenantId, workspaceId }, { state: String(body.state || ''), verifier: String(body.code_verifier || ''), callbackFingerprint: body.callback_fingerprint || null });
+	const provider = String(body.provider || '');
+	const redirectUri = c.env?.[provider === 'google' ? 'NEXORA_GOOGLE_OAUTH_REDIRECT_URI' : provider === 'microsoft' ? 'NEXORA_MICROSOFT_OAUTH_REDIRECT_URI' : ''];
+	const data = await onboardingOrchestrator.handleCallback(c, { tenantId, workspaceId }, { state: String(body.state || ''), verifier: String(body.code_verifier || ''), code: body.code ? String(body.code) : null, redirectUri, callbackFingerprint: body.callback_fingerprint || null, expectedProvider: provider || null });
 	return c.json(result.ok(data));
 });
 

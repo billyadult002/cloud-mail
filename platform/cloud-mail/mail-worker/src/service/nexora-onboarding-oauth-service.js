@@ -12,6 +12,7 @@
 // per this mission's explicit instruction not to let missing production OAuth credentials
 // block logic-complete implementation and verification.
 import { decide as decideProviderAction } from './provider-capability-contract-service';
+import callbackRecovery from './nexora-onboarding-callback-recovery-service.js';
 
 const uuid = () => crypto.randomUUID();
 const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -32,6 +33,7 @@ const PROVIDERS = Object.freeze({
 		authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
 		tokenEndpoint: 'https://oauth2.googleapis.com/token',
 		clientIdEnv: 'NEXORA_GOOGLE_OAUTH_CLIENT_ID',
+		redirectUriEnv: 'NEXORA_GOOGLE_OAUTH_REDIRECT_URI',
 		// Google's PKCE-capable public/native flow does not require a client_secret; the
 		// confidential server-side exchange (if used) reads NEXORA_GOOGLE_OAUTH_CLIENT_SECRET
 		// at token-exchange time only -- never referenced from this contract-construction module.
@@ -42,6 +44,7 @@ const PROVIDERS = Object.freeze({
 		authorizationEndpoint: 'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize',
 		tokenEndpoint: 'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token',
 		clientIdEnv: 'NEXORA_MICROSOFT_OAUTH_CLIENT_ID',
+		redirectUriEnv: 'NEXORA_MICROSOFT_OAUTH_REDIRECT_URI',
 		supportsIncrementalConsent: true,
 		defaultClientType: 'confidential',
 	},
@@ -107,11 +110,12 @@ async function pkceChallengeFor(verifier) {
 async function createAuthorizationSession(env, { onboardingMissionId, tenantId, workspaceId, provider, clientRegistrationMode = 'first_party', capabilities, existingGrantedScopes = [], tenantHint = null, loginHint = null, ttlSeconds = 600 }) {
 	if (!PROVIDERS[provider]) throw new Error('nexora_onboarding_unsupported_provider');
 	const clientId = env?.[PROVIDERS[provider].clientIdEnv];
-	if (!clientId) {
+	const redirectUri = env?.[PROVIDERS[provider].redirectUriEnv];
+	if (!clientId || !redirectUri) {
 		// Explicit, honest failure -- never construct a redirect to a provider with no
 		// registered application. This is the exact signal the operational-visibility
 		// surface (Required Output #26/#31) must show as "provider application missing".
-		return { ok: false, reason: 'PROVIDER_APPLICATION_MISSING', provider, requiredEnv: PROVIDERS[provider].clientIdEnv };
+		return { ok: false, reason: 'PROVIDER_APPLICATION_MISSING', provider, requiredEnv: !clientId ? PROVIDERS[provider].clientIdEnv : PROVIDERS[provider].redirectUriEnv };
 	}
 	const { scopes, justification } = planScopes(provider, capabilities);
 	const { additionalScopes } = existingGrantedScopes.length ? planIncrementalScopes(provider, existingGrantedScopes, capabilities) : { additionalScopes: scopes };
@@ -126,17 +130,18 @@ async function createAuthorizationSession(env, { onboardingMissionId, tenantId, 
 		redirect_uri_id: `nexora_${provider}_redirect_v1`, scopes_json: JSON.stringify(scopes), incremental_scopes_json: JSON.stringify(additionalScopes),
 		state_hash: await hexHash(state), nonce_hash: nonce ? await hexHash(nonce) : null, pkce_challenge: challenge, pkce_challenge_method: 'S256',
 		pkce_verifier_hash: await hexHash(verifier), tenant_hint: tenantHint, login_hint_hash: loginHint ? await hexHash(loginHint) : null, expires_at: expiresAt,
+		redirect_uri_hash: await hexHash(redirectUri), requested_capabilities_json: JSON.stringify([...capabilities].sort()), scope_plan_reference: `scope-plan:${await hexHash(scopes.join(' '))}`,
 	};
-	return { ok: true, row, verifier, state, nonce, scopeJustification: justification, authorizationUrl: buildAuthorizationUrl(provider, { clientId, state, nonce, challenge, scopes, tenantHint, loginHint }) };
+	return { ok: true, row, verifier, state, nonce, scopeJustification: justification, authorizationUrl: buildAuthorizationUrl(provider, { clientId, redirectUri, state, nonce, challenge, scopes, tenantHint, loginHint }) };
 }
 
-function buildAuthorizationUrl(provider, { clientId, state, nonce, challenge, scopes, tenantHint, loginHint }) {
+function buildAuthorizationUrl(provider, { clientId, redirectUri, state, nonce, challenge, scopes, tenantHint, loginHint }) {
 	const spec = PROVIDERS[provider];
-	const base = spec.authorizationEndpoint.replace('{tenant}', tenantHint || 'organizations');
+	const base = spec.authorizationEndpoint.replace('{tenant}', tenantHint || 'common');
 	const params = new URLSearchParams({
 		client_id: clientId,
 		response_type: 'code',
-		redirect_uri: `https://REDACTED_REDIRECT_URI/${provider}`, // real value injected at deploy time by the redirect_uri_id -> config mapping, never invented here
+		redirect_uri: redirectUri,
 		scope: scopes.join(' '),
 		state,
 		code_challenge: challenge,
@@ -150,43 +155,73 @@ function buildAuthorizationUrl(provider, { clientId, state, nonce, challenge, sc
 	return `${base}?${params.toString()}`;
 }
 
+function buildMicrosoftAdminConsentUrl({ tenantId, clientId, redirectUri }) {
+	if (!tenantId || !clientId || !redirectUri) throw new Error('nexora_onboarding_admin_consent_config_missing');
+	const params = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri });
+	return `https://login.microsoftonline.com/${encodeURIComponent(tenantId)}/adminconsent?${params.toString()}`;
+}
+
 async function insertAuthorizationSession(c, row) {
-	await c.env.db
+	// The correlation row is deliberately separate from the browser URL and authenticated
+	// user context.  A provider callback has only `state` as its correlation input; looking
+	// up this D1 record is therefore the only way it obtains tenant/workspace scope.
+	const correlationId = uuid();
+	const sessionStatement = c.env.db
 		.prepare(`INSERT INTO nexora_onboarding_authorization_sessions(id,onboarding_mission_id,tenant_id,workspace_id,provider,client_registration_mode,redirect_uri_id,scopes_json,incremental_scopes_json,state_hash,nonce_hash,pkce_challenge,pkce_challenge_method,pkce_verifier_hash,tenant_hint,login_hint_hash,expires_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)`)
-		.bind(row.id, row.onboarding_mission_id, row.tenant_id, row.workspace_id, row.provider, row.client_registration_mode, row.redirect_uri_id, row.scopes_json, row.incremental_scopes_json, row.state_hash, row.nonce_hash, row.pkce_challenge, row.pkce_challenge_method, row.pkce_verifier_hash, row.tenant_hint, row.login_hint_hash, row.expires_at)
-		.run();
+		.bind(row.id, row.onboarding_mission_id, row.tenant_id, row.workspace_id, row.provider, row.client_registration_mode, row.redirect_uri_id, row.scopes_json, row.incremental_scopes_json, row.state_hash, row.nonce_hash, row.pkce_challenge, row.pkce_challenge_method, row.pkce_verifier_hash, row.tenant_hint, row.login_hint_hash, row.expires_at);
+	const correlationStatement = c.env.db
+		.prepare(`INSERT INTO nexora_onboarding_callback_correlations(id,state_hash,authorization_session_id,onboarding_mission_id,tenant_id,workspace_id,provider,redirect_uri_id,redirect_uri_hash,requested_scopes_json,requested_capabilities_json,scope_plan_reference,pkce_challenge,pkce_challenge_reference,expires_at,resume_checkpoint) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)`)
+		.bind(correlationId, row.state_hash, row.id, row.onboarding_mission_id, row.tenant_id, row.workspace_id, row.provider, row.redirect_uri_id, row.redirect_uri_hash, row.scopes_json, row.requested_capabilities_json, row.scope_plan_reference, row.pkce_challenge, `pkce:${row.id}`, row.expires_at, `resume:${row.onboarding_mission_id}`);
+	await c.env.db.batch([sessionStatement, correlationStatement]);
+	return { correlationId };
 }
 
 // Single-use, replay-safe callback consumption. A duplicate callback (same state delivered
 // twice, e.g. a provider or browser retry) must be idempotent-safe: the SECOND attempt must
 // never re-trigger token exchange or double-advance the Mission, but must also not be treated
 // as an error the caller needs to surface -- it is harmless by construction (status check).
-async function consumeCallback(c, scope, { state, verifier, receivedCallbackFingerprint }) {
+async function consumeCallback(c, scope, { state, verifier, receivedCallbackFingerprint, expectedProvider = null }) {
 	const stateHash = await hexHash(state);
-	const session = await c.env.db.prepare(`SELECT * FROM nexora_onboarding_authorization_sessions WHERE tenant_id=?1 AND workspace_id=?2 AND state_hash=?3`).bind(scope.tenantId, scope.workspaceId, stateHash).first();
+	const correlation = await c.env.db.prepare(`SELECT * FROM nexora_onboarding_callback_correlations WHERE state_hash=?1`).bind(stateHash).first();
+	if (!correlation) return { ok: false, reason: 'INVALID_STATE' };
+	if (scope && (Number(correlation.tenant_id) !== Number(scope.tenantId) || Number(correlation.workspace_id) !== Number(scope.workspaceId))) return { ok: false, reason: 'INVALID_STATE' };
+	if (expectedProvider && correlation.provider !== expectedProvider) return { ok: false, reason: 'PROVIDER_STATE_MISMATCH' };
+	const resolvedScope = { tenantId: Number(correlation.tenant_id), workspaceId: Number(correlation.workspace_id) };
+	const session = await c.env.db.prepare(`SELECT * FROM nexora_onboarding_authorization_sessions WHERE id=?1 AND state_hash=?2`).bind(correlation.authorization_session_id, stateHash).first();
 	if (!session) return { ok: false, reason: 'INVALID_STATE' }; // fails closed -- never guesses which session this belongs to
-	if (session.status === 'consumed') return { ok: true, duplicate: true, alreadyConsumed: true, resumeCheckpoint: session.resume_checkpoint, onboardingMissionId: session.onboarding_mission_id, provider: session.provider };
+	if (correlation.status === 'consumed') return { ok: true, duplicate: true, alreadyConsumed: true, resumeCheckpoint: session.resume_checkpoint, onboardingMissionId: session.onboarding_mission_id, provider: session.provider, tenantHint: session.tenant_hint, scope: resolvedScope };
+	if (session.status === 'consumed') {
+		// A consumed authorization session is never permission to replay its single-use code.
+		// If the previous worker abandoned after observing an exchange response, acquisition
+		// produces RECONCILIATION authority only; the caller can inspect durable evidence.
+		const acquired = await callbackRecovery.acquireClaim(c, correlation);
+		const recovery = acquired.recovery || (acquired.claim?.recovery_mode === 'REAUTHORIZATION' ? 'REAUTHORIZATION_REQUIRED' : acquired.claim?.recovery_mode === 'RECONCILIATION' ? 'RECONCILIATION_REQUIRED' : null);
+		return { ok: true, duplicate: true, alreadyConsumed: acquired.reason === 'COMPLETED', inProgress: !acquired.acquired, recovery, resumeCheckpoint: session.resume_checkpoint, onboardingMissionId: session.onboarding_mission_id, authorizationSessionId: session.id, correlationId: correlation.id, provider: session.provider, tenantHint: session.tenant_hint, scope: resolvedScope, callbackClaim: acquired.claim };
+	}
 	if (session.status !== 'pending') return { ok: false, reason: `SESSION_${session.status.toUpperCase()}` };
 	if (Date.parse(session.expires_at) <= Date.now()) {
-		await c.env.db.prepare(`UPDATE nexora_onboarding_authorization_sessions SET status='expired' WHERE id=?1 AND status='pending'`).bind(session.id).run();
+		await c.env.db.batch([c.env.db.prepare(`UPDATE nexora_onboarding_authorization_sessions SET status='expired' WHERE id=?1 AND status='pending'`).bind(session.id), c.env.db.prepare(`UPDATE nexora_onboarding_callback_correlations SET status='expired' WHERE id=?1 AND status='pending'`).bind(correlation.id)]);
 		return { ok: false, reason: 'SESSION_EXPIRED' };
 	}
 	const verifierHash = await hexHash(verifier);
 	if (verifierHash !== session.pkce_verifier_hash) return { ok: false, reason: 'PKCE_MISMATCH' };
-	const result = await c.env.db
-		.prepare(`UPDATE nexora_onboarding_authorization_sessions SET status='consumed',consumed_at=CURRENT_TIMESTAMP,callback_fingerprint=?2,resume_checkpoint=?3 WHERE id=?1 AND status='pending'`)
-		.bind(session.id, receivedCallbackFingerprint || null, `resume:${session.onboarding_mission_id}`)
-		.run();
+	const acquired = await callbackRecovery.acquireClaim(c, correlation);
+	if (!acquired.acquired) return { ok: true, duplicate: true, inProgress: acquired.reason !== 'COMPLETED', alreadyConsumed: acquired.reason === 'COMPLETED', resumeCheckpoint: `resume:${session.onboarding_mission_id}`, onboardingMissionId: session.onboarding_mission_id, provider: session.provider, tenantHint: session.tenant_hint, scope: resolvedScope, callbackClaim: acquired.claim };
+	const claimToken = acquired.claim.lease_owner;
+	await callbackRecovery.recordCheckpoint(c, acquired.claim, { step: 'CLAIM_ACQUIRED', status: 'PERSISTED' });
+	await c.env.db.prepare(`UPDATE nexora_onboarding_callback_correlations SET status='claimed',claim_token=?2,claimed_by=?2,claimed_at=CURRENT_TIMESTAMP,claim_generation=?3,claim_expires_at=?4,callback_fingerprint=?5 WHERE id=?1 AND status='pending'`).bind(correlation.id, claimToken, acquired.claim.fencing_token, acquired.claim.lease_expires_at, receivedCallbackFingerprint || null).run();
+	const result = await c.env.db.prepare(`UPDATE nexora_onboarding_authorization_sessions SET status='consumed',consumed_at=CURRENT_TIMESTAMP,callback_fingerprint=?2,resume_checkpoint=?3 WHERE id=?1 AND status='pending'`).bind(session.id, receivedCallbackFingerprint || null, `resume:${session.onboarding_mission_id}`).run();
 	if (!result.meta?.changes) {
 		// Lost the race to a concurrent consumer (e.g. duplicate delivery arriving at the exact
 		// same instant) -- treat exactly like an already-consumed duplicate, not an error.
-		return { ok: true, duplicate: true, alreadyConsumed: true, resumeCheckpoint: `resume:${session.onboarding_mission_id}`, onboardingMissionId: session.onboarding_mission_id, provider: session.provider };
+		return { ok: true, duplicate: true, alreadyConsumed: true, resumeCheckpoint: `resume:${session.onboarding_mission_id}`, onboardingMissionId: session.onboarding_mission_id, provider: session.provider, tenantHint: session.tenant_hint, scope: resolvedScope };
 	}
-	return { ok: true, duplicate: false, onboardingMissionId: session.onboarding_mission_id, provider: session.provider, resumeCheckpoint: `resume:${session.onboarding_mission_id}` };
+	return { ok: true, duplicate: false, onboardingMissionId: session.onboarding_mission_id, authorizationSessionId: session.id, correlationId: correlation.id, provider: session.provider, tenantHint: session.tenant_hint, resumeCheckpoint: `resume:${session.onboarding_mission_id}`, scope: resolvedScope, callbackClaim: acquired.claim };
 }
 
 async function cancelAuthorizationSession(c, scope, sessionId) {
 	const result = await c.env.db.prepare(`UPDATE nexora_onboarding_authorization_sessions SET status='cancelled' WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND status='pending'`).bind(sessionId, scope.tenantId, scope.workspaceId).run();
+	if (result.meta?.changes) await c.env.db.prepare(`UPDATE nexora_onboarding_callback_correlations SET status='cancelled',cancelled_at=CURRENT_TIMESTAMP WHERE authorization_session_id=?1 AND status IN ('pending','claimed')`).bind(sessionId).run();
 	return Boolean(result.meta?.changes);
 }
 
@@ -233,5 +268,5 @@ async function discoverCapability(c, scope, { onboardingMissionId, provider, cap
 	return { status, reasonCodes: decision.reasonCodes || [] };
 }
 
-export { PROVIDERS, CAPABILITY_SCOPES, CAPABILITY_STATES, planScopes, planIncrementalScopes, randomVerifier, pkceChallengeFor, buildAuthorizationUrl, insertAuthorizationSession, cancelAuthorizationSession, validateIdentity, validateMicrosoftTenant, validateGrantedScopes, mapDecisionToCapabilityState };
-export default { createAuthorizationSession, consumeCallback, cancelAuthorizationSession, discoverCapability, planScopes, planIncrementalScopes, validateIdentity, validateMicrosoftTenant, validateGrantedScopes };
+export { PROVIDERS, CAPABILITY_SCOPES, CAPABILITY_STATES, planScopes, planIncrementalScopes, randomVerifier, pkceChallengeFor, buildAuthorizationUrl, buildMicrosoftAdminConsentUrl, insertAuthorizationSession, cancelAuthorizationSession, validateIdentity, validateMicrosoftTenant, validateGrantedScopes, mapDecisionToCapabilityState };
+export default { createAuthorizationSession, consumeCallback, cancelAuthorizationSession, discoverCapability, planScopes, planIncrementalScopes, buildMicrosoftAdminConsentUrl, validateIdentity, validateMicrosoftTenant, validateGrantedScopes };

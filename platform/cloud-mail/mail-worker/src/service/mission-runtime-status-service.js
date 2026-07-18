@@ -6,6 +6,8 @@
 // evidence references, retry eligibility, cancellation state, compensation state, final
 // verdict. No secret, credential, or raw provider-token material is ever queried or
 // returned here -- mission_runtime_* tables only ever store hashes and reason codes.
+import callbackContinuation from './nexora-callback-continuation-service.js';
+
 function assertScope(row, scope) {
 	if (!row || Number(row.tenant_id) !== Number(scope.tenantId) || Number(row.workspace_id) !== Number(scope.workspaceId)) throw new Error('mission_runtime_status_scope_denied');
 }
@@ -33,6 +35,7 @@ async function missionStatus(c, scope, missionId) {
 	const onboarding = mission.kind === 'ZERO_TOUCH_ONBOARDING' ? await c.env.db.prepare(`SELECT * FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first() : null;
 	const authorizationSession = onboarding ? await c.env.db.prepare(`SELECT id,provider,status,expires_at,consumed_at FROM nexora_onboarding_authorization_sessions WHERE onboarding_mission_id=?1 ORDER BY created_at DESC LIMIT 1`).bind(missionId).first() : null;
 	const capabilityRows = onboarding ? await c.env.db.prepare(`SELECT capability_key,status,reason_codes_json FROM nexora_onboarding_capabilities WHERE onboarding_mission_id=?1`).bind(missionId).all() : null;
+	const callbackContinuationStatus = onboarding ? await callbackContinuation.checkpoint4Status(c, scope, { missionId }).catch(() => null) : null;
 
 	// Blocked/waiting reason: derived from the most recent DISPATCH_DENIED / approval-boundary
 	// audit event for this mission, if one exists -- mission_runtime_missions itself has no
@@ -87,6 +90,7 @@ async function missionStatus(c, scope, missionId) {
 					authorization_session: authorizationSession ? { session_id: authorizationSession.id, provider: authorizationSession.provider, status: authorizationSession.status, expires_at: authorizationSession.expires_at, consumed: Boolean(authorizationSession.consumed_at) } : null,
 					capability_discovery: (capabilityRows?.results || []).map((row) => ({ capability: row.capability_key, status: row.status, reason_codes: JSON.parse(row.reason_codes_json || '[]') })),
 					provider_acceptance_blocker: onboarding.phase === 'blocked' && onboarding.blocked_reason === 'PROVIDER_APPLICATION_MISSING' ? 'PRODUCTION_OAUTH_APPLICATION_NOT_REGISTERED' : null,
+					callback_continuation: callbackContinuationStatus,
 				}
 			: null,
 	};
@@ -100,5 +104,37 @@ async function listMissions(c, scope, { state = null, limit = 25 } = {}) {
 	return { missions: rows.results || [] };
 }
 
+// Read-only onboarding Evidence delivery projection.  This deliberately selects
+// only operational identifiers, digests, lease metadata, and reason codes;
+// payload_json is never returned because it may contain provider observations.
+async function evidenceDeliveryStatus(c, scope, { outboxId = null, missionId = null, limit = 25 } = {}) {
+	const bound = Math.max(1, Math.min(100, Number(limit) || 25));
+	const predicates = ['o.tenant_id=?1', 'o.workspace_id=?2'];
+	const args = [scope.tenantId, scope.workspaceId];
+	if (outboxId) { predicates.push(`o.id=?${args.length + 1}`); args.push(outboxId); }
+	if (missionId) { predicates.push(`o.onboarding_mission_id=?${args.length + 1}`); args.push(missionId); }
+	const rows = await c.env.db.prepare(`SELECT o.id,o.commit_result_id,o.onboarding_mission_id,o.status,o.attempts,o.delivered_at,o.updated_at,l.owner,l.lease_expires_at,l.fencing_token,l.attempt AS lease_attempt, json_extract(o.payload_json,'$.token_generation') AS token_generation, json_extract(o.payload_json,'$.provider_connection_generation') AS provider_connection_generation, json_extract(o.payload_json,'$.payload_digest') AS payload_digest FROM nexora_onboarding_evidence_outbox o LEFT JOIN nexora_onboarding_evidence_delivery_leases l ON l.outbox_id=o.id AND l.tenant_id=o.tenant_id AND l.workspace_id=o.workspace_id WHERE ${predicates.join(' AND ')} ORDER BY o.updated_at DESC LIMIT ?${args.length + 1}`).bind(...args, bound).all();
+	return { deliveries: (rows.results || []).map(row => ({
+		evidence_outbox_id: row.id,
+		mission_id: row.onboarding_mission_id,
+		delivery_status: row.status,
+		owner: row.owner || null,
+		lease_expires_at: row.lease_expires_at || null,
+		fencing_token: row.fencing_token == null ? null : Number(row.fencing_token),
+		attempt: row.attempts == null ? Number(row.lease_attempt || 0) : Number(row.attempts),
+		next_retry: row.status === 'RETRY_SCHEDULED' ? row.updated_at : null,
+		payload_digest: row.payload_digest || null,
+		canonical_evidence_reference: row.status === 'DELIVERED' ? `evidence:${row.commit_result_id}` : null,
+		verification_policy_id: null,
+		verification_status: null,
+		verification_result: null,
+		retry_eligibility: ['PENDING', 'RETRYING', 'RETRY_SCHEDULED'].includes(row.status),
+		blocked_reason: row.status === 'BLOCKED' ? 'EVIDENCE_DELIVERY_BLOCKED' : null,
+		required_actor: row.owner || 'evidence-worker',
+		latest_redacted_observation: row.updated_at || null,
+	})) };
+}
+
 export { assertScope };
-export default { missionStatus, listMissions };
+export { evidenceDeliveryStatus };
+export default { missionStatus, listMissions, evidenceDeliveryStatus };

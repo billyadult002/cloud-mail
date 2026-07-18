@@ -17,7 +17,7 @@ const ONBOARDING_STATES = Object.freeze({
 	waiting_for_user_consent: ['authorization_received', 'waiting_for_admin_consent', 'cancelled', 'failed'],
 	waiting_for_admin_consent: ['waiting_for_provider_review', 'authorization_received', 'blocked', 'cancelled'],
 	waiting_for_provider_review: ['authorization_received', 'blocked', 'cancelled'],
-	authorization_received: ['validating_authority', 'failed'],
+	authorization_received: ['validating_authority', 'waiting_for_admin_consent', 'failed'],
 	validating_authority: ['discovering_capabilities', 'blocked', 'failed'],
 	discovering_capabilities: ['provisioning', 'degraded', 'blocked', 'failed'],
 	provisioning: ['verifying_connection', 'failed'],

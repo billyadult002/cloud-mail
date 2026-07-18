@@ -20,8 +20,33 @@ const hash = async value => {
 	return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 };
 const safeError = error => String(error?.message || error || 'runtime_error').replace(/(token|secret|password|authorization|credential)\S*/ig, '[redacted]').slice(0, 120);
+const CALLBACK_FINALIZATION_TEST_HOOKS = Symbol.for('nexora.internal.callbackFinalizationTestHooks');
+function getCallbackFinalizationTestHooks(c) {
+	return c?.[CALLBACK_FINALIZATION_TEST_HOOKS] || c?.env?.[CALLBACK_FINALIZATION_TEST_HOOKS] || null;
+}
+function injectedFinalizationFailure(c, point) {
+	return c.env.db.prepare(`INSERT INTO nexora_callback_finalization_injected_failure_${point}(id) VALUES('fail')`);
+}
+function maybeInjectFinalizationFailure(c, statements, point) {
+	const hooks = getCallbackFinalizationTestHooks(c);
+	if (hooks?.failAfter === point) statements.push(injectedFinalizationFailure(c, point));
+}
+function abortFinalizationOnZeroRows(c, point) {
+	return c.env.db.prepare(`INSERT INTO nexora_callback_verified_outcome_finalizations(id,operation_id,idempotency_key,authority_tuple_digest,evidence_set_digest,verification_attempt_id,verifier_authorization_id,verified_outcome_reference,callback_checkpoint_reference,expected_token_generation,expected_provider_connection_generation,state,tenant_id,workspace_id,mission_id,callback_correlation_id) SELECT NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL WHERE changes()=0`);
+}
 function assertScope(row, scope) {
 	if (!row || !same(row.tenant_id, scope.tenantId) || !same(row.workspace_id, scope.workspaceId)) throw new Error('mission_runtime_scope_denied');
+}
+async function resolveNexoraCallbackLineage(c, scope, { missionId, evidenceId, outboxId, commitResultId }) {
+	const outbox = await c.env.db.prepare(`SELECT * FROM nexora_onboarding_evidence_outbox WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND status='DELIVERED'`).bind(outboxId, scope.tenantId, scope.workspaceId).first();
+	if (!outbox || (commitResultId && outbox.commit_result_id !== commitResultId) || outbox.onboarding_mission_id !== missionId) return { eligible: false, failures: ['evidence_outbox_lineage_invalid'] };
+	const evidence = await c.env.db.prepare(`SELECT * FROM mission_runtime_evidence WHERE id=?1 AND mission_id=?2 AND tenant_id=?3 AND workspace_id=?4 AND status='supported'`).bind(evidenceId, missionId, scope.tenantId, scope.workspaceId).first();
+	if (!evidence) return { eligible: false, failures: ['canonical_evidence_missing'] };
+	const outcome = await c.env.db.prepare(`SELECT * FROM nexora_provider_outcome_results WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND mission_id=?4`).bind(outbox.commit_result_id, scope.tenantId, scope.workspaceId, missionId).first();
+	if (!outcome) return { eligible: false, failures: ['provider_outcome_missing'] };
+	const authorityTuple = { tenantId: scope.tenantId, workspaceId: scope.workspaceId, missionId, provider: outcome.provider, connectionId: outcome.connection_id, tokenGeneration: outcome.committed_token_generation, providerConnectionGeneration: outcome.committed_provider_connection_generation, correlationId: outcome.correlation_id };
+	const evidenceSet = [{ id: evidence.id, referenceHash: evidence.reference_hash }, { id: outbox.id, payload: outbox.payload_json }];
+	return { eligible: true, authorityTuple, authorityTupleDigest: await hash(authorityTuple), evidenceSet, evidenceSetDigest: await hash(evidenceSet), failures: [] };
 }
 function allowed(entity, from, to) { return Boolean(STATES[entity]?.[from]?.includes(to)); }
 function assertTransition(entity, from, to) { if (!allowed(entity, from, to)) throw new Error('mission_runtime_transition_rejected'); }
@@ -99,29 +124,144 @@ async function integrityEnvelope(row) {
 async function verifyClaim(c, scope, { claimId, runId, actionId = null, verifier = 'deterministic_evidence_policy_v1' }) {
 	const claim = await c.env.db.prepare(`SELECT c.*,p.required_evidence_json AS policy_required_evidence_json,p.freshness_seconds,p.minimum_distinct_evidence,p.conflict_mode,p.policy_hash FROM mission_runtime_claims c JOIN mission_runtime_verification_policies p ON p.id=c.policy_id AND p.version=c.policy_version WHERE c.id=?1`).bind(claimId).first();
 	assertScope(claim, scope);
+	let verifierAuthorizationId = null;
+	let callbackCorrelationId = null;
+	if (claim.claim_key === 'nexora_callback_outcome') {
+		const callbackClaim = await c.env.db.prepare(`SELECT correlation_id FROM nexora_onboarding_callback_claims WHERE id=?1 AND onboarding_mission_id=?2 AND tenant_id=?3 AND workspace_id=?4`).bind(claimId, claim.mission_id, scope.tenantId, scope.workspaceId).first();
+		callbackCorrelationId = callbackClaim?.correlation_id || null;
+		if (!callbackCorrelationId) throw new Error('nexora_callback_claim_lineage_invalid');
+	}
 	const rows = await c.env.db.prepare(`SELECT * FROM mission_runtime_evidence WHERE mission_id=?1 AND claim_key=?2 AND tenant_id=?3 AND workspace_id=?4 ORDER BY created_at,id`).bind(claim.mission_id, claim.claim_key, scope.tenantId, scope.workspaceId).all();
 	const evidence = [];
 	for (const row of rows.results || []) evidence.push({ ...row, computed_integrity_hash: await integrityEnvelope(row) });
+	// Callback outcomes have an additional durable boundary: Evidence is valid only
+	// after its NEXORA outbox item is DELIVERED and its immutable provider result
+	// still exists for the same mission and tenant/workspace.
+	if (claim.claim_key === 'nexora_callback_outcome') {
+		for (const row of evidence) {
+			const commitResultId = String(row.id || '').startsWith('evidence:') ? String(row.id).slice('evidence:'.length) : null;
+			const lineage = commitResultId ? await c.env.db.prepare(`SELECT o.id,r.id AS result_id FROM nexora_onboarding_evidence_outbox o JOIN nexora_provider_outcome_results r ON r.id=o.commit_result_id AND r.tenant_id=o.tenant_id AND r.workspace_id=o.workspace_id WHERE o.commit_result_id=?1 AND o.onboarding_mission_id=?2 AND o.tenant_id=?3 AND o.workspace_id=?4 AND o.status='DELIVERED'`).bind(commitResultId, claim.mission_id, scope.tenantId, scope.workspaceId).first() : null;
+			if (!lineage) throw new Error('nexora_callback_evidence_lineage_unresolved');
+		}
+	}
 	const ids = evidence.map(row => row.id);
 	const relationRows = ids.length ? await c.env.db.prepare(`SELECT * FROM mission_runtime_evidence_relations WHERE tenant_id=?1 AND workspace_id=?2 AND (evidence_id IN (${ids.map(() => '?').join(',')}) OR related_evidence_id IN (${ids.map(() => '?').join(',')}))`).bind(scope.tenantId, scope.workspaceId, ...ids, ...ids).all() : { results: [] };
 	const policy = { required_evidence_json: claim.policy_required_evidence_json, freshness_seconds: claim.freshness_seconds, minimum_distinct_evidence: claim.minimum_distinct_evidence, conflict_mode: claim.conflict_mode };
 	const decision = evaluateEvidence({ policy, evidence, relations: relationRows.results || [] });
 	if (!verificationStates.has(decision.state)) throw new Error('mission_runtime_verification_state_invalid');
-	const verificationId = uuid(); const setHash = await hash({ policy_id: claim.policy_id, policy_version: claim.policy_version, evidence: evidence.map(row => [row.id, row.integrity_hash]).sort() });
+	const setHash = await hash({ policy_id: claim.policy_id, policy_version: claim.policy_version, evidence: evidence.map(row => [row.id, row.integrity_hash]).sort() });
+	const prior = await c.env.db.prepare(`SELECT * FROM mission_runtime_verifications WHERE claim_id=?1 AND run_id=?2 AND tenant_id=?3 AND workspace_id=?4 AND COALESCE(action_id,'')=COALESCE(?5,'') ORDER BY created_at DESC LIMIT 1`).bind(claimId, runId, scope.tenantId, scope.workspaceId, actionId).first();
+	if (prior) {
+		if (prior.evidence_set_hash !== setHash && prior.state === 'verified') throw new Error('mission_runtime_verification_conflict');
+		if (prior.evidence_set_hash === setHash && prior.state === 'verified') return { verificationId: prior.id, state: prior.state, accepted: [], rejected: new Map(), reasonCodes: JSON.parse(prior.reason_codes_json || '[]'), claim, idempotent: true };
+	}
+	if (claim.claim_key === 'nexora_callback_outcome') {
+		const generation = Number(claim.version || 1);
+		const authorityDigest = await hash({ tenantId: scope.tenantId, workspaceId: scope.workspaceId, missionId: claim.mission_id, callbackClaimId: claimId, callbackCorrelationId, generation });
+		const existingAuth = await c.env.db.prepare(`SELECT id FROM nexora_callback_verifier_authorizations WHERE tenant_id=?1 AND workspace_id=?2 AND mission_id=?3 AND callback_correlation_id=?4 AND verification_generation=?5 AND consumed_at IS NULL AND expires_at>CURRENT_TIMESTAMP`).bind(scope.tenantId, scope.workspaceId, claim.mission_id, callbackCorrelationId, generation).first();
+		if (existingAuth) verifierAuthorizationId = existingAuth.id;
+		else {
+			verifierAuthorizationId = uuid();
+			await c.env.db.prepare(`INSERT INTO nexora_callback_verifier_authorizations(id,verification_generation,verifier_identity,authority_digest,tenant_id,workspace_id,mission_id,callback_correlation_id,expires_at) VALUES(?1,?2,'canonical-mission-runtime-verifier',?3,?4,?5,?6,?7,datetime('now','+5 minutes'))`).bind(verifierAuthorizationId, generation, authorityDigest, scope.tenantId, scope.workspaceId, claim.mission_id, callbackCorrelationId).run();
+		}
+	}
+	const verificationId = uuid();
+	if (verifierAuthorizationId) {
+		await c.env.db.prepare(`INSERT OR IGNORE INTO nexora_callback_verification_attempts(id,verification_policy_id,verification_generation,idempotency_key,evidence_set_digest,authority_tuple_digest,tenant_id,workspace_id,mission_id,callback_correlation_id,verifier_authorization_id,status,result_json,canonical_evidence_refs_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'{}','[]')`).bind(verificationId, claim.policy_id, Number(claim.version || 1), `verify:${claimId}:${runId}:${actionId || ''}`, setHash, verifierAuthorizationId, scope.tenantId, scope.workspaceId, claim.mission_id, callbackCorrelationId, verifierAuthorizationId, decision.state === 'verified' ? 'VERIFIED' : decision.state === 'insufficient' ? 'FAILED' : 'PENDING').run();
+	}
 	await c.env.db.prepare(`INSERT INTO mission_runtime_verifications(id,mission_id,run_id,action_id,tenant_id,workspace_id,state,evidence_id,verifier,claim_id,policy_id,policy_version,evidence_set_hash,reason_codes_json,integrity_state) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)`).bind(verificationId, claim.mission_id, runId, actionId, scope.tenantId, scope.workspaceId, decision.state, decision.accepted[0]?.id || evidence[0]?.id || 'no_evidence', verifier, claimId, claim.policy_id, claim.policy_version, setHash, JSON.stringify(decision.reasonCodes), decision.reasonCodes.includes('integrity_invalid') ? 'invalid' : 'valid').run();
 	for (const row of evidence) await c.env.db.prepare(`INSERT INTO mission_runtime_verification_evidence(verification_id,evidence_id,tenant_id,workspace_id,disposition,reason_code,evidence_integrity_hash) VALUES(?1,?2,?3,?4,?5,?6,?7)`).bind(verificationId, row.id, scope.tenantId, scope.workspaceId, decision.rejected.get(row.id).length ? 'rejected' : 'used', decision.rejected.get(row.id).join(',') || 'accepted', row.integrity_hash).run();
 	await audit(c, scope, { missionId: claim.mission_id, runId, actionId, type: 'CLAIM_VERIFIED', detail: { claim_id: claimId, state: decision.state, policy: `${claim.policy_id}:${claim.policy_version}`, reason_codes: decision.reasonCodes } });
 	return { verificationId, ...decision, claim };
 }
-async function finalizeVerifiedOutcome(c, scope, { missionId, runId, actionId, claimId, verificationId, expectedVersion, fencingToken }) {
+async function finalizeVerifiedOutcome(c, scope, { missionId, runId, actionId, claimId, verificationId, expectedVersion, fencingToken, verifierAuthorizationId = null, expectedVerifierIdentity = 'canonical-mission-runtime-verifier' }) {
 	const mission = await c.env.db.prepare('SELECT * FROM mission_runtime_missions WHERE id=?1').bind(missionId).first(); assertScope(mission, scope); await getRun(c, scope, runId, fencingToken);
 	if (mission.state !== 'verification_pending' || !same(mission.version, expectedVersion)) throw new Error('mission_runtime_completion_conflict');
 	const verification = await c.env.db.prepare(`SELECT v.*,c.policy_id AS claim_policy_id,c.policy_version AS claim_policy_version FROM mission_runtime_verifications v JOIN mission_runtime_claims c ON c.id=v.claim_id WHERE v.id=?1 AND v.claim_id=?2 AND v.mission_id=?3`).bind(verificationId, claimId, missionId).first(); assertScope(verification, scope);
 	if (verification.state !== 'verified' || verification.integrity_state !== 'valid' || verification.policy_id !== verification.claim_policy_id || !same(verification.policy_version, verification.claim_policy_version)) throw new Error('mission_runtime_evidence_insufficient');
+	const claimAuthority = await c.env.db.prepare(`SELECT claim_key FROM mission_runtime_claims WHERE id=?1 AND mission_id=?2 AND tenant_id=?3 AND workspace_id=?4`).bind(claimId, missionId, scope.tenantId, scope.workspaceId).first();
+	if (claimAuthority?.claim_key === 'nexora_callback_outcome' && !verifierAuthorizationId) throw new Error('nexora_verifier_authorization_required');
+	if (verifierAuthorizationId) {
+		const attempt = await c.env.db.prepare(`SELECT * FROM nexora_callback_verification_attempts WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND mission_id=?4`).bind(verificationId, scope.tenantId, scope.workspaceId, missionId).first();
+		if (!attempt || attempt.verifier_authorization_id !== verifierAuthorizationId || attempt.status !== 'VERIFIED' || attempt.verification_policy_id !== verification.policy_id || attempt.evidence_set_digest !== verification.evidence_set_hash) throw new Error('nexora_verifier_attempt_invalid');
+		const authorization = await c.env.db.prepare(`SELECT * FROM nexora_callback_verifier_authorizations WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND mission_id=?4 AND verifier_identity=?5 AND consumed_at IS NULL AND expires_at>CURRENT_TIMESTAMP`).bind(verifierAuthorizationId, scope.tenantId, scope.workspaceId, missionId, expectedVerifierIdentity).first();
+		if (!authorization) throw new Error('nexora_verifier_authorization_invalid');
+	}
 	const unverified = await c.env.db.prepare(`SELECT COUNT(*) AS count FROM mission_runtime_claims c WHERE c.mission_id=?1 AND c.tenant_id=?2 AND c.workspace_id=?3 AND NOT EXISTS (SELECT 1 FROM mission_runtime_verifications v WHERE v.claim_id=c.id AND v.state='verified' AND v.policy_id=c.policy_id AND v.policy_version=c.policy_version AND v.integrity_state='valid')`).bind(missionId, scope.tenantId, scope.workspaceId).first();
 	if (Number(unverified?.count || 0)) throw new Error('mission_runtime_required_claims_unverified');
 	const outcomeId = uuid(); await c.env.db.prepare(`INSERT INTO mission_runtime_outcomes(id,mission_id,tenant_id,workspace_id,state,verification_id,claim_key,action_id,policy_id,policy_version) VALUES(?1,?2,?3,?4,'verified',?5,?6,?7,?8,?9)`).bind(outcomeId, missionId, scope.tenantId, scope.workspaceId, verificationId, mission.claim_key, actionId, verification.policy_id, verification.policy_version).run();
 	await complete(c, scope, { missionId, runId, outcomeId, expectedVersion, fencingToken }); return outcomeId;
+}
+
+// Callback-only finalization boundary. Unlike finalizeVerifiedOutcome(), this
+// operation never calls complete() and therefore cannot advance Mission state.
+async function finalizeNexoraCallbackVerifiedOutcome(c, scope, { finalizationId, idempotencyKey, authorizationId, verificationAttemptId, missionId, callbackCorrelationId, callbackClaimId, providerOutcomeResultId, expectedProviderConnectionId, expectedAuthorityTupleDigest, expectedEvidenceSetDigest, expectedTokenGeneration, expectedProviderConnectionGeneration, expectedVerifierIdentity = 'canonical-mission-runtime-verifier', expectedVerificationPolicyId = 'policy-1', expectedVerificationGeneration = 1, expectedVerificationIdempotencyKey = 'verify-1' }) {
+	const existing = await c.env.db.prepare(`SELECT * FROM nexora_callback_verified_outcome_finalizations WHERE idempotency_key=?1 AND tenant_id=?2 AND workspace_id=?3`).bind(idempotencyKey, scope.tenantId, scope.workspaceId).first();
+	if (existing) {
+		if (existing.authority_tuple_digest !== expectedAuthorityTupleDigest || existing.evidence_set_digest !== expectedEvidenceSetDigest || existing.verification_attempt_id !== verificationAttemptId || existing.verifier_authorization_id !== authorizationId || existing.mission_id !== missionId || existing.callback_correlation_id !== callbackCorrelationId || Number(existing.expected_token_generation) !== Number(expectedTokenGeneration) || Number(existing.expected_provider_connection_generation) !== Number(expectedProviderConnectionGeneration)) throw new Error('nexora_callback_finalization_conflict');
+		const existingResult = existing.verified_outcome_reference ? await c.env.db.prepare(`SELECT provider_outcome_result_id,provider_connection_id FROM nexora_callback_verified_results WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3`).bind(existing.verified_outcome_reference, scope.tenantId, scope.workspaceId).first() : null;
+		if (existingResult && (existingResult.provider_outcome_result_id !== providerOutcomeResultId || existingResult.provider_connection_id !== expectedProviderConnectionId)) throw new Error('nexora_callback_finalization_conflict');
+		if (existing.state === 'VERIFIED') return { id: existing.id, idempotent: true, state: existing.state, checkpointReference: existing.callback_checkpoint_reference, outcomeReference: existing.verified_outcome_reference };
+	}
+	const auth = await c.env.db.prepare(`SELECT * FROM nexora_callback_verifier_authorizations WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND mission_id=?4 AND callback_correlation_id=?5 AND verifier_identity=?6 AND consumed_at IS NULL AND expires_at>CURRENT_TIMESTAMP`).bind(authorizationId, scope.tenantId, scope.workspaceId, missionId, callbackCorrelationId, expectedVerifierIdentity).first();
+	if (!auth) throw new Error('nexora_verifier_authorization_invalid');
+	if (expectedTokenGeneration == null) throw new Error('nexora_token_generation_required');
+	if (!expectedProviderConnectionId || expectedProviderConnectionGeneration == null) throw new Error('nexora_provider_connection_authority_required');
+	const attempt = await c.env.db.prepare(`SELECT * FROM nexora_callback_verification_attempts WHERE id=?1 AND verifier_authorization_id=?2 AND tenant_id=?3 AND workspace_id=?4 AND mission_id=?5 AND callback_correlation_id=?6 AND evidence_set_digest=?7 AND authority_tuple_digest=?8 AND verification_policy_id=?9 AND verification_generation=?10 AND idempotency_key=?11`).bind(verificationAttemptId, authorizationId, scope.tenantId, scope.workspaceId, missionId, callbackCorrelationId, expectedEvidenceSetDigest, expectedAuthorityTupleDigest, expectedVerificationPolicyId, expectedVerificationGeneration, expectedVerificationIdempotencyKey).first();
+	if (!attempt || !['PENDING','VERIFIED'].includes(attempt.status)) throw new Error('nexora_callback_verification_attempt_invalid');
+	const atomicCallback = await c.env.db.prepare(`SELECT commit_result_id FROM nexora_onboarding_evidence_outbox WHERE onboarding_mission_id=?1 AND tenant_id=?2 AND workspace_id=?3 AND status='DELIVERED' ORDER BY delivered_at DESC LIMIT 1`).bind(missionId, scope.tenantId, scope.workspaceId).first();
+	if (!atomicCallback?.commit_result_id) throw new Error('nexora_atomic_callback_result_missing');
+	if (atomicCallback.commit_result_id !== providerOutcomeResultId) throw new Error('nexora_atomic_callback_result_mismatch');
+	const canonicalEvidence = await c.env.db.prepare(`SELECT id FROM mission_runtime_evidence WHERE mission_id=?1 AND tenant_id=?2 AND workspace_id=?3 AND claim_key='nexora_callback_outcome' AND status='supported' ORDER BY created_at DESC LIMIT 1`).bind(missionId, scope.tenantId, scope.workspaceId).first();
+	if (!canonicalEvidence) throw new Error('nexora_callback_canonical_evidence_missing');
+	const correlation = await c.env.db.prepare(`SELECT id,status FROM nexora_onboarding_callback_correlations WHERE id=?1 AND onboarding_mission_id=?2 AND tenant_id=?3 AND workspace_id=?4 AND consumed_at IS NULL`).bind(callbackCorrelationId, missionId, scope.tenantId, scope.workspaceId).first();
+	if (!correlation || !['claimed','VERIFIED_PENDING_CONSUMPTION'].includes(correlation.status)) throw new Error('nexora_callback_correlation_lineage_invalid');
+	const callbackMissionClaim = await c.env.db.prepare(`SELECT id FROM mission_runtime_claims WHERE id=?1 AND mission_id=?2 AND tenant_id=?3 AND workspace_id=?4 AND claim_key='nexora_callback_outcome'`).bind(callbackClaimId, missionId, scope.tenantId, scope.workspaceId).first();
+	const callbackClaim = await c.env.db.prepare(`SELECT id FROM nexora_onboarding_callback_claims WHERE id=?1 AND correlation_id=?2 AND onboarding_mission_id=?3 AND tenant_id=?4 AND workspace_id=?5`).bind(callbackClaimId, callbackCorrelationId, missionId, scope.tenantId, scope.workspaceId).first();
+	if (!callbackMissionClaim || !callbackClaim) throw new Error('nexora_callback_claim_lineage_invalid');
+	const conflictingCheckpoint = await c.env.db.prepare(`SELECT id FROM nexora_onboarding_callback_checkpoints WHERE correlation_id=?1 AND step='CALLBACK_OUTCOME_VERIFIED' AND status!='VERIFIED' LIMIT 1`).bind(callbackCorrelationId).first();
+	if (conflictingCheckpoint) throw new Error('nexora_callback_checkpoint_lineage_invalid');
+	const reauthorizationConflict = await c.env.db.prepare(`SELECT id FROM nexora_onboarding_reauthorization_work WHERE onboarding_mission_id=?1 AND tenant_id=?2 AND workspace_id=?3 AND (original_correlation_id=?4 OR replacement_correlation_id=?4) AND status NOT IN ('PENDING','WAITING_FOR_USER','AUTHORITY_RECEIVED') LIMIT 1`).bind(missionId, scope.tenantId, scope.workspaceId, callbackCorrelationId).first();
+	if (reauthorizationConflict) throw new Error('nexora_reauthorization_lineage_ineligible');
+	const providerOutcome = await c.env.db.prepare(`SELECT provider,connection_id,committed_token_generation,committed_provider_connection_generation FROM nexora_provider_outcome_results WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND mission_id=?4`).bind(providerOutcomeResultId, scope.tenantId, scope.workspaceId, missionId).first();
+	if (!providerOutcome || Number(providerOutcome.committed_token_generation) !== Number(expectedTokenGeneration) || Number(providerOutcome.committed_provider_connection_generation) !== Number(expectedProviderConnectionGeneration)) throw new Error('nexora_generation_authority_mismatch');
+	if (providerOutcome.connection_id !== expectedProviderConnectionId) throw new Error('nexora_provider_connection_authority_mismatch');
+	const tokenAuthority = await c.env.db.prepare(`SELECT id,tenant_id,workspace_id,provider,rotation_generation,connection_health,revoked_at FROM nexora_onboarding_tokens WHERE onboarding_mission_id=?1 AND tenant_id=?2 AND workspace_id=?3 AND provider=?4 AND rotation_generation=?5 AND revoked_at IS NULL AND connection_health!='revoked'`).bind(missionId, scope.tenantId, scope.workspaceId, providerOutcome.provider, expectedTokenGeneration).first();
+	if (!tokenAuthority) throw new Error('nexora_token_authority_mismatch');
+	const connection = await c.env.db.prepare(`SELECT id,tenant_id,workspace_id,provider,generation,connection_state FROM nexora_onboarding_provider_connections WHERE id=?1 AND onboarding_mission_id=?2 AND tenant_id=?3 AND workspace_id=?4 AND generation=?5 AND connection_state='active'`).bind(expectedProviderConnectionId, missionId, scope.tenantId, scope.workspaceId, expectedProviderConnectionGeneration).first();
+	if (!connection || connection.provider !== providerOutcome.provider) throw new Error('nexora_provider_connection_authority_mismatch');
+	const binding = await c.env.db.prepare(`SELECT token_id,connection_id,token_generation,connection_generation FROM nexora_onboarding_token_connection_bindings WHERE connection_id=?1 AND tenant_id=?2 AND workspace_id=?3 AND provider=?4`).bind(expectedProviderConnectionId, scope.tenantId, scope.workspaceId, providerOutcome.provider).first();
+	if (!binding || binding.connection_id !== expectedProviderConnectionId || binding.token_id !== tokenAuthority.id || Number(binding.token_generation) !== Number(expectedTokenGeneration) || Number(binding.connection_generation) !== Number(expectedProviderConnectionGeneration)) throw new Error('nexora_token_connection_binding_mismatch');
+	const hooks = getCallbackFinalizationTestHooks(c);
+	if (typeof hooks?.beforeFinalizationBatch === 'function') await hooks.beforeFinalizationBatch({ scope, request: { finalizationId, idempotencyKey, authorizationId, verificationAttemptId, missionId, callbackCorrelationId, callbackClaimId, providerOutcomeResultId, expectedProviderConnectionId, expectedAuthorityTupleDigest, expectedEvidenceSetDigest, expectedTokenGeneration, expectedProviderConnectionGeneration, expectedVerifierIdentity }, resolved: { attempt, atomicCallback, providerOutcome, tokenAuthority, connection, binding } });
+	const checkpointId = `nexora-callback-verified:${finalizationId}`;
+	const verifiedResultId = `nexora-callback-result:${finalizationId}`;
+	const statements = [];
+	maybeInjectFinalizationFailure(c, statements, 'finalization_state_acquisition');
+	maybeInjectFinalizationFailure(c, statements, 'atomic_result_revalidation');
+	maybeInjectFinalizationFailure(c, statements, 'provider_outcome_revalidation');
+	maybeInjectFinalizationFailure(c, statements, 'token_authority_revalidation');
+	maybeInjectFinalizationFailure(c, statements, 'provider_connection_revalidation');
+	maybeInjectFinalizationFailure(c, statements, 'token_connection_binding_revalidation');
+	statements.push(c.env.db.prepare(`INSERT INTO nexora_callback_verified_results(id,finalization_operation_id,finalization_idempotency_key,verification_attempt_id,verifier_authorization_id,verification_policy_id,verification_generation,tenant_id,workspace_id,mission_id,provider,callback_correlation_id,authority_tuple_digest,evidence_set_digest,atomic_callback_result_id,provider_outcome_result_id,token_generation,provider_connection_id,provider_connection_generation,callback_outcome_verified_checkpoint_id,result_status) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,p.provider,?11,?12,?13,?14,?15,?16,?17,?18,?19,'VERIFIED' FROM nexora_provider_outcome_results p WHERE p.id=?15 AND p.tenant_id=?8 AND p.workspace_id=?9 AND p.mission_id=?10 AND p.connection_id=?17 AND p.committed_token_generation=?16 AND p.committed_provider_connection_generation=?18 AND EXISTS (SELECT 1 FROM nexora_onboarding_tokens t WHERE t.onboarding_mission_id=?10 AND t.tenant_id=?8 AND t.workspace_id=?9 AND t.provider=p.provider AND t.rotation_generation=?16 AND t.revoked_at IS NULL AND t.connection_health!='revoked') AND EXISTS (SELECT 1 FROM nexora_onboarding_provider_connections c WHERE c.id=?17 AND c.onboarding_mission_id=?10 AND c.tenant_id=?8 AND c.workspace_id=?9 AND c.provider=p.provider AND c.generation=?18 AND c.connection_state='active') AND EXISTS (SELECT 1 FROM nexora_onboarding_token_connection_bindings b JOIN nexora_onboarding_tokens t ON t.id=b.token_id AND t.onboarding_mission_id=?10 AND t.tenant_id=?8 AND t.workspace_id=?9 AND t.provider=p.provider AND t.rotation_generation=?16 AND t.revoked_at IS NULL AND t.connection_health!='revoked' WHERE b.connection_id=?17 AND b.tenant_id=?8 AND b.workspace_id=?9 AND b.provider=p.provider AND b.token_generation=?16 AND b.connection_generation=?18)`).bind(verifiedResultId, finalizationId, idempotencyKey, verificationAttemptId, authorizationId, attempt.verification_policy_id, attempt.verification_generation, scope.tenantId, scope.workspaceId, missionId, callbackCorrelationId, expectedAuthorityTupleDigest, expectedEvidenceSetDigest, atomicCallback.commit_result_id, providerOutcomeResultId, expectedTokenGeneration, expectedProviderConnectionId, expectedProviderConnectionGeneration, checkpointId));
+	statements.push(abortFinalizationOnZeroRows(c, 'verified_result'));
+	maybeInjectFinalizationFailure(c, statements, 'verified_result_insertion');
+	statements.push(c.env.db.prepare(`INSERT INTO nexora_onboarding_callback_checkpoints(id,correlation_id,claim_id,fencing_token,step,status,attempt) SELECT NULL,NULL,NULL,0,'CALLBACK_OUTCOME_VERIFIED','VERIFIED',0 WHERE changes()=0`));
+	statements.push(c.env.db.prepare(`INSERT INTO nexora_onboarding_callback_checkpoints(id,correlation_id,claim_id,fencing_token,step,status,attempt,persisted_at,completed_at) VALUES(?1,?2,?3,0,'CALLBACK_OUTCOME_VERIFIED','VERIFIED',1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`).bind(checkpointId, callbackCorrelationId, callbackClaimId));
+	maybeInjectFinalizationFailure(c, statements, 'callback_outcome_verified_insertion');
+	maybeInjectFinalizationFailure(c, statements, 'verified_result_checkpoint_binding');
+	statements.push(c.env.db.prepare(`INSERT INTO nexora_callback_verified_outcome_finalizations(id,operation_id,idempotency_key,authority_tuple_digest,evidence_set_digest,verification_attempt_id,verifier_authorization_id,verified_outcome_reference,callback_checkpoint_reference,expected_token_generation,expected_provider_connection_generation,state,tenant_id,workspace_id,mission_id,callback_correlation_id) VALUES(?1,?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'VERIFIED',?11,?12,?13,?14)`).bind(finalizationId, idempotencyKey, expectedAuthorityTupleDigest, expectedEvidenceSetDigest, verificationAttemptId, authorizationId, verifiedResultId, checkpointId, expectedTokenGeneration, expectedProviderConnectionGeneration, scope.tenantId, scope.workspaceId, missionId, callbackCorrelationId));
+	maybeInjectFinalizationFailure(c, statements, 'finalization_verified_result_binding');
+	statements.push(c.env.db.prepare(`INSERT INTO nexora_onboarding_callback_checkpoints(id,correlation_id,claim_id,fencing_token,step,status,attempt) SELECT NULL,NULL,NULL,0,'CALLBACK_OUTCOME_VERIFIED','VERIFIED',0 WHERE changes()=0`));
+	maybeInjectFinalizationFailure(c, statements, 'finalization_checkpoint_binding');
+	statements.push(c.env.db.prepare(`UPDATE nexora_callback_verifier_authorizations SET consumed_at=CURRENT_TIMESTAMP WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND verifier_identity=?4 AND consumed_at IS NULL AND expires_at>CURRENT_TIMESTAMP`).bind(authorizationId, scope.tenantId, scope.workspaceId, expectedVerifierIdentity));
+	statements.push(abortFinalizationOnZeroRows(c, 'verifier_authorization'));
+	maybeInjectFinalizationFailure(c, statements, 'verifier_authorization_consumption');
+	statements.push(c.env.db.prepare(`INSERT INTO nexora_onboarding_callback_checkpoints(id,correlation_id,claim_id,fencing_token,step,status,attempt) SELECT NULL,NULL,NULL,0,'CALLBACK_OUTCOME_VERIFIED','VERIFIED',0 WHERE changes()=0`));
+	maybeInjectFinalizationFailure(c, statements, 'finalization_verified_transition');
+	maybeInjectFinalizationFailure(c, statements, 'final_pre_commit_boundary');
+	await c.env.db.batch(statements);
+	return { id: finalizationId, idempotent: false, state: 'VERIFIED', checkpointReference: checkpointId, outcomeReference: verifiedResultId };
 }
 async function complete(c, scope, { missionId, runId, outcomeId, expectedVersion, fencingToken }) {
 	const mission = await c.env.db.prepare('SELECT * FROM mission_runtime_missions WHERE id=?1').bind(missionId).first(); assertScope(mission, scope);
@@ -275,4 +415,5 @@ async function monitorScheduled({ env }, options = {}) {
 	return { checked: (jobs.results || []).length, claimed, succeeded, retried, bounded: true };
 }
 export { STATES, allowed, assertTransition, hash, stable, evaluateEvidence, evaluateVerifiedActionBoundary, beginCompensation, dispatchCompensation, observeCompensation, verifyAndCompleteCompensation };
-export default { STATES, allowed, assertTransition, claimRun, checkpoint, consumeApproval, complete, verifyClaim, finalizeVerifiedOutcome, monitorScheduled, evaluateEvidence, evaluateVerifiedActionBoundary, beginCompensation, dispatchCompensation, observeCompensation, verifyAndCompleteCompensation };
+export { resolveNexoraCallbackLineage, finalizeNexoraCallbackVerifiedOutcome };
+export default { STATES, allowed, assertTransition, claimRun, checkpoint, consumeApproval, complete, verifyClaim, finalizeVerifiedOutcome, finalizeNexoraCallbackVerifiedOutcome, monitorScheduled, evaluateEvidence, evaluateVerifiedActionBoundary, beginCompensation, dispatchCompensation, observeCompensation, verifyAndCompleteCompensation, resolveNexoraCallbackLineage };

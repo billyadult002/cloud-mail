@@ -9,8 +9,9 @@ required — this runbook only exercises what is already logic-complete and comm
 - [ ] Google: OAuth consent screen configured, redirect URI registered, `Gmail API` enabled, secrets injected.
 - [ ] Microsoft: App registration configured, redirect URI registered, secrets injected.
 - [ ] `wrangler secret list` confirms both `NEXORA_*_OAUTH_CLIENT_ID` are present (values not printed).
-- [ ] Callback routes are wired (follow-on implementation checkpoint — not part of this logic-complete pass;
-      `nexora-onboarding-oauth-service.js`'s `consumeCallback()` is ready to be called from them).
+- [ ] `NEXORA_GOOGLE_OAUTH_REDIRECT_URI` and `NEXORA_MICROSOFT_OAUTH_REDIRECT_URI` match their registered
+      provider redirect URI byte-for-byte; the existing provider callback routes forward the authorization
+      code and configured redirect URI into the Mission Runtime token-exchange path.
 
 ## Step 1 — Logic regression (must pass before touching a real provider)
 
@@ -39,8 +40,8 @@ env vars are set (this was previously `PROVIDER_APPLICATION_MISSING` by design �
 ## Step 4 — One real, human-authenticated test-user onboarding (Google)
 
 Using a Google account added as a test user (see the Google bootstrap package §7):
-1. Trigger onboarding for that account through the not-yet-built UI entry point, or directly hit the (not-yet-
-   built) `/v3/onboarding/start` → redirect → real Google login/consent → `/v3/onboarding/callback/google`.
+1. Trigger onboarding via `POST /v3/onboarding/start` → provider login/consent →
+   `/v3/onboarding/providers/google/callback`.
 2. Confirm: identity validated (`validateIdentity`), granted scopes match the minimum-scope plan exactly
    (`validateGrantedScopes` — no extra scopes silently granted), capability discovery reports `SUPPORTED` for
    `mail_read`, and the originating Mission automatically resumes (no user action needed post-consent).

@@ -81,11 +81,11 @@ Related: `NEXORA_ZERO_TOUCH_ONBOARDING_MANUAL_TOUCH_INVENTORY.md`,
 - **ADR-20 (desktop/mobile redirect strategy):** both providers use a single server-side Web/confidential
   redirect URI; no client secret is embedded in any desktop or mobile client build. Mobile-specific redirect
   handling (deep link back into a native app after the server-side callback) is out of scope for this pass.
-- **ADR-21 (Comail reuse):** none of Comail's OAuth/PKCE/loopback-callback code was directly copied in this
-  pass — the PKCE and session logic here was written NEXORA-native against RFC 7636 directly, since the
-  amount of genuinely reusable logic (verifier/challenge generation is ~10 lines) did not justify a
-  license/provenance review overhead for this pass. If a follow-on pass reuses Comail's token-refresh or
-  XOAUTH2 code, that reuse must record license/provenance/adaptation per this ADR's placeholder before landing.
+- **ADR-21 (Comail reuse):** Comail 0.2.22 was assessed before callback-recovery work; its source is
+  AGPL-3.0-only and implements a Rust/Tauri local-client model (loopback listener, keyring, in-process mutex).
+  Direct reuse is rejected unless the required network-copyleft obligations are explicitly authorized. Its
+  Google/Microsoft grant, error, rotation, and scoped-token mechanics are recorded as design reuse in
+  `NEXORA_COMAIL_REUSE_ASSESSMENT.md`; NEXORA retains all Worker/D1/Mission authority and imports no code.
 - **ADR-22 (production/desktop/iPhone acceptance):** FULL PASS is explicitly withheld until
   `NEXORA_PROVIDER_ACCEPTANCE_RUNBOOK.md` Steps 4-8 complete with real evidence; this pass ends at
   LOGIC_COMPLETE_PARTIAL.

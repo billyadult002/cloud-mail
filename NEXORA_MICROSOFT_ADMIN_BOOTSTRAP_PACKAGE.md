@@ -8,8 +8,8 @@ Microsoft admin access. Executable immediately after completion, no further code
 **"Accounts in any organizational directory (Any Microsoft Entra ID tenant - Multitenant) and personal
 Microsoft accounts (e.g. Skype, Xbox)"** — this is the broadest option and is what lets both Microsoft 365
 enterprise users and personal Outlook.com/Hotmail users onboard through the same app registration
-(`PROVIDERS.microsoft` in the onboarding service uses the `/organizations` or per-tenant endpoint depending
-on `tenant_hint`, which this account type supports).
+(`PROVIDERS.microsoft` in the onboarding service uses `/common` by default, or a per-tenant endpoint when a
+durable `tenant_hint` exists, which this account type supports).
 
 If your organization's policy requires restricting to a single tenant, choose "Accounts in this organizational
 directory only (Single tenant)" instead — `validateMicrosoftTenant()` already enforces an `allowedTenantIds`
@@ -20,8 +20,7 @@ policy independent of this Azure setting, so both choices are compatible with th
 Under Authentication → Platform → **Web** (not "Public client/native" — see client-type decision below):
 
 ```
-https://<your-production-domain>/v3/onboarding/callback/microsoft
-https://<your-staging-domain>/v3/onboarding/callback/microsoft
+https://cloud-mail.fastonegroup.workers.dev/v3/onboarding/providers/microsoft/callback
 ```
 
 ## 3. Public versus confidential client decision
@@ -61,8 +60,9 @@ Calendars.Read (only if/when calendar capability is enabled)
   ```
   https://login.microsoftonline.com/{tenant-id}/adminconsent?client_id={client-id}&redirect_uri={redirect_uri}
   ```
-  — this is the Required Output #7 "administrator bootstrap workflow" URL construction target for a follow-on
-  implementation checkpoint; the current session closes at logic-complete for the *user*-consent path.
+  NEXORA stores this as the durable `waiting_for_admin_consent` checkpoint. When the original authorization
+  session used a `tenant_hint`, the same tenant value is used for token exchange and the administrator-consent
+  URL so runtime evidence remains tenant-correlated.
 
 ## 7. Tenant restrictions
 
@@ -77,6 +77,7 @@ above.
 ```
 wrangler secret put NEXORA_MICROSOFT_OAUTH_CLIENT_ID
 wrangler secret put NEXORA_MICROSOFT_OAUTH_CLIENT_SECRET
+wrangler secret put NEXORA_MICROSOFT_OAUTH_REDIRECT_URI
 ```
 
 Prefer a certificate credential over a client secret in Entra if your organization's security policy requires
@@ -105,7 +106,7 @@ anything in `nexora-onboarding-oauth-service.js`.
 
 ```bash
 wrangler secret list | grep NEXORA_MICROSOFT_OAUTH_CLIENT_ID
-curl -s -o /dev/null -w "%{http_code}\n" https://<your-domain>/v3/onboarding/callback/microsoft
+curl -s -o /dev/null -w "%{http_code}\n" https://cloud-mail.fastonegroup.workers.dev/v3/onboarding/providers/microsoft/callback
 ```
 
 Then re-run `npx vitest run scripts/reliability-tests/nexora-onboarding-oauth.test.mjs`, followed by one real,
@@ -117,3 +118,4 @@ evidence.
 `wrangler secret delete NEXORA_MICROSOFT_OAUTH_CLIENT_ID` / `NEXORA_MICROSOFT_OAUTH_CLIENT_SECRET` reverts to
 the honest `PROVIDER_APPLICATION_MISSING` state with zero code changes, without affecting already-connected
 Google accounts (independent client_id namespace) or any existing Microsoft account's Entra-side grant.
+Add a staging URI only after its deployed origin is recorded in the deployment evidence.

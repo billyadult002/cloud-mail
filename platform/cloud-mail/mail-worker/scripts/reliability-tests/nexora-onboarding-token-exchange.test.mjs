@@ -16,7 +16,7 @@ describe('Token endpoint construction', () => {
 	it('resolves the Microsoft tenant-scoped endpoint and the Google fixed endpoint', () => {
 		expect(tokenEndpointFor('google', null)).toBe('https://oauth2.googleapis.com/token');
 		expect(tokenEndpointFor('microsoft', 'contoso-tenant')).toBe('https://login.microsoftonline.com/contoso-tenant/oauth2/v2.0/token');
-		expect(tokenEndpointFor('microsoft', null)).toContain('/organizations/');
+		expect(tokenEndpointFor('microsoft', null)).toContain('/common/');
 	});
 });
 

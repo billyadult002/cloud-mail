@@ -10,6 +10,8 @@ import onboardingOAuth, { insertAuthorizationSession, validateGrantedScopes, val
 import tokenExchange, { decodeIdTokenClaims } from './nexora-onboarding-token-exchange-service.js';
 import tokenStorage from './nexora-onboarding-token-storage-service.js';
 import onboardingSync from './nexora-onboarding-sync-service.js';
+import callbackRecovery from './nexora-onboarding-callback-recovery-service.js';
+import reauthorization from './nexora-onboarding-reauthorization-service.js';
 
 const uuid = () => crypto.randomUUID();
 async function hash(value) {
@@ -62,29 +64,30 @@ async function startOnboarding(c, scope, { provider, capabilities, idempotencyKe
 // user action required beyond the provider consent screen itself. The Mission's underlying
 // mission_runtime_runs lease is claimed here (real, fenced, per durable-mission-runtime-service)
 // so this is restart-safe the same way every other Mission Runtime step is.
-async function handleCallback(c, scope, { state, verifier, code = null, redirectUri = null, callbackFingerprint, fetchImpl, loginHint = null, allowedMicrosoftTenantIds = [] }) {
-	const consumption = await onboardingOAuth.consumeCallback(c, scope, { state, verifier, receivedCallbackFingerprint: callbackFingerprint });
+async function handleCallback(c, scope, { state, verifier, code = null, redirectUri = null, callbackFingerprint, fetchImpl, loginHint = null, allowedMicrosoftTenantIds = [], expectedProvider = null }) {
+	const consumption = await onboardingOAuth.consumeCallback(c, scope, { state, verifier, receivedCallbackFingerprint: callbackFingerprint, expectedProvider });
 	if (!consumption.ok) return { ok: false, reason: consumption.reason };
+	// Scope originates only from the server-side correlation row.  The optional scope on the
+	// POST test route is merely checked by consumeCallback; it can never override it.
+	scope = consumption.scope;
 	if (consumption.duplicate) {
-		// Restart-safety fix: a session can legitimately be 'consumed' while no token was ever
-		// stored, if the process was evicted between exchangeAuthorizationCode() succeeding and
-		// storeTokens() completing (both are plain sequential awaits with no intermediate
-		// checkpoint -- nothing running in memory survives a Worker eviction). Rather than
-		// stranding the Mission, a resupplied `code` on the "duplicate" delivery is used to
-		// retry the exchange+storage steps instead of short-circuiting. A genuinely-already-
-		// stored token (the normal duplicate-delivery case) is still a true no-op.
-		const missionId = consumption.onboardingMissionId;
-		const alreadyStored = missionId ? await c.env.db.prepare(`SELECT 1 FROM nexora_onboarding_tokens WHERE onboarding_mission_id=?1`).bind(missionId).first() : null;
-		if (alreadyStored || !code || !redirectUri || !missionId) {
-			return { ok: true, duplicate: true, resumeCheckpoint: consumption.resumeCheckpoint };
+		// A duplicate can observe progress or an expired claim, but can never replay the
+		// single-use authorization code.  Recovery after a provider response is explicitly
+		// reconciled from durable authority; absent authority proceeds to reauthorization.
+		if (consumption.recovery === 'REAUTHORIZATION_REQUIRED' && consumption.callbackClaim) {
+			const created = await reauthorization.ensureWork(c, consumption.callbackClaim);
+			if (!created.ok) return { ok: false, duplicate: true, recovery: 'REAUTHORIZATION_REQUIRED', reason: created.reason, resumeCheckpoint: consumption.resumeCheckpoint };
+			const claimed = await reauthorization.claimWork(c, scope, created.work);
+			if (!claimed.ok) return { ok: true, duplicate: true, recovery: 'REAUTHORIZATION_REQUIRED', reauthorizationWorkId: created.work.id, reauthorizationStatus: claimed.work?.status || 'PENDING', resumeCheckpoint: consumption.resumeCheckpoint };
+			const replacement = await reauthorization.createReplacementSession(c, scope, claimed.work);
+			return { ok: replacement.ok, duplicate: true, recovery: 'REAUTHORIZATION_REQUIRED', reauthorizationWorkId: claimed.work.id, reauthorizationStatus: replacement.ok ? 'WAITING_FOR_USER' : 'BLOCKED', replacementSessionId: replacement.sessionId || null, authorizationUrl: replacement.authorizationUrl || null, resumeCheckpoint: consumption.resumeCheckpoint, reason: replacement.ok ? null : replacement.reason };
 		}
-		// Fall through to the exchange path below using the resupplied code -- this mission was
-		// never actually completed.
-		return handleCallbackExchange(c, scope, { missionId, provider: consumption.provider, code, verifier, redirectUri, fetchImpl, loginHint, allowedMicrosoftTenantIds, resumeCheckpoint: consumption.resumeCheckpoint, run: await reclaimMissionRun(c, scope, missionId) });
+		return { ok: true, duplicate: true, recovery: consumption.recovery || 'RECONCILIATION_REQUIRED', resumeCheckpoint: consumption.resumeCheckpoint };
 	}
 
 	const missionId = consumption.onboardingMissionId;
 	const provider = consumption.provider;
+	const tenantHint = consumption.tenantHint;
 	const phaseRow = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1 AND tenant_id=?2 AND workspace_id=?3`).bind(missionId, scope.tenantId, scope.workspaceId).first();
 	if (!phaseRow) return { ok: false, reason: 'ONBOARDING_STATE_NOT_FOUND' };
 	if (onboardingStateMachine.allowed(phaseRow.phase, 'waiting_for_user_consent')) await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'waiting_for_user_consent' });
@@ -92,7 +95,7 @@ async function handleCallback(c, scope, { state, verifier, code = null, redirect
 	if (onboardingStateMachine.allowed(afterConsent.phase, 'authorization_received')) await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'authorization_received' });
 
 	const run = await reclaimMissionRun(c, scope, missionId);
-	return handleCallbackExchange(c, scope, { missionId, provider, code, verifier, redirectUri, fetchImpl, loginHint, allowedMicrosoftTenantIds, resumeCheckpoint: consumption.resumeCheckpoint, run });
+	return handleCallbackExchange(c, scope, { missionId, provider, code, verifier, redirectUri, fetchImpl, loginHint, tenantHint, allowedMicrosoftTenantIds, resumeCheckpoint: consumption.resumeCheckpoint, run, callbackClaim: consumption.callbackClaim, authorizationSessionId: consumption.authorizationSessionId, correlationId: consumption.correlationId });
 }
 
 // Automatic Mission continuation: claim/advance the underlying durable Mission run so the
@@ -114,12 +117,15 @@ async function reclaimMissionRun(c, scope, missionId) {
 // callback path and the restart-safe duplicate-retry path in handleCallback() above, so a
 // Worker eviction between exchange and storage is recoverable via a resupplied callback
 // rather than stranding the Mission.
-async function handleCallbackExchange(c, scope, { missionId, provider, code, verifier, redirectUri, fetchImpl, loginHint, allowedMicrosoftTenantIds, resumeCheckpoint, run }) {
+async function handleCallbackExchange(c, scope, { missionId, provider, code, verifier, redirectUri, fetchImpl, loginHint, tenantHint = null, allowedMicrosoftTenantIds, resumeCheckpoint, run, callbackClaim = null, authorizationSessionId = null, correlationId = null }) {
 	let tokenExchangeResult = null;
 	let capabilityStatus = null;
 	let syncDispatched = false;
 	if (code && redirectUri) {
-		tokenExchangeResult = await tokenExchange.exchangeAuthorizationCode(c.env, { provider, code, verifier, redirectUri }, fetchImpl);
+		if (callbackClaim) await callbackRecovery.recordCheckpoint(c, callbackClaim, { step: 'TOKEN_EXCHANGE_INTENT_RECORDED', status: 'INTENT_RECORDED', providerOperationReference: `exchange:${callbackClaim.id}:${callbackClaim.attempt}` });
+		if (callbackClaim) await callbackRecovery.recordCheckpoint(c, callbackClaim, { step: 'TOKEN_EXCHANGE_REQUEST_STARTED', status: 'IN_PROGRESS' });
+		tokenExchangeResult = await tokenExchange.exchangeAuthorizationCode(c.env, { provider, code, verifier, redirectUri, tenantHint }, fetchImpl);
+		if (callbackClaim) await callbackRecovery.recordCheckpoint(c, callbackClaim, { step: 'TOKEN_EXCHANGE_RESPONSE_OBSERVED', status: 'EXTERNAL_RESULT_OBSERVED', lastErrorCode: tokenExchangeResult.ok ? null : tokenExchangeResult.errorCode });
 		if (tokenExchangeResult.ok) {
 			const claims = decodeIdTokenClaims(tokenExchangeResult.idToken);
 			const identityResult = validateIdentity({ expectedLoginHint: loginHint, providerSubject: claims?.sub, providerEmail: claims?.email });
@@ -135,7 +141,15 @@ async function handleCallbackExchange(c, scope, { missionId, provider, code, ver
 				return { ok: true, duplicate: false, missionId, resumeCheckpoint, phase: (await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first()).phase, missionResumed: Boolean(run), tokenExchangeAttempted: true, tokenExchangeOk: true, identityValid: false, capabilityStatus: null, syncDispatched: false };
 			}
 
-			await tokenStorage.storeTokens(c, scope, { onboardingMissionId: missionId, provider, providerAccountHash: await hash(claims?.sub || `${provider}:${missionId}`), refreshToken: tokenExchangeResult.refreshToken || '', accessToken: tokenExchangeResult.accessToken, accessTokenExpiresAt: tokenExchangeResult.expiresAt, grantedScopes: tokenExchangeResult.grantedScopes });
+			const reauthWork = authorizationSessionId && correlationId ? await c.env.db.prepare(`SELECT * FROM nexora_onboarding_reauthorization_work WHERE replacement_authorization_session_id=?1 AND replacement_correlation_id=?2 AND onboarding_mission_id=?3 AND tenant_id=?4 AND workspace_id=?5 AND provider=?6`).bind(authorizationSessionId, correlationId, missionId, scope.tenantId, scope.workspaceId, provider).first() : null;
+			const accountHash = await hash(claims?.sub || `${provider}:${missionId}`);
+			if (reauthWork) {
+				const replacement = await tokenStorage.commitReauthorizationWithFence(c, scope, { onboardingMissionId: missionId, provider, providerAccountHash: accountHash, reauthorizationWorkId: reauthWork.id, replacementAuthorizationSessionId: authorizationSessionId, replacementCorrelationId: correlationId, callbackClaim, expectedRotationGeneration: reauthWork.expected_token_generation, refreshToken: tokenExchangeResult.refreshToken || '', accessToken: tokenExchangeResult.accessToken, accessTokenExpiresAt: tokenExchangeResult.expiresAt, grantedScopes: tokenExchangeResult.grantedScopes });
+				if (!replacement.committed) return { ok: false, reason: replacement.reason || 'REAUTHORIZATION_TOKEN_COMMIT_REJECTED', missionId, resumeCheckpoint };
+			} else {
+				await tokenStorage.storeTokens(c, scope, { onboardingMissionId: missionId, provider, providerAccountHash: accountHash, refreshToken: tokenExchangeResult.refreshToken || '', accessToken: tokenExchangeResult.accessToken, accessTokenExpiresAt: tokenExchangeResult.expiresAt, grantedScopes: tokenExchangeResult.grantedScopes });
+			}
+			if (callbackClaim) await callbackRecovery.recordCheckpoint(c, callbackClaim, { step: 'TOKEN_AUTHORITY_PERSISTED', status: 'PERSISTED' });
 
 			const sessionRow = await c.env.db.prepare(`SELECT scopes_json FROM nexora_onboarding_authorization_sessions WHERE onboarding_mission_id=?1 ORDER BY created_at DESC LIMIT 1`).bind(missionId).first();
 			const requiredScopes = JSON.parse(sessionRow?.scopes_json || '[]');
@@ -147,10 +161,12 @@ async function handleCallbackExchange(c, scope, { missionId, provider, code, ver
 				decisionInput: { scopeValid: true, identityValid: true, credentialStatus: 'active', credentialGenerationValid: true, authorityStatus: 'active', capabilities: [{ key: 'mail_read', status: scopeCheck.valid ? 'supported' : 'unknown', expiresAt: tokenExchangeResult.expiresAt }], requirement: { requiredCapabilities: ['mail_read'], approvalRequired: false, allowDegraded: false }, paramsValid: true, fencingValid: true },
 			});
 			capabilityStatus = decision.status;
+			if (callbackClaim) await callbackRecovery.recordCheckpoint(c, callbackClaim, { step: 'CAPABILITY_DISCOVERY_COMPLETED', status: 'PERSISTED' });
 
 			if (capabilityStatus === 'SUPPORTED') {
 				const dispatch = await onboardingSync.dispatchInitialSync(c, scope, { missionId, capabilityStates: { mail_read: 'SUPPORTED' } }).catch((error) => ({ dispatched: false, error: String(error?.message || error) }));
 				syncDispatched = Boolean(dispatch?.dispatched);
+				if (callbackClaim && syncDispatched) await callbackRecovery.recordCheckpoint(c, callbackClaim, { step: 'INITIAL_SYNC_DISPATCHED', status: 'PERSISTED' });
 			} else {
 				// Insufficient granted scope: this is a real, precise incremental-consent
 				// blocker, not a generic failure -- validating_authority -> blocked is the
@@ -162,7 +178,13 @@ async function handleCallbackExchange(c, scope, { missionId, provider, code, ver
 			}
 		} else {
 			const current = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first();
-			if (onboardingStateMachine.allowed(current.phase, 'failed')) await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'failed', blockedReason: tokenExchangeResult.errorCode });
+			const adminConsentRequired = provider === 'microsoft' && ['admin_consent_required', 'authorization_required', 'consent_required'].includes(tokenExchangeResult.errorCode);
+			if (adminConsentRequired && onboardingStateMachine.allowed(current.phase, 'waiting_for_admin_consent')) {
+				const tenantId = tenantHint || allowedMicrosoftTenantIds?.[0] || 'common';
+				const adminConsentUrl = onboardingOAuth.buildMicrosoftAdminConsentUrl({ tenantId, clientId: c.env.NEXORA_MICROSOFT_OAUTH_CLIENT_ID, redirectUri });
+				await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'waiting_for_admin_consent', blockedReason: 'ADMIN_APPROVAL_REQUIRED', requiredHumanActor: 'tenant_administrator', resumeToken: adminConsentUrl });
+				capabilityStatus = 'ADMIN_APPROVAL_REQUIRED';
+			} else if (onboardingStateMachine.allowed(current.phase, 'failed')) await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'failed', blockedReason: tokenExchangeResult.errorCode });
 		}
 	}
 

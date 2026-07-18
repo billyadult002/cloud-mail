@@ -16,12 +16,13 @@ exchange design (`nexora-onboarding-oauth-service.js`, `defaultClientType: 'conf
 Register exactly (production + any staging you intend to verify against):
 
 ```
-https://<your-production-domain>/v3/onboarding/callback/google
-https://<your-staging-domain>/v3/onboarding/callback/google
+https://cloud-mail.fastonegroup.workers.dev/v3/onboarding/providers/google/callback
 ```
 
-(No callback route is wired yet — Checkpoint 4 of a follow-on mission adds `/v3/onboarding/callback/google`.
-Register the URI now so it's stable when that route ships.)
+Add a staging URI only after its deployed origin is recorded in the deployment evidence. These routes are
+registered in the existing Mission Runtime HTTP surface. The exact registered value must also
+be injected as `NEXORA_GOOGLE_OAUTH_REDIRECT_URI`; NEXORA refuses to construct an authorization request when
+the client ID or redirect URI is absent.
 
 ## 3. Required APIs to enable (Google Cloud Console → APIs & Services → Library)
 
@@ -77,6 +78,7 @@ the exact env var names the onboarding service already reads:
 ```
 wrangler secret put NEXORA_GOOGLE_OAUTH_CLIENT_ID
 wrangler secret put NEXORA_GOOGLE_OAUTH_CLIENT_SECRET
+wrangler secret put NEXORA_GOOGLE_OAUTH_REDIRECT_URI
 ```
 
 Never place these in `wrangler.toml` `[vars]` (plaintext, committed) or in any repo file. See
@@ -106,8 +108,8 @@ Never place these in `wrangler.toml` `[vars]` (plaintext, committed) or in any r
 # Confirm the secret is bound (does not print the value)
 wrangler secret list | grep NEXORA_GOOGLE_OAUTH_CLIENT_ID
 
-# Confirm the redirect URI is reachable (once the callback route ships)
-curl -s -o /dev/null -w "%{http_code}\n" https://<your-domain>/v3/onboarding/callback/google
+# Confirm the deployed callback URI is reachable
+curl -s -o /dev/null -w "%{http_code}\n" https://cloud-mail.fastonegroup.workers.dev/v3/onboarding/providers/google/callback
 ```
 
 Then run the pool-workers OAuth test suite once more (`npx vitest run scripts/reliability-tests/nexora-onboarding-oauth.test.mjs`)

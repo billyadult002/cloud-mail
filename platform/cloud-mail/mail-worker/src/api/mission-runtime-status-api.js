@@ -20,4 +20,11 @@ app.get('/v3/mission-runtime/missions', async (c) => {
 	return c.json(result.ok(data));
 });
 
+app.get('/v3/mission-runtime/evidence-delivery', async (c) => {
+	const tenantId = userContext.getUserId(c);
+	const q = c.req.query();
+	const data = await missionRuntimeStatusService.evidenceDeliveryStatus(c, { tenantId, workspaceId: Number(q.workspace_id) }, { outboxId: q.outbox_id || null, missionId: q.mission_id || null, limit: Number(q.limit || 25) });
+	return c.json(result.ok(data));
+});
+
 export default app;

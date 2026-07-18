@@ -13,7 +13,7 @@ const CLIENT_SECRET_ENV = { google: 'NEXORA_GOOGLE_OAUTH_CLIENT_SECRET', microso
 function tokenEndpointFor(provider, tenantHint) {
 	const spec = PROVIDERS[provider];
 	if (!spec) throw new Error('nexora_onboarding_unsupported_provider');
-	return spec.tokenEndpoint.replace('{tenant}', tenantHint || 'organizations');
+	return spec.tokenEndpoint.replace('{tenant}', tenantHint || 'common');
 }
 
 // Decodes (does NOT cryptographically verify) the id_token's payload claims -- signature

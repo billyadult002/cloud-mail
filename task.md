@@ -866,3 +866,21 @@ Verdict: **PARTIAL — WORKSPACE_2_V2_REPEATED_STALE_LEASE_BLOCKS_V3_RELEASE.**
   callback API routes, token storage/refresh, initial sync, operational-visibility extension, Zero-Touch
   scorecard. EMAIL_TAB_INTERACTION_FAILURE and the unfinished mail classification taxonomy/order remain open
   and are not touched or claimed complete by this work.
+
+## NEXORA Zero-Touch onboarding kernel — continued (same Mission, not restarted) — 2026-07-18
+
+- Commits `ff057fd`/`0752df1` (on top of `b72f2ec`/`7a0ffd0`/`94607c3`/`7d4d290`/`6363a10`): remaining HTTP
+  routes (discover, status/:id, provider-split google/microsoft GET callbacks, resume, cancel, repair), secure
+  token storage (AES-GCM, real D1, migration 0060), provider discovery (deterministic confidence model),
+  initial-sync orchestration (foreground-before-background, independent verification, restart-safe job
+  claiming), per-transition evidence logging, and the Zero-Touch scorecard. 390/390 full suite.
+- Verdict: **PARTIAL_ZERO_TOUCH_OAUTH_FOUNDATION, substantially advanced** — LOGIC_COMPLETE_PARTIAL still
+  withheld per the mission's own rule, because 6 genuine code-level gaps remain (none externally blocked):
+  the real token-exchange HTTP call, the callback→capability-discovery→sync automatic chain (correctly
+  deferred until token exchange exists — wiring it now would require fabricated intermediate data), an
+  explicit CREATED onboarding phase, background-sync completion tracking, scheduled refresh orchestration,
+  and per-mission ADR verification. See `NEXORA_ZERO_TOUCH_OAUTH_LOGIC_COMPLETION_REPORT.md` for the full
+  matrix. Also flagged (not fixed, out of scope): a real pre-existing `jwt-utils.js` defect causing missing-
+  token requests to get body.code 500 instead of 401 (`task_35752626`).
+- Next executable step: build the token-exchange HTTP call against deterministic fixtures, then
+  `runScheduledTokenRefresh`, which together unblock the automatic capability-discovery/sync chain.

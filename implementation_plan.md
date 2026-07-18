@@ -603,3 +603,25 @@ Remaining checkpoints, in order, none requiring further architecture decisions:
    `NEXORA_PROVIDER_ACCEPTANCE_RUNBOOK.md` Steps 3-9 for production/desktop/real-iPhone acceptance.
 
 Durable checkpoints: commit `b72f2ec` (compensation), commit `7a0ffd0` (OAuth logic). Full suite 328/328.
+
+## Continued — 2026-07-18, same Mission (NEXORA ZERO-TOUCH OAUTH LOGIC COMPLETION, ADMIN BOOTSTRAP PACKAGE,
+## AND PROVIDER ACCEPTANCE CHECKPOINT)
+
+Closed this turn without production credentials (commits `07f8d12`, `ee70f96`, `3354524`, `ff057fd`,
+`0752df1`, on top of `7d4d290`/`6363a10` from the immediately preceding turn which already closed the
+onboarding state machine + core HTTP routes + orchestrator, correcting this document's stale "328/328"
+baseline to the actual 350/350 at that point):
+
+1. Route-level HTTP verification for the existing routes + all remaining required routes wired: discover,
+   status/:id, provider-split GET callbacks, resume, cancel, repair.
+2. Secure token storage (migration 0060), reusing the existing `secret-crypto.js` AES-GCM primitive.
+3. Provider discovery (deterministic confidence-weighted signal model).
+4. Initial-sync orchestration (dispatch/foreground-readiness/independent-verification/restart-safe job
+   claiming via the existing `nexora_autonomy_jobs` transport).
+5. Per-transition evidence logging in `advancePhase()`.
+6. Zero-Touch scorecard computed from real per-run evidence.
+
+Full suite: 390/390. Verdict: PARTIAL_ZERO_TOUCH_OAUTH_FOUNDATION (substantially advanced) —
+LOGIC_COMPLETE_PARTIAL correctly withheld; 6 precise code-level gaps remain (largest: the real token-exchange
+HTTP call itself, which is unbuilt code, not an externally-blocked item) — see
+`NEXORA_ZERO_TOUCH_OAUTH_LOGIC_COMPLETION_REPORT.md` for the full matrix and exact next step.

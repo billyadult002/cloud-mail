@@ -625,3 +625,35 @@ Full suite: 390/390. Verdict: PARTIAL_ZERO_TOUCH_OAUTH_FOUNDATION (substantially
 LOGIC_COMPLETE_PARTIAL correctly withheld; 6 precise code-level gaps remain (largest: the real token-exchange
 HTTP call itself, which is unbuilt code, not an externally-blocked item) — see
 `NEXORA_ZERO_TOUCH_OAUTH_LOGIC_COMPLETION_REPORT.md` for the full matrix and exact next step.
+
+## Continued — 2026-07-18, same Mission (NEXORA ZERO-TOUCH OAUTH LOGIC COMPLETION, ADMIN BOOTSTRAP PACKAGE,
+## AND PROVIDER ACCEPTANCE CHECKPOINT, extended with Cloudflare-Managed Domain Provisioning)
+
+Checkpoint 2 (Google/Microsoft) closed this turn: real token-exchange HTTP call (`e3a71df`), scheduled
+refresh orchestration (`e64db49`). Every Google/Microsoft code-level item from the prior report is now real
+and D1/fixture-tested: PKCE, sessions, scope planning, incremental consent, identity/tenant validation,
+capability discovery, token exchange, storage, refresh, rotation, revocation recovery, and the full automatic
+callback -> exchange -> storage -> capability-discovery -> sync-dispatch chain.
+
+Checkpoint 3 (Cloudflare) started: foundation contracts only (`3b76d37`) - authority binding, domain
+discovery, mail-authority preflight/conflict-detection, deterministic change planner. Full suite: 427/427.
+
+Remaining Cloudflare work (Checkpoints 4-11 of the extended mission, none started):
+1. Email Routing DNS provisioning execution (actually applying a 'safe_create' plan item via the Cloudflare
+   API, idempotency-keyed, with independent post-mutation readback verification and async DNS-convergence
+   checking - not just planning it).
+2. Destination-address creation + durable WAITING_FOR_DESTINATION_VERIFICATION handling with automatic
+   resume after external verification.
+3. Email Worker ingestion contract: tenant isolation, message identity, size/attachment limits, duplicate-
+   delivery protection, safe rejection/quarantine, evidence without raw content in logs.
+4. Routing-rule ownership contract + execution (forward/worker/drop, drop requires high-risk approval).
+5. Drift detection + authorized-only, non-destructive repair for NEXORA-owned resources.
+6. Outbound capability distinction (Cloudflare Email Service vs authenticated SMTP vs unsupported).
+7. Cloudflare HTTP routes (discover/authorize/inspect/plan/apply/status/verify/resume/cancel/repair/revoke)
+   through the existing Mission Runtime, with route-level tests.
+8. Operational-visibility and Zero-Touch-scorecard extensions for Cloudflare.
+9. 22-item Cloudflare ADR set, administrator bootstrap package, provider-acceptance runbook update.
+
+Verdict: PARTIAL_ZERO_TOUCH_OAUTH_AND_DOMAIN_PROVISIONING_FOUNDATION (Google/Microsoft logic-complete
+sub-portion is real and tested; Cloudflare is foundation-only). LOGIC_COMPLETE_PARTIAL remains withheld per
+the mission's own rule until the Cloudflare items above close.

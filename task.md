@@ -881,6 +881,28 @@ Verdict: **PARTIAL — WORKSPACE_2_V2_REPEATED_STALE_LEASE_BLOCKS_V3_RELEASE.**
   explicit CREATED onboarding phase, background-sync completion tracking, scheduled refresh orchestration,
   and per-mission ADR verification. See `NEXORA_ZERO_TOUCH_OAUTH_LOGIC_COMPLETION_REPORT.md` for the full
   matrix. Also flagged (not fixed, out of scope): a real pre-existing `jwt-utils.js` defect causing missing-
-  token requests to get body.code 500 instead of 401 (`task_35752626`).
+  token requests to get body.code 500 instead of 401 (`task_35752626`, fix now running in a separate
+  background session).
 - Next executable step: build the token-exchange HTTP call against deterministic fixtures, then
   `runScheduledTokenRefresh`, which together unblock the automatic capability-discovery/sync chain.
+
+## NEXORA Zero-Touch: Google/Microsoft gap closure + Cloudflare foundation — 2026-07-18 (same Mission)
+
+- Commits `e3a71df`/`e64db49`: real Google/Microsoft token-exchange HTTP call (deterministic-fixture-tested,
+  no live credentials), wired end-to-end into `handleCallback` (exchange -> encrypted storage ->
+  granted-scope validation -> capability discovery -> sync dispatch, closing Required Output #4 with
+  genuinely obtained data, not stubs) plus scheduled refresh orchestration (revoked/outage/throttling
+  correctly distinguished). **Checkpoint 2 (Google/Microsoft) is now fully closed.**
+- Commit `3b76d37`: Cloudflare-managed domain provisioning foundation layer (migration 0062) - account+zone
+  +capability-scoped authority binding (rejects raw-secret-looking credential references), domain discovery
+  (zone match + real nameserver delegation, never implies write authority), mail-authority preflight
+  (existing-provider conflict detection: Google Workspace/Microsoft 365/other vs. Cloudflare's own Email
+  Routing), and a deterministic 8-state change planner (existing MX conflict always blocks safe_create;
+  catch-all never enabled by default; overall plan classification is always the most conservative item).
+- Full suite: 427/427. Verdict unchanged: **PARTIAL_ZERO_TOUCH_OAUTH_AND_DOMAIN_PROVISIONING_FOUNDATION.**
+  Cloudflare remains far from LOGIC_COMPLETE_PARTIAL - only the foundation contracts exist; Email Worker
+  ingestion, routing-rule execution, drift detection/repair, all Cloudflare HTTP routes, operational
+  visibility extension, scorecard extension, the 22-item Cloudflare ADR set, and the Cloudflare admin
+  bootstrap package are all still MISSING, honestly not claimed done.
+- Next executable step: Email Worker ingestion contract (tenant isolation, duplicate-delivery protection,
+  size/attachment limits) and routing-rule/destination-address execution against the change planner's output.

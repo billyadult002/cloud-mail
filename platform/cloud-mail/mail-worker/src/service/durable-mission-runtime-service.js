@@ -3,7 +3,12 @@
 import { decide as decideProviderAction } from './provider-capability-contract-service';
 import enterpriseAuthorityService from './enterprise-authority-service';
 const STATES = Object.freeze({
-	mission: { created: ['runnable', 'cancelled'], runnable: ['running', 'waiting_for_approval', 'blocked', 'cancelled'], running: ['verification_pending', 'retry_scheduled', 'failed', 'cancelled'], verification_pending: ['completed', 'blocked', 'failed', 'cancelled'] },
+	// COMPENSATING/COMPENSATED close the gap identified in NEXORA_KERNEL_GAP_VERIFIED_AUDIT_REPORT.md.
+	// 'running'/'verification_pending' may enter compensation for an already-dispatched action that
+	// must be reversed; 'failed' may enter compensation only where policy permits (caller decides,
+	// this table only says the transition is legal, not automatic). 'compensated' is terminal -- a
+	// new Mission is required for further work, mirroring 'completed' and 'cancelled'.
+	mission: { created: ['runnable', 'cancelled'], runnable: ['running', 'waiting_for_approval', 'blocked', 'cancelled'], running: ['verification_pending', 'retry_scheduled', 'failed', 'cancelled', 'compensating'], verification_pending: ['completed', 'blocked', 'failed', 'cancelled', 'compensating'], failed: ['compensating'], compensating: ['compensated', 'failed'], compensated: [] },
 	step: { runnable: ['running', 'cancelled'], running: ['checkpointed', 'completed', 'failed', 'cancelled'], checkpointed: ['runnable', 'running', 'cancelled'] }
 });
 const uuid = () => crypto.randomUUID();
@@ -130,6 +135,59 @@ async function complete(c, scope, { missionId, runId, outcomeId, expectedVersion
 	await audit(c, scope, { missionId, runId, type: 'MISSION_COMPLETED', from: mission.state, to: 'completed', expectedVersion, fencingToken, detail: { outcome_id: outcomeId } });
 	return true;
 }
+// Compensation: reverses the business effect of an already-dispatched, evidence-verified
+// action. It never edits or deletes the original action's evidence (append-only, enforced by
+// the mission_runtime_evidence_no_update/no_delete triggers) -- it records a new, independent
+// compensation record and drives the mission through compensating -> compensated|failed using
+// the same fencing/optimistic-concurrency discipline as every other transition in this module.
+async function beginCompensation(c, scope, { missionId, runId, fencingToken, expectedVersion, originalActionId, reason, authorizationReference, capability, providerTargetHash }) {
+	const mission = await c.env.db.prepare('SELECT * FROM mission_runtime_missions WHERE id=?1').bind(missionId).first(); assertScope(mission, scope);
+	assertTransition('mission', mission.state, 'compensating');
+	if (!same(mission.version, expectedVersion)) throw new Error('mission_runtime_compensation_conflict');
+	await getRun(c, scope, runId, fencingToken);
+	const result = await c.env.db.prepare(`UPDATE mission_runtime_missions SET state='compensating',version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND state=?4 AND version=?5`).bind(missionId, scope.tenantId, scope.workspaceId, mission.state, expectedVersion).run();
+	if (!result.meta?.changes) throw new Error('mission_runtime_compensation_conflict');
+	const compensationId = uuid();
+	const attemptRow = await c.env.db.prepare(`SELECT COALESCE(MAX(attempt),0) AS attempt FROM mission_runtime_compensations WHERE mission_id=?1 AND original_action_id=?2`).bind(missionId, originalActionId).first();
+	const attempt = Number(attemptRow?.attempt || 0) + 1;
+	await c.env.db.prepare(`INSERT INTO mission_runtime_compensations(id,mission_id,run_id,original_action_id,tenant_id,workspace_id,reason,authorization_reference,capability,provider_target_hash,attempt,state) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,'pending')`).bind(compensationId, missionId, runId, originalActionId, scope.tenantId, scope.workspaceId, reason, authorizationReference, capability, providerTargetHash, attempt).run();
+	await audit(c, scope, { missionId, runId, type: 'COMPENSATION_STARTED', from: mission.state, to: 'compensating', expectedVersion, fencingToken, detail: { compensation_id: compensationId, original_action_id: originalActionId, reason, attempt } });
+	return compensationId;
+}
+async function dispatchCompensation(c, scope, { compensationId, compensationActionId }) {
+	const compensation = await c.env.db.prepare('SELECT * FROM mission_runtime_compensations WHERE id=?1').bind(compensationId).first(); assertScope(compensation, scope);
+	if (compensation.state !== 'pending') throw new Error('mission_runtime_compensation_state_invalid');
+	const result = await c.env.db.prepare(`UPDATE mission_runtime_compensations SET state='dispatched',compensation_action_id=?2 WHERE id=?1 AND tenant_id=?3 AND workspace_id=?4 AND state='pending'`).bind(compensationId, compensationActionId, scope.tenantId, scope.workspaceId).run();
+	if (!result.meta?.changes) throw new Error('mission_runtime_compensation_state_invalid');
+	return true;
+}
+async function observeCompensation(c, scope, { compensationId, observedResult }) {
+	const compensation = await c.env.db.prepare('SELECT * FROM mission_runtime_compensations WHERE id=?1').bind(compensationId).first(); assertScope(compensation, scope);
+	if (compensation.state !== 'dispatched') throw new Error('mission_runtime_compensation_state_invalid');
+	const result = await c.env.db.prepare(`UPDATE mission_runtime_compensations SET state='observed',observed_result=?2 WHERE id=?1 AND tenant_id=?3 AND workspace_id=?4 AND state='dispatched'`).bind(compensationId, JSON.stringify(observedResult ?? null), scope.tenantId, scope.workspaceId).run();
+	if (!result.meta?.changes) throw new Error('mission_runtime_compensation_state_invalid');
+	return true;
+}
+// Only an independently-observed compensation (state='observed', i.e. beginCompensation ->
+// dispatchCompensation -> observeCompensation already happened) may be finalized -- mirrors
+// the executor/verifier separation in finalizeVerifiedOutcome: the caller cannot skip straight
+// from 'pending' to a final verdict.
+async function verifyAndCompleteCompensation(c, scope, { compensationId, missionId, runId, fencingToken, expectedVersion, verificationResult, verified, evidenceIds = [] }) {
+	const compensation = await c.env.db.prepare('SELECT * FROM mission_runtime_compensations WHERE id=?1').bind(compensationId).first(); assertScope(compensation, scope);
+	if (compensation.state !== 'observed') throw new Error('mission_runtime_compensation_verification_conflict');
+	const mission = await c.env.db.prepare('SELECT * FROM mission_runtime_missions WHERE id=?1').bind(missionId).first(); assertScope(mission, scope);
+	if (mission.state !== 'compensating' || !same(mission.version, expectedVersion)) throw new Error('mission_runtime_compensation_conflict');
+	await getRun(c, scope, runId, fencingToken);
+	const finalCompensationState = verified ? 'verified' : 'failed';
+	const nextMissionState = verified ? 'compensated' : 'failed';
+	assertTransition('mission', 'compensating', nextMissionState);
+	const compResult = await c.env.db.prepare(`UPDATE mission_runtime_compensations SET state=?2,verification_result=?3,evidence_ids_json=?4,completed_at=CURRENT_TIMESTAMP,final_state=?5 WHERE id=?1 AND tenant_id=?6 AND workspace_id=?7 AND state='observed'`).bind(compensationId, finalCompensationState, JSON.stringify(verificationResult ?? null), JSON.stringify(evidenceIds), nextMissionState, scope.tenantId, scope.workspaceId).run();
+	if (!compResult.meta?.changes) throw new Error('mission_runtime_compensation_verification_conflict');
+	const missionResult = await c.env.db.prepare(`UPDATE mission_runtime_missions SET state=?2,version=version+1,updated_at=CURRENT_TIMESTAMP,completed_at=CASE WHEN ?2='compensated' THEN CURRENT_TIMESTAMP ELSE completed_at END WHERE id=?1 AND tenant_id=?3 AND workspace_id=?4 AND state='compensating' AND version=?5`).bind(missionId, nextMissionState, scope.tenantId, scope.workspaceId, expectedVersion).run();
+	if (!missionResult.meta?.changes) throw new Error('mission_runtime_compensation_conflict');
+	await audit(c, scope, { missionId, runId, type: 'COMPENSATION_FINALIZED', from: 'compensating', to: nextMissionState, expectedVersion, fencingToken, detail: { compensation_id: compensationId, verified, final_state: nextMissionState } });
+	return { compensationId, missionState: nextMissionState, compensationState: finalCompensationState };
+}
 async function executeReadonlyGmailProbe(c, job) {
 	const input = JSON.parse(job.input_json || '{}'); const scope = { tenantId: Number(input.tenant_id), workspaceId: Number(input.workspace_id) };
 	if (!Number.isInteger(scope.tenantId) || !Number.isInteger(scope.workspaceId) || !Number.isInteger(Number(input.account_id))) throw new Error('mission_runtime_job_input_invalid');
@@ -216,5 +274,5 @@ async function monitorScheduled({ env }, options = {}) {
 	}
 	return { checked: (jobs.results || []).length, claimed, succeeded, retried, bounded: true };
 }
-export { STATES, allowed, assertTransition, hash, stable, evaluateEvidence, evaluateVerifiedActionBoundary };
-export default { STATES, allowed, assertTransition, claimRun, checkpoint, consumeApproval, complete, verifyClaim, finalizeVerifiedOutcome, monitorScheduled, evaluateEvidence, evaluateVerifiedActionBoundary };
+export { STATES, allowed, assertTransition, hash, stable, evaluateEvidence, evaluateVerifiedActionBoundary, beginCompensation, dispatchCompensation, observeCompensation, verifyAndCompleteCompensation };
+export default { STATES, allowed, assertTransition, claimRun, checkpoint, consumeApproval, complete, verifyClaim, finalizeVerifiedOutcome, monitorScheduled, evaluateEvidence, evaluateVerifiedActionBoundary, beginCompensation, dispatchCompensation, observeCompensation, verifyAndCompleteCompensation };

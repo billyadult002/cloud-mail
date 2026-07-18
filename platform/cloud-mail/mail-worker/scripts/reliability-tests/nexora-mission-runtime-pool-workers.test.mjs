@@ -113,6 +113,19 @@ const SCHEMA_STATEMENTS = [
 		reason_code TEXT NOT NULL, evidence_integrity_hash TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		PRIMARY KEY(verification_id, evidence_id)
 	)`,
+	`CREATE TABLE mission_runtime_compensations (
+		id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, run_id TEXT NOT NULL,
+		original_action_id TEXT NOT NULL, compensation_action_id TEXT,
+		tenant_id INTEGER NOT NULL, workspace_id INTEGER NOT NULL,
+		reason TEXT NOT NULL, authorization_reference TEXT NOT NULL,
+		capability TEXT NOT NULL, provider_target_hash TEXT NOT NULL,
+		attempt INTEGER NOT NULL DEFAULT 1, state TEXT NOT NULL DEFAULT 'pending'
+		 CHECK(state IN ('pending','dispatched','observed','verified','failed')),
+		observed_result TEXT, verification_result TEXT, evidence_ids_json TEXT NOT NULL DEFAULT '[]',
+		started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TEXT,
+		final_state TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(mission_id, original_action_id, attempt)
+	)`,
 	`CREATE TABLE nexora_autonomy_jobs (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, domain TEXT COLLATE NOCASE, job_type TEXT NOT NULL, idempotency_key TEXT NOT NULL UNIQUE,
 		state TEXT NOT NULL CHECK(state IN ('QUEUED','RUNNING','RETRYING','SUCCEEDED','BLOCKED','FAILED')) DEFAULT 'QUEUED', attempt_count INTEGER NOT NULL DEFAULT 0,
@@ -131,7 +144,7 @@ const TABLES = [
 	'mission_runtime_missions', 'mission_runtime_runs', 'mission_runtime_steps', 'mission_runtime_checkpoints',
 	'mission_runtime_actions', 'mission_runtime_approvals', 'mission_runtime_evidence', 'mission_runtime_verifications',
 	'mission_runtime_outcomes', 'mission_runtime_events', 'mission_runtime_claims', 'mission_runtime_verification_policies',
-	'mission_runtime_evidence_relations', 'mission_runtime_verification_evidence', 'nexora_autonomy_jobs',
+	'mission_runtime_evidence_relations', 'mission_runtime_verification_evidence', 'mission_runtime_compensations', 'nexora_autonomy_jobs',
 ];
 
 async function resetSchema() {
@@ -346,5 +359,93 @@ describe('NEXORA Mission Runtime operational visibility (Required Output #11)', 
 		const status = await missionRuntimeStatusService.missionStatus(c, { tenantId: TENANT_ID, workspaceId: WORKSPACE_ID }, 'v3');
 		expect(status.final_verdict.state).toBe('verified');
 		expect(status.final_verdict.outcome_id).toBe('vo3');
+	});
+});
+
+describe('NEXORA Mission Runtime compensation (Checkpoint 2 — closes the confirmed COMPENSATING/COMPENSATED gap)', () => {
+	async function seedRunningMissionWithAction({ missionId, runId, stepId, actionId, idempotencyKey }) {
+		await seedMissionRunStep({ missionId, runId, stepId, idempotencyKey, missionState: 'running', runState: 'runnable', stepState: 'runnable' });
+		await durableMissionRuntime.claimRun(c, scope, runId);
+		await env.db
+			.prepare(`INSERT INTO mission_runtime_actions(id,mission_id,run_id,step_id,tenant_id,workspace_id,capability,action_type,target_hash,params_hash,state,idempotency_key) VALUES(?1,?2,?3,?4,?5,?6,'test_capability','TEST_WRITE','target-hash','params-hash','completed',?7)`)
+			.bind(actionId, missionId, runId, stepId, TENANT_ID, WORKSPACE_ID, `${idempotencyKey}:action`)
+			.run();
+	}
+
+	it('E7/V1-V4: a reversible compensation runs through begin -> dispatch -> observe -> verify against real D1, and only a verified observation can mark it compensated', async () => {
+		await seedRunningMissionWithAction({ missionId: 'k1', runId: 'kr1', stepId: 'ks1', actionId: 'ka1', idempotencyKey: 'kidem-1' });
+		const run = await env.db.prepare(`SELECT * FROM mission_runtime_runs WHERE id='kr1'`).first();
+		const mission = await env.db.prepare(`SELECT * FROM mission_runtime_missions WHERE id='k1'`).first();
+
+		const compensationId = await durableMissionRuntime.beginCompensation(c, scope, {
+			missionId: 'k1', runId: 'kr1', fencingToken: run.fencing_token, expectedVersion: mission.version,
+			originalActionId: 'ka1', reason: 'test_reversal', authorizationReference: 'auth-ref-1', capability: 'test_capability', providerTargetHash: 'target-hash',
+		});
+		expect(typeof compensationId).toBe('string');
+		const afterBegin = await env.db.prepare(`SELECT state,version FROM mission_runtime_missions WHERE id='k1'`).first();
+		expect(afterBegin.state).toBe('compensating');
+
+		// V2: an unauthorized shortcut straight to verify without dispatch/observe first must fail.
+		await expect(
+			durableMissionRuntime.verifyAndCompleteCompensation(c, scope, { compensationId, missionId: 'k1', runId: 'kr1', fencingToken: run.fencing_token, expectedVersion: afterBegin.version, verified: true, verificationResult: { skip: true } }),
+		).rejects.toThrow('mission_runtime_compensation_verification_conflict');
+
+		await durableMissionRuntime.dispatchCompensation(c, scope, { compensationId, compensationActionId: 'ka1-reversal' });
+		await durableMissionRuntime.observeCompensation(c, scope, { compensationId, observedResult: { reversed: true, provider_ack: 'synthetic-ack' } });
+
+		const outcome = await durableMissionRuntime.verifyAndCompleteCompensation(c, scope, {
+			compensationId, missionId: 'k1', runId: 'kr1', fencingToken: run.fencing_token, expectedVersion: afterBegin.version,
+			verified: true, verificationResult: { independently_confirmed: true }, evidenceIds: ['ev-comp-1'],
+		});
+		expect(outcome.missionState).toBe('compensated');
+		expect(outcome.compensationState).toBe('verified');
+
+		const finalMission = await env.db.prepare(`SELECT state FROM mission_runtime_missions WHERE id='k1'`).first();
+		expect(finalMission.state).toBe('compensated');
+		const compRow = await env.db.prepare(`SELECT state,final_state,completed_at FROM mission_runtime_compensations WHERE id=?1`).bind(compensationId).first();
+		expect(compRow.state).toBe('verified');
+		expect(compRow.final_state).toBe('compensated');
+		expect(compRow.completed_at).not.toBeNull();
+
+		// COMPENSATED is terminal: no further legal transition out.
+		expect(allowed('mission', 'compensated', 'running')).toBe(false);
+		expect(allowed('mission', 'compensated', 'compensating')).toBe(false);
+	});
+
+	it('V1/failure path: a compensation that fails independent verification drives the mission to failed, not compensated', async () => {
+		await seedRunningMissionWithAction({ missionId: 'k2', runId: 'kr2', stepId: 'ks2', actionId: 'ka2', idempotencyKey: 'kidem-2' });
+		const run = await env.db.prepare(`SELECT * FROM mission_runtime_runs WHERE id='kr2'`).first();
+		const mission = await env.db.prepare(`SELECT * FROM mission_runtime_missions WHERE id='k2'`).first();
+		const compensationId = await durableMissionRuntime.beginCompensation(c, scope, { missionId: 'k2', runId: 'kr2', fencingToken: run.fencing_token, expectedVersion: mission.version, originalActionId: 'ka2', reason: 'test_reversal', authorizationReference: 'auth-ref-2', capability: 'test_capability', providerTargetHash: 'target-hash' });
+		await durableMissionRuntime.dispatchCompensation(c, scope, { compensationId, compensationActionId: 'ka2-reversal' });
+		await durableMissionRuntime.observeCompensation(c, scope, { compensationId, observedResult: { reversed: false, error: 'provider_rejected_reversal' } });
+
+		const afterBegin = await env.db.prepare(`SELECT version FROM mission_runtime_missions WHERE id='k2'`).first();
+		const outcome = await durableMissionRuntime.verifyAndCompleteCompensation(c, scope, { compensationId, missionId: 'k2', runId: 'kr2', fencingToken: run.fencing_token, expectedVersion: afterBegin.version, verified: false, verificationResult: { independently_confirmed: false } });
+		expect(outcome.missionState).toBe('failed');
+		const finalMission = await env.db.prepare(`SELECT state FROM mission_runtime_missions WHERE id='k2'`).first();
+		expect(finalMission.state).toBe('failed');
+	});
+
+	it('V1: illegal compensation transitions are rejected — cannot compensate from created/cancelled/compensated', () => {
+		expect(allowed('mission', 'created', 'compensating')).toBe(false);
+		expect(allowed('mission', 'cancelled', 'compensating')).toBe(false);
+		expect(allowed('mission', 'compensated', 'compensating')).toBe(false);
+		expect(allowed('mission', 'running', 'compensating')).toBe(true);
+		expect(allowed('mission', 'failed', 'compensating')).toBe(true); // legal only where the caller's policy permits it
+	});
+
+	it('E24: compensation never mutates the original action evidence — append-only enforcement still holds during a compensation flow', async () => {
+		await seedRunningMissionWithAction({ missionId: 'k3', runId: 'kr3', stepId: 'ks3', actionId: 'ka3', idempotencyKey: 'kidem-3' });
+		await env.db
+			.prepare(`INSERT INTO mission_runtime_evidence(id,mission_id,run_id,step_id,action_id,tenant_id,workspace_id,claim_key,source_type,status,reference_hash,summary_json,observed_at,evidence_type) VALUES('ev-orig-3','k3','kr3','ks3','ka3',?1,?2,'claim','test_source','supported','hash-orig-3','{}',CURRENT_TIMESTAMP,'provider_observation')`)
+			.bind(TENANT_ID, WORKSPACE_ID)
+			.run();
+		const run = await env.db.prepare(`SELECT * FROM mission_runtime_runs WHERE id='kr3'`).first();
+		const mission = await env.db.prepare(`SELECT * FROM mission_runtime_missions WHERE id='k3'`).first();
+		await durableMissionRuntime.beginCompensation(c, scope, { missionId: 'k3', runId: 'kr3', fencingToken: run.fencing_token, expectedVersion: mission.version, originalActionId: 'ka3', reason: 'test_reversal', authorizationReference: 'auth-ref-3', capability: 'test_capability', providerTargetHash: 'target-hash' });
+		await expect(env.db.prepare(`UPDATE mission_runtime_evidence SET status='rejected' WHERE id='ev-orig-3'`).run()).rejects.toThrow('mission_runtime_evidence_append_only');
+		const original = await env.db.prepare(`SELECT status FROM mission_runtime_evidence WHERE id='ev-orig-3'`).first();
+		expect(original.status).toBe('supported'); // original action evidence is untouched by compensation
 	});
 });

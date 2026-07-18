@@ -576,3 +576,30 @@ Evaluator finding: reject the existing implementation. Beyond hard-coded UI and 
 1. **Evidence:** the native scheduler reclaimed the expired W2 lease, advanced to `97/480`, and cleanly released; repeated scheduled audit records prove current W2 V3 processing and Gmail telemetry.
 2. **Decision:** no unique historical generation-84 interruption cause remains in retained production evidence. Do not modify production runtime state to address an unproven component.
 3. **Next:** continue native, exact-identity, read-only convergence monitoring; completion/parity remain blocked by non-ready and nonzero outbox gates.
+
+## W2 completion convergence loop — 2026-07-18 03:56 UTC
+
+1. **Discovery:** exact-key, SELECT-only production D1 sampling returned exactly one W2 row and kept the separately exact W1 row isolated. W2 is unchanged at generation/count `251/1244`, paused/unowned/unleased, with target/current/missing `2173/1550/623`, remaining `1488`, and outbox pending/processing/processed/failed `1586/1/1327/0`.
+2. **Evaluator:** duplicates, orphans, unresolved failures, and tombstone regressions remain zero, but W2 has no telemetry or durable movement after `01:50:26/01:50:14 UTC`. This is a stale runtime condition, not a readiness boundary; W1's independent activity is excluded.
+3. **Stop condition:** keep the mission `IN_PROGRESS_W2_STALLED`. Continue read-only exact-identity observation only. Do not run parity until W2 is ready, fresh and stable, outbox non-processed is zero, and exact frozen-scope coverage/cursor lag are zero; do not enable reads or declare `FULL_PRODUCTION_PASS`.
+
+## NEXORA Zero-Touch onboarding kernel — implementation plan (separate work stream, 2026-07-18)
+
+Not part of UCS W2 convergence; recorded additively per Required Output #33 of the Zero-Touch OAuth Logic
+Completion mission. Checkpoints completed this pass: compensation (2), OAuth/session contract (3), Google PKCE
+(5), Microsoft PKCE (6), scope planning/incremental consent/identity/tenant/capability discovery (7 — partial,
+see matrix), admin bootstrap packages/config template/runbook (10), CI/secret-scan (11), matrix + verdict (12).
+
+Remaining checkpoints, in order, none requiring further architecture decisions:
+1. Onboarding-specific 18-state machine with its own `assertTransition`-style guard (currently only the
+   generic Mission Runtime state machine is real; `nexora_onboarding_state` has the columns, not the guard).
+2. `/v3/onboarding/*` API routes: start, callback/google, callback/microsoft — wiring `createAuthorizationSession`/
+   `consumeCallback` (already implemented and tested) to HTTP, and resuming the linked Mission on success.
+3. Token storage/refresh/rotation (blocked on a real client_secret to test against meaningfully — Checkpoint 13).
+4. Initial sync flow (blocked on #3).
+5. Operational-visibility extension of `mission-runtime-status-service.js` for onboarding-specific fields.
+6. Zero-Touch scorecard (requires #2-#4 working end-to-end to measure).
+7. Checkpoint 13+: inject real credentials per the admin bootstrap packages, execute
+   `NEXORA_PROVIDER_ACCEPTANCE_RUNBOOK.md` Steps 3-9 for production/desktop/real-iPhone acceptance.
+
+Durable checkpoints: commit `b72f2ec` (compensation), commit `7a0ffd0` (OAuth logic). Full suite 328/328.

@@ -9,9 +9,14 @@ import UIKit
 #endif
 
 #if os(iOS)
-private let inboxFloatingTabContentInset: CGFloat = 124
+private let inboxPlatformTabBarHeight: CGFloat = 49
+private let inboxExpectedHomeIndicatorSafeArea: CGFloat = 34
+private let inboxReadableTabClearance: CGFloat = 41
+private let inboxFloatingTabContentInset = inboxPlatformTabBarHeight + inboxExpectedHomeIndicatorSafeArea + inboxReadableTabClearance
 #else
-private let inboxFloatingTabContentInset: CGFloat = 86
+private let inboxPlatformTabBarHeight: CGFloat = 50
+private let inboxReadableTabClearance: CGFloat = 36
+private let inboxFloatingTabContentInset = inboxPlatformTabBarHeight + inboxReadableTabClearance
 #endif
 
 private struct EmailNavigationRoute: Hashable {

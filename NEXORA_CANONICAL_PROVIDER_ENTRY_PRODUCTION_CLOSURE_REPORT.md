@@ -469,6 +469,135 @@ Final verdict remains:
 
 `LOGIC_COMPLETE_PARTIAL`
 
+## 2026-07-19 Apple Design PR Review, Build 359, And Option 5 Gate Evidence
+
+This checkpoint is additive evidence only. It records the successor diff audit, apple design Skill review, a local P1 navigation-source cleanup, PR recovery attempts, and Build 359 archive status. It does not apply migration 0077, deploy Worker code, register Providers, mutate Secrets, or change production state.
+
+Repository guard and canonical heads:
+
+- Repository guard command: `python3 scripts/repository_check.py cloudmail --task "nexora_apple_design_pr_review_build359_option5"`
+- Result: `SUCCESS: Repository check passed.`
+- Canonical baseline: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
+- `origin/main`: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
+- `origin/codex/nexora-production-integration-5d7024d`: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
+- Pushed successor head at start: `a6b28cbe1213f9b7b79c701b048cf70d7d7b1597`
+- Evidence branch head at start: `183b03ae30615a57feb172b53be7a246bf865826`
+- Local reviewed successor candidate: `43ee19ff47d3b0c1c48a88e93ecfd2bdd8c4c25d`
+- Local reviewed successor commit subject: `Close Apple navigation review findings`
+- Local reviewed successor push result: blocked by GitHub authorization, `Permission to billyadult002/cloud-mail.git denied to billyadult002.`
+
+Complete changed-file inventory from baseline `755a9cd4224e1f9cebabf430b833e1485e25fb0c` to pushed successor `a6b28cbe1213f9b7b79c701b048cf70d7d7b1597`:
+
+- REPORT: `NEXORA_EVIDENCE_FIRST_HYBRID_CLASSIFICATION_IMPLEMENTATION_REPORT.md`
+- ADR: `docs/ADR-NEXORA-EVIDENCE-FIRST-HYBRID-CLASSIFICATION.md`
+- APPLE_SOURCE: `files/GlassMail-project/BUILD.md`, `files/GlassMail-project/CI_SECRET_INVENTORY.md`, `files/GlassMail-project/GlassMail/AI/*.swift`, `files/GlassMail-project/GlassMail/Models/*.swift`, `files/GlassMail-project/GlassMail/Services/*.swift`, `files/GlassMail-project/GlassMail/Views/*.swift`, `files/GlassMail-project/GlassMail/GlassMailApp.swift`, `files/GlassMail-project/Info.plist`, `files/GlassMail-project/README.md`, `files/GlassMail-project/apple-app-site-association`, `files/GlassMail-project/project.yml`, `files/GlassMail-project/setup.command`
+- XCODE_PROJECT_METADATA: `files/GlassMail-project/GlassMail.xcodeproj/project.pbxproj`, `files/GlassMail-project/GlassMail.xcodeproj/project.xcworkspace/contents.xcworkspacedata`, `files/GlassMail-project/GlassMail.xcworkspace/contents.xcworkspacedata`, `files/GlassMail-project/GlassMail/Assets.xcassets/**/Contents.json`
+- GENERATED: `files/GlassMail-project/GlassMail/Assets.xcassets/**/*.png`
+- XCODE_PROJECT_METADATA: `files/GlassMail-project/GlassMail/GlassMail.entitlements`, `files/GlassMail-project/GlassMail/GlassMailDeviceSmoke.entitlements`
+- MIGRATION: `mail-worker/migrations/0077_nexora_evidence_first_hybrid_classification.sql`
+- WORKER_TEST: `mail-worker/scripts/classification-contract-check.mjs`
+- WORKER_SOURCE: `mail-worker/package.json`, `mail-worker/src/api/nexora-email-classification-api.js`, `mail-worker/src/hono/webs.js`, `mail-worker/src/service/nexora-email-classification-service.mjs`
+- LOCAL_USER_DATA: none detected in the successor diff
+- UNRELATED: none classified in the successor diff
+
+Unauthorized artifact audit:
+
+- No `xcuserdata`, `DerivedData`, `.xcarchive`, `.ipa`, `.dmg`, build output directory, temporary file, personal scheme state, raw device identifier, credential, Secret value, signing key, embedded provisioning profile, or unrelated root-worktree file was detected in the successor diff.
+- Filename hits requiring review were `CI_SECRET_INVENTORY.md` and `GlassMailDeviceSmoke.entitlements`; both were classified as source/project metadata. `CI_SECRET_INVENTORY.md` contains secret names and operational inventory only, not secret values. `GlassMailDeviceSmoke.entitlements` is an empty entitlement plist.
+
+apple design Skill evidence:
+
+- Skill requested: `apple design`
+- Installed skill identity: `apple-design`
+- `SKILL.md` path: `/Users/billtin/Documents/cloudmail/.agents/skills/apple-design/SKILL.md`
+- Supporting files: none found
+- Version or modification identity: no version metadata observed in the skill file
+- Required workflow applied: inspect controls before modification, remove stale custom material/navigation source, preserve native platform semantics, rebuild in Xcode Beta, and record unresolved physical-device gates truthfully.
+- Prohibited patterns applied in review: no stacked light translucent surfaces, no custom tab bar masquerading as platform tab navigation, no oversized secondary selected capsule, no fixed accidental inset, no unverified physical-device acceptance claim.
+
+Apple Design compliance matrix:
+
+| Control | Status | Evidence |
+| --- | --- | --- |
+| Bottom navigation | SOURCE_PASS_DEVICE_PENDING | Live iOS code uses SwiftUI `TabView` with native `.tabItem` semantics. Stale custom `iOSTabBar` and selected capsule source were removed in local candidate `43ee19f`. Physical viewport evidence remains pending. |
+| Email tab | SOURCE_PASS_DEVICE_PENDING | Visible label `Email`, SF Symbol `tray.fill`, native tab selected state. |
+| Intel tab | SOURCE_PASS_DEVICE_PENDING | Visible compact label `Intel`, SF Symbol `sparkles`, full accessibility label `Intelligence`. |
+| Goals tab | SOURCE_PASS_DEVICE_PENDING | Visible label `Goals`, SF Symbol `target`, native tab selected state. |
+| Trust tab | SOURCE_PASS_DEVICE_PENDING | Visible label `Trust`, SF Symbol `checkmark.shield.fill`, native tab selected state. |
+| Org tab | SOURCE_PASS_DEVICE_PENDING | Visible compact label `Org`, SF Symbol `building.2.fill`, full accessibility label `Organization`. |
+| Compose button | SOURCE_REVIEWED_DEVICE_PENDING | Native `Button` with SF Symbol `square.and.pencil` and accessibility label `Compose`; physical hit target and contrast still require device evidence. |
+| Completion button | SOURCE_REVIEWED_DEVICE_PENDING | Native completion/confirmation buttons exist in compose/mission flows; no new source defect closed in this checkpoint. |
+| AI button | SOURCE_REVIEWED_DEVICE_PENDING | Native buttons use SF Symbols such as `sparkles`, `wand.and.stars`, and explicit accessibility labels/identifiers where inspected. |
+| Dismiss button | SOURCE_REVIEWED_DEVICE_PENDING | Native toolbar buttons such as `Done`, `Cancel`, and close actions are present; no custom destructive dismissal was added. |
+| Mail-row star button | SOURCE_REVIEWED_DEVICE_PENDING | Native `Button` with `star`/`star.fill`, accessibility label `Star message` or `Unstar message`, and row-scoped identifier. |
+| Classification controls | SOURCE_REVIEWED_DEVICE_PENDING | Classification chip/controls expose category, reason, and confidence accessibility labels; server-authoritative behavior still depends on migration/deployment gates. |
+
+Navigation/source findings closed locally:
+
+- P1 finding: stale custom iOS tab-bar source retained a selected `Capsule` background, creating audit ambiguity and conflicting with the native-tab design direction.
+- Resolution: removed unused `currentIOSTab`, `iOSTabBar`, and `iOSTabButton` source from `MainTabView.swift`.
+- P1 finding: `inboxFloatingTabContentInset` was a bare fixed offset.
+- Resolution: expressed bottom clearance as `platform tab bar height + expected home-indicator safe area + readable tab clearance` on iOS, and as `platform tab bar height + readable clearance` on non-iOS.
+- Files changed in local candidate: `files/GlassMail-project/GlassMail/Views/MainTabView.swift`, `files/GlassMail-project/GlassMail/Views/InboxView.swift`
+
+Verification from local reviewed candidate `43ee19f`:
+
+- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer`
+- `xcodebuild -version`: `Xcode 27.0`, build `27A5194q`
+- SDKs include `iOS 27.0`, `iOS Simulator 27.0`, and `macOS 27.0`
+- Swift toolchain: `/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc`
+- Generic iOS Release build with `CODE_SIGNING_ALLOWED=NO`: `** BUILD SUCCEEDED **`
+- `npm test`: PASS
+- `npm run test:rc`: `13` files, `148` tests PASS
+- `npm audit --audit-level=moderate`: `found 0 vulnerabilities`
+- Remote D1 migration list: only `0077_nexora_evidence_first_hybrid_classification.sql` pending
+
+PR recovery:
+
+- `gh auth setup-git --hostname github.com` completed, but `git push origin codex/nexora-evidence-first-classification` failed with HTTP 403.
+- `gh auth refresh --hostname github.com --scopes repo,workflow` required a GitHub device-code browser approval and was cancelled after no completion.
+- `gh pr create --base main --head codex/nexora-evidence-first-classification ...` failed with `GraphQL: Resource not accessible by personal access token (createPullRequest)`.
+- PR status remains `NOT_CREATED`.
+- Classification remains `AUTH_SCOPE_FAILURE`.
+
+Build 359 archive status:
+
+- Physical iPhone discovery through Xcode Beta succeeded; device identifiers were redacted. Target observed as paired and available physical `iPhone 17 Pro Max (iPhone18,2)`.
+- Build 359 archive command used `CURRENT_PROJECT_VERSION=359`, `MARKETING_VERSION=3.03`, manual signing, Team `4GGH43VE67`, and provisioning profile `0855a35a-f46c-4ddf-95ca-a841a9c27bc1`.
+- Archive path attempted: `/Users/billtin/Documents/cloudmail/artifacts/nexora-xcode-beta-candidate-20260719-build359-0927/NEXORA.xcarchive`
+- Export options copied from Build 358 to `/Users/billtin/Documents/cloudmail/artifacts/nexora-xcode-beta-candidate-20260719-build359-0927/export/ExportOptions.plist`
+- Result: `** ARCHIVE FAILED **`
+- Failure boundary: `CodeSign ... NEXORA.app: errSecInternalComponent`
+- Signing identities were visible through `security find-identity`; certificate hashes were redacted.
+- No valid Build 359 IPA was exported, installed, or accepted on device.
+
+Production gates held:
+
+- Migration 0077 was not applied because PR Review PASS did not occur.
+- No deployment was performed.
+- No production classification contract was claimed.
+- No authenticated Desktop acceptance was performed.
+- No authenticated physical-iPhone onboarding/classification acceptance was performed.
+- No negative production mutation test, rollback, or restoration was performed.
+
+Updated classifications:
+
+- `SUCCESSOR_DIFF_INVENTORY_COMPLETE`
+- `APPLE_WORKSPACE_IMPORT_AUDITED`
+- `APPLE_DESIGN_SKILL_INVOKED_RECORDED`
+- `APPLE_NAVIGATION_P1_SOURCE_FINDINGS_CLOSED_LOCALLY`
+- `LOCAL_REVIEWED_CANDIDATE_UNPUSHED`
+- `GITHUB_PUSH_AUTH_SCOPE_FAILURE`
+- `PR_CREATION_AUTH_SCOPE_FAILURE`
+- `XCODE_BETA_GENERIC_BUILD_PASS`
+- `BUILD_359_ARCHIVE_CODESIGN_BLOCKED`
+- `REMOTE_MIGRATION_0077_PENDING_HELD`
+- `PRODUCTION_AND_REAL_DEVICE_ACCEPTANCE_BLOCKED`
+
+Final verdict remains:
+
+`LOGIC_COMPLETE_PARTIAL`
+
 ## 2026-07-19 Apple Design Skill, Option 5 Successor Integration, And PR Gate Evidence
 
 This checkpoint is additive evidence only. It records the Apple-design reviewable integration work on the Option 5 successor branch and does not modify Provider configuration, Cloudflare secrets, production data, D1 migration state, deployment state, or the preserved Callback Mission verdict.

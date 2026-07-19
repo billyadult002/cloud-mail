@@ -1,0 +1,91 @@
+# NEXORA Evidence-First Hybrid Classification Implementation Report
+
+Date: 2026-07-19
+
+Branch: `codex/nexora-evidence-first-classification`
+
+Base commit: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
+
+Initial successor commit: `1f258681a1307c7c7bd919f34eee5f34bf7be788`
+
+Reviewed successor head after P1 review fixes: `ed57db5b18ecb7ea81e387940a30d3df1d5ce1cb`
+
+## Scope
+
+This successor branch implements the first server-authoritative slice of Option 5. It does not modify the pinned `main` or `codex/nexora-production-integration-5d7024d` branches, does not deploy, does not apply remote migrations, and does not alter Provider registration or Secrets.
+
+## Current Defect Boundary
+
+The canonical Worker did not contain durable mail semantic classification or VIP evidence records. Build 358 viewport evidence showed apparent retail promotions while a VIP surface was active, but the Apple source tree is not present in this pinned implementation branch. This branch therefore closes the Worker authority gap and leaves Desktop/iPhone projection acceptance blocked until the Apple source is included in a reviewed successor scope.
+
+## Implemented
+
+- D1 migration `0077_nexora_evidence_first_hybrid_classification.sql`
+- Durable tables for:
+  - verified Domain authority
+  - message classification state
+  - user/admin correction records
+  - redacted classification evidence
+- Worker service `nexora-email-classification-service.mjs`
+- Protected Worker API:
+  - `POST /v3/classification/evaluate`
+  - `POST /v3/classification/persist`
+  - `POST /v3/classification/correction`
+- Contract check proving promotional/bulk/list traffic cannot auto-enter VIP.
+- ADR for semantic category versus independent attribute separation and Comail provenance.
+
+## Review Findings Closed
+
+- `P1_CROSS_TENANT_CORRECTION_AUTHORITY`: closed. Non-admin corrections now require authenticated user scope where `tenantId` matches `user.userId`, plus membership in the requested Workspace.
+- `P1_DOMAIN_IDENTITY_COLLISION`: closed. Durable message identity now includes `customer_domain` in the classification uniqueness key and in correction lookup.
+- `P1_UNVERIFIED_DOMAIN_MUTATION`: closed. Durable classification persistence and correction now require a verified, non-revoked Domain authority row for the Tenant and Workspace.
+- `P1_MESSAGE_FINGERPRINT_DOMAIN_SCOPE`: closed. Message fingerprint construction includes customer Domain input.
+
+## Authority Boundary
+
+- VIP is independent from semantic category.
+- Priority is independent from semantic category.
+- Action is independent from semantic category.
+- Unread, starred, and attachment state are independent attributes.
+- Automatic VIP is disqualified by strong promotional or bulk signals unless explicit user/admin authority exists.
+- User corrections bind authority to the authenticated user context.
+- Server classification persistence and admin corrections require configured admin authority.
+- AI is not implemented in this slice and cannot establish authoritative VIP.
+
+## Comail Provenance
+
+- Repository: `https://github.com/NextOSP/comail`
+- Branch: `master`
+- Commit inspected: `38960219de19812bcb8dbd562ee91974e0787737`
+- Release tag inspected: `v0.2.22` at `deba788b6386f2f2fc78aa7b6e0dc3a0a961be66`
+- Source paths inspected: `LICENSE`, `src-tauri/crates/comail-core/src/models.rs`
+- License observed: AGPL-3.0
+- Reuse classification: `COMAIL_GUIDED_IMPLEMENTATION`
+- Code copied, translated, or adapted: none
+- Dependencies introduced: none
+
+## Verification
+
+- `npm ci`: passed, `0 vulnerabilities`
+- `npm test`: passed
+- `node scripts/classification-contract-check.mjs`: passed
+- `npm run test:rc`: 13 files / 148 tests passed
+- `npm audit --audit-level=moderate`: `0 vulnerabilities`
+- `git diff --check`: passed
+- Migration `0077` SHA-256 after review fixes: `4343427a90fbc8add8dca33552204288bb1014cee70faf60e6fdde91fb5a0c61`
+- Local migration idempotency harness: first local apply through `0077` passed; second local apply reported `No migrations to apply`
+- Local schema verification found expected classification tables and indexes.
+- Read-only remote migration list: only successor migration `0077_nexora_evidence_first_hybrid_classification.sql` is pending
+
+## Open Gates
+
+- Pull Request creation is blocked in the current environment: local `gh` returned `GraphQL: Resource not accessible by personal access token (createPullRequest)`; GitHub MCP returned `Authentication Failed: Requires authentication`.
+- Remote migration `0077` was not applied.
+- Worker was not deployed.
+- The visible data-format warning remains open and was not suppressed.
+- Desktop and physical-iPhone classification acceptance were not performed because the Apple source tree is outside the pinned implementation branch.
+- Real Provider onboarding and production acceptance remain blocked until Provider/admin authority is available and this successor branch receives review.
+
+## Verdict
+
+`SERVER_CLASSIFICATION_AUTHORITY_IMPLEMENTED_REVIEW_REQUIRED`

@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "XC7JTUHQ33.app.wangbei8554.pingguo736",
+        "paths": [ "/reset-password", "/reset-password/*", "/activate", "/activate/*" ]
+      }
+    ]
+  }
+}

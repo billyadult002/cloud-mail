@@ -56,14 +56,14 @@ function evidenceRef(scope, domain, challengeId, tokenHash) {
 	]);
 }
 
-async function workspaceAuthority(c, scope) {
+async function workspaceAuthority(c, scope, actor) {
 	const row = await c.env.db.prepare(
 		`SELECT w.id,w.tenant_key,w.display_name,m.role
 		 FROM workspaces w
 		 JOIN workspace_members m ON m.workspace_id=w.id
 		 WHERE w.id=?1 AND m.user_id=?2
 		 LIMIT 1`
-	).bind(scope.workspaceId, scope.tenantId).first();
+	).bind(scope.workspaceId, actor.userId).first();
 	if (!row) throw new Error('workspace authority is required');
 	return row;
 }
@@ -85,7 +85,7 @@ async function audit(c, scope, actor, domain, action, objectRef, afterState, req
 async function createDnsChallenge(c, scopeInput, input, actor) {
 	const scope = assertScope(scopeInput);
 	const domain = assertDomain(input?.domain);
-	await workspaceAuthority(c, scope);
+	await workspaceAuthority(c, scope, actor);
 	const token = randomToken();
 	const tokenHash = classificationService.stableFingerprint(['dns-txt-token', token]);
 	const idempotencyKey = input?.idempotencyKey || classificationService.stableFingerprint([
@@ -139,7 +139,7 @@ async function resolveTxt(name, fetchImpl = fetch) {
 async function verifyDnsChallenge(c, scopeInput, input, actor, fetchImpl = fetch) {
 	const scope = assertScope(scopeInput);
 	const domain = assertDomain(input?.domain);
-	await workspaceAuthority(c, scope);
+	await workspaceAuthority(c, scope, actor);
 	const challenge = await c.env.db.prepare(
 		`SELECT * FROM nexora_domain_ownership_challenges
 		 WHERE tenant_id=?1 AND workspace_id=?2 AND normalized_domain=?3 AND verification_status='pending'
@@ -161,11 +161,16 @@ async function verifyDnsChallenge(c, scopeInput, input, actor, fetchImpl = fetch
 	).bind(challenge.id, matched ? 'verified' : 'failed', matched ? evidenceRef(scope, domain, challenge.id, challenge.challenge_token_hash) : null).run();
 	if (!matched) throw new Error('domain ownership txt record not verified');
 	const verificationEvidenceRef = evidenceRef(scope, domain, challenge.id, challenge.challenge_token_hash);
+	const existingDomain = await c.env.db.prepare(
+		`SELECT workspace_id FROM workspace_domains WHERE lower(domain)=?1 LIMIT 1`
+	).bind(domain).first();
+	if (existingDomain && Number(existingDomain.workspace_id) !== scope.workspaceId) {
+		throw new Error('domain is already bound to another workspace');
+	}
 	await c.env.db.prepare(
 		`INSERT INTO workspace_domains(workspace_id,domain,provider,authority_state,lifecycle_state,health_state)
 		 VALUES(?1,?2,'dns_txt','VERIFIED','READY','READY')
 		 ON CONFLICT(domain) DO UPDATE SET
-		  workspace_id=excluded.workspace_id,
 		  provider='dns_txt',
 		  authority_state='VERIFIED',
 		  lifecycle_state='READY',

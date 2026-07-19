@@ -35,14 +35,14 @@ function evidenceRefFor(scope, domain, evidence, idempotencyKey) {
 	]);
 }
 
-async function workspaceExists(c, scope) {
+async function workspaceExists(c, scope, actor) {
 	const row = await c.env.db.prepare(
 		`SELECT w.id,w.tenant_key,w.display_name,w.created_by_user_id,m.role
 		 FROM workspaces w
 		 JOIN workspace_members m ON m.workspace_id=w.id
 		 WHERE w.id=?1 AND m.user_id=?2
 		 LIMIT 1`
-	).bind(scope.workspaceId, scope.tenantId).first();
+	).bind(scope.workspaceId, actor.userId).first();
 	if (!row) throw new Error('workspace authority is required');
 	return row;
 }
@@ -182,7 +182,7 @@ async function auditBootstrap(c, scope, actor, domain, authorityId, evidenceRef,
 async function bootstrapVerifiedDomainAuthority(c, scopeInput, input, actor) {
 	const scope = assertScope(scopeInput);
 	const domain = assertDomain(input?.domain || input?.customerDomain);
-	await workspaceExists(c, scope);
+	await workspaceExists(c, scope, actor);
 	const evidence = await resolveEvidence(c, scope, domain);
 	if (!evidence) throw new Error('domain bootstrap evidence is required');
 	const idempotencyKey = input?.idempotencyKey || classificationService.stableFingerprint([

@@ -153,3 +153,16 @@ Production read-only D1 evidence after the attempt:
 Decision:
 
 The implementation remains deployed but activation-blocked. The system correctly refuses to create Domain authority without an authenticated admin session and root DNS proof. The classification runtime correctly remains inactive because no verified Domain authority exists.
+
+## PR #3 Pre-Merge Scope and Binding Correction - 2026-07-19
+
+The initial DNS/bootstrap API accepted `tenantId` from the body and service membership checks used that value as `workspace_members.user_id`. This was inconsistent with the established NEXORA route model, which derives the tenant/user scope from authenticated context. The initial DNS upsert could also reassign a globally bound domain to a different workspace.
+
+Decision:
+
+- Derive the tenant/user scope from `actor.userId` and reject a mismatching requested tenant.
+- Bind every workspace membership lookup to `actor.userId`.
+- Refuse cross-workspace reassignment of an already-bound domain, even after a valid DNS TXT proof.
+- Permit refresh only when the existing domain binding belongs to the same workspace.
+
+This is a required security correction before PR #3 merge. It preserves the root-proof model, tenant/workspace isolation, Evidence First rules, and the existing activation-blocked verdict.

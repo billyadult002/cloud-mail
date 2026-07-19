@@ -146,6 +146,24 @@ Overall project verdict remains:
 
 `LOGIC_COMPLETE_PARTIAL (MERGED + MIGRATED + DEPLOYED, ACCEPTANCE PENDING)`
 
+## PR #3 Authority-Boundary Remediation - 2026-07-19
+
+Pre-merge review of PR #3 found two cross-workspace risks in the initial implementation:
+
+- Request-supplied `tenantId` could be used for membership lookup rather than deriving the scope from the authenticated actor.
+- A verified DNS proof could update a globally unique `workspace_domains` record and rebind its `workspace_id` to a different workspace.
+
+The remediation derives `tenantId` from `actor.userId`, rejects a supplied tenant value that disagrees with that identity, binds membership checks directly to `actor.userId`, and rejects an already-bound domain when its existing workspace differs. DNS verification may refresh the existing binding only within the same workspace.
+
+Verification after remediation:
+
+- `npm run test:unit`: PASS.
+- `npm run test:rc`: PASS, 13 files / 148 tests.
+- `npm audit --audit-level=moderate`: 0 vulnerabilities.
+- `git diff --check`: PASS.
+
+This remediation does not create a production ownership challenge, verified domain, domain authority, classification, or Evidence row. It preserves the activation blocker until authenticated admin and DNS root-proof evidence exist.
+
 ## Activation Attempt - 2026-07-19T22:36Z
 
 Mission: `NEXORA DOMAIN AUTHORITY ACTIVATION AND CLASSIFICATION PRODUCTION VALIDATION`

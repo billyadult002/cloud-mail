@@ -132,3 +132,24 @@ This implementation is production deployed, but it is not business-activated acc
 ## Consequences
 
 The current verdict cannot advance to `FULL_PASS`. The implementation boundary is deployed, but activation remains blocked until real DNS root proof and authenticated admin execution occur. Only then may bootstrap and classification persistence produce production business Evidence.
+
+## Activation Attempt Record - 2026-07-19T22:36Z
+
+An activation attempt was performed without using any bypass. The production route probes confirmed the intended boundary:
+
+- DNS challenge creation, DNS challenge verification, Domain authority bootstrap, and classification persist are deployed.
+- Each endpoint returned envelope code `401` without an authenticated session.
+- This proves route reachability and Authentication Boundary enforcement, but not business activation.
+
+Production read-only D1 evidence after the attempt:
+
+- `nexora_domain_ownership_challenges = 0`.
+- Verified `workspace_domains = 0`.
+- `nexora_domain_authorities = 0`.
+- `nexora_email_classifications = 0`.
+- `nexora_email_classification_evidence = 0`.
+- `changed_db=false`.
+
+Decision:
+
+The implementation remains deployed but activation-blocked. The system correctly refuses to create Domain authority without an authenticated admin session and root DNS proof. The classification runtime correctly remains inactive because no verified Domain authority exists.

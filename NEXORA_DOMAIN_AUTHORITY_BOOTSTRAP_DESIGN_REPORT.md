@@ -145,3 +145,64 @@ Final implementation verdict:
 Overall project verdict remains:
 
 `LOGIC_COMPLETE_PARTIAL (MERGED + MIGRATED + DEPLOYED, ACCEPTANCE PENDING)`
+
+## Activation Attempt - 2026-07-19T22:36Z
+
+Mission: `NEXORA DOMAIN AUTHORITY ACTIVATION AND CLASSIFICATION PRODUCTION VALIDATION`
+
+PR state:
+
+- PR: `https://github.com/billyadult002/cloud-mail/pull/3`.
+- State: `OPEN`.
+- Mergeable: `MERGEABLE`.
+- Head branch: `codex/nexora-domain-authority-bootstrap`.
+- Head SHA: `06dbcd6681b8d086e939474e6835c4229e770b90`.
+
+Runtime evidence:
+
+- Production Worker remains reachable at `https://cloud-mail.fastonegroup.workers.dev`.
+- Unauthenticated `POST /api/v3/domain-ownership/dns-challenges` returned HTTP `200` with envelope code `401`.
+- Unauthenticated `POST /api/v3/domain-ownership/dns-challenges/verify` returned HTTP `200` with envelope code `401`.
+- Unauthenticated `POST /api/v3/domain-authorities/bootstrap` returned HTTP `200` with envelope code `401`.
+- Unauthenticated `POST /api/v3/classification/persist` returned HTTP `200` with envelope code `401`.
+
+Production D1 evidence:
+
+- `nexora_domain_ownership_challenges = 0`.
+- Verified `workspace_domains = 0`.
+- `nexora_domain_authorities = 0`.
+- `nexora_email_classifications = 0`.
+- `nexora_email_classification_evidence = 0`.
+- Read-only D1 query metadata reported `changed_db=false`.
+
+Checkpoint results:
+
+- Checkpoint 1 Authenticated admin session: `BLOCKED_NO_ADMIN_SESSION_AVAILABLE`.
+- Checkpoint 2 DNS TXT challenge created: `BLOCKED_AUTH_REQUIRED`.
+- Checkpoint 3 DNS TXT challenge verified: `BLOCKED_NO_CHALLENGE_AND_NO_DNS_PROOF`.
+- Checkpoint 4 `workspace_domains` becomes `VERIFIED`: `BLOCKED_NO_ROOT_PROOF`.
+- Checkpoint 5 Bootstrap endpoint succeeds: `BLOCKED_NO_VERIFIED_WORKSPACE_DOMAIN`.
+- Checkpoint 6 `nexora_domain_authorities > 0`: `FAIL_ZERO_ROWS`.
+- Checkpoint 7 Approved real message selected: `BLOCKED_NO_AUTHENTICATED_JOURNEY`.
+- Checkpoint 8 `classification/persist` executes: `BLOCKED_AUTH_AND_AUTHORITY_REQUIRED`.
+- Checkpoint 9 `nexora_email_classifications > 0`: `FAIL_ZERO_ROWS`.
+- Checkpoint 10 `nexora_email_classification_evidence > 0`: `FAIL_ZERO_ROWS`.
+- Checkpoint 11 Retrieval verified: `BLOCKED_NO_ROWS_TO_RETRIEVE`.
+- Checkpoint 12 Acceptance evidence package: `COMPLETE_FOR_BLOCKED_VERDICT`.
+
+Boundary confirmation:
+
+- No mailbox ownership was treated as domain ownership.
+- No email aggregate was treated as authority proof.
+- No public mailbox domain was bootstrapped.
+- No business rows were inserted directly into D1.
+- No bootstrap API, authentication boundary, or classification persist boundary was bypassed.
+- No synthetic production evidence was generated.
+
+Activation verdict:
+
+`IMPLEMENTED_DEPLOYED_ACTIVATION_BLOCKED`
+
+Overall project verdict remains:
+
+`LOGIC_COMPLETE_PARTIAL (MERGED + MIGRATED + DEPLOYED, ACCEPTANCE PENDING)`

@@ -469,6 +469,55 @@ Final verdict remains:
 
 `LOGIC_COMPLETE_PARTIAL`
 
+## 2026-07-19 Claimed GitHub Login Recheck And Continued PR Blocker
+
+This checkpoint is additive evidence only. It records the recheck after the user stated GitHub was logged in and fully authorized. It does not apply migration 0077, deploy Worker code, register Providers, mutate Secrets, or claim Desktop or physical-iPhone acceptance.
+
+Repository guard:
+
+- Command: `python3 scripts/repository_check.py cloudmail --task "nexora_github_auth_recovery_to_production_acceptance"`
+- Result: `SUCCESS: Repository check passed.`
+
+apple design Skill:
+
+- User-facing Skill name: `apple design`
+- Installed Skill identity: `apple-design`
+- Installed Skill directory: `/Users/billtin/Documents/cloudmail/.agents/skills/apple-design`
+- `SKILL.md` path: `/Users/billtin/Documents/cloudmail/.agents/skills/apple-design/SKILL.md`
+- Supporting files: none found
+- Version, commit, release, or checksum metadata: none recorded in the skill file
+
+GitHub auth recheck:
+
+- `gh auth status --hostname github.com` reported an active login for `billyadult002`; token material was redacted.
+- `gh repo view billyadult002/cloud-mail --json nameWithOwner,viewerPermission,defaultBranchRef` returned repository `billyadult002/cloud-mail`, default branch `main`, and `viewerPermission` `ADMIN`.
+- Git push of `codex/nexora-evidence-first-classification` still failed with HTTP 403: `Permission to billyadult002/cloud-mail.git denied to billyadult002.`
+- Git push of `codex/nexora-production-evidence-755a9cd` still failed with HTTP 403: `Permission to billyadult002/cloud-mail.git denied to billyadult002.`
+- `gh auth refresh --hostname github.com --scopes repo,workflow` opened a new device-code flow. The flow did not complete within the bounded wait window and was cancelled.
+- `gh api -i /user` returned HTTP 200, proving API read identity is available, but no effective write/PR scope was established from the Codex environment.
+- `gh pr create --base main --head codex/nexora-evidence-first-classification ...` failed with `GraphQL: Resource not accessible by personal access token (createPullRequest)`.
+
+Push and PR status:
+
+- Review-fix commit pushed: NO
+- Evidence commits pushed: NO
+- PR URL: NONE
+- Review workflow: NOT_STARTED
+- Blocker classification: `AUTH_SCOPE_FAILURE`
+
+Production gate status:
+
+- Migration 0077 execution: NOT_EXECUTED
+- Deployment: NOT_EXECUTED
+- Runtime health verification: NOT_EXECUTED
+- Desktop acceptance: NOT_EXECUTED
+- Physical iPhone acceptance: NOT_EXECUTED
+- Rollback/restoration: NOT_EXECUTED
+
+Final verdict remains:
+
+`LOGIC_COMPLETE_PARTIAL`
+
 ## 2026-07-19 GitHub Auth Recovery Attempt And Production Gate Hold
 
 This checkpoint is additive evidence only. It records a fresh GitHub authorization recovery attempt for the mission `NEXORA PR RECOVERY, EVIDENCE FINALIZATION, AND PRODUCTION ACCEPTANCE`. It does not apply migration 0077, deploy Worker code, register Providers, mutate Secrets, or claim Desktop or physical-iPhone acceptance.

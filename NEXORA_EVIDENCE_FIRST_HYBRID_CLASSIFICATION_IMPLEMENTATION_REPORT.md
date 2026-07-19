@@ -6,6 +6,10 @@ Branch: `codex/nexora-evidence-first-classification`
 
 Base commit: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
 
+Initial successor commit: `1f258681a1307c7c7bd919f34eee5f34bf7be788`
+
+Reviewed successor head after P1 review fixes: `ed57db5b18ecb7ea81e387940a30d3df1d5ce1cb`
+
 ## Scope
 
 This successor branch implements the first server-authoritative slice of Option 5. It does not modify the pinned `main` or `codex/nexora-production-integration-5d7024d` branches, does not deploy, does not apply remote migrations, and does not alter Provider registration or Secrets.
@@ -29,6 +33,13 @@ The canonical Worker did not contain durable mail semantic classification or VIP
   - `POST /v3/classification/correction`
 - Contract check proving promotional/bulk/list traffic cannot auto-enter VIP.
 - ADR for semantic category versus independent attribute separation and Comail provenance.
+
+## Review Findings Closed
+
+- `P1_CROSS_TENANT_CORRECTION_AUTHORITY`: closed. Non-admin corrections now require authenticated user scope where `tenantId` matches `user.userId`, plus membership in the requested Workspace.
+- `P1_DOMAIN_IDENTITY_COLLISION`: closed. Durable message identity now includes `customer_domain` in the classification uniqueness key and in correction lookup.
+- `P1_UNVERIFIED_DOMAIN_MUTATION`: closed. Durable classification persistence and correction now require a verified, non-revoked Domain authority row for the Tenant and Workspace.
+- `P1_MESSAGE_FINGERPRINT_DOMAIN_SCOPE`: closed. Message fingerprint construction includes customer Domain input.
 
 ## Authority Boundary
 
@@ -61,10 +72,14 @@ The canonical Worker did not contain durable mail semantic classification or VIP
 - `npm run test:rc`: 13 files / 148 tests passed
 - `npm audit --audit-level=moderate`: `0 vulnerabilities`
 - `git diff --check`: passed
+- Migration `0077` SHA-256 after review fixes: `4343427a90fbc8add8dca33552204288bb1014cee70faf60e6fdde91fb5a0c61`
+- Local migration idempotency harness: first local apply through `0077` passed; second local apply reported `No migrations to apply`
+- Local schema verification found expected classification tables and indexes.
 - Read-only remote migration list: only successor migration `0077_nexora_evidence_first_hybrid_classification.sql` is pending
 
 ## Open Gates
 
+- Pull Request creation is blocked in the current environment: local `gh` returned `GraphQL: Resource not accessible by personal access token (createPullRequest)`; GitHub MCP returned `Authentication Failed: Requires authentication`.
 - Remote migration `0077` was not applied.
 - Worker was not deployed.
 - The visible data-format warning remains open and was not suppressed.

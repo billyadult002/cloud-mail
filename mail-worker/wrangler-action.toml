@@ -45,4 +45,4 @@ linuxdo_callback_url = "${LINUXDO_CALLBACK_URL}"
 linuxdo_switch = "${LINUXDO_SWITCH}"
 
 [build]
-command = "pnpm --prefix ../mail-vue install && pnpm --prefix ../mail-vue run build"
+command = "CI=true npx --yes pnpm@10.34.5 --dir ../mail-vue install --frozen-lockfile && npx --yes pnpm@10.34.5 --dir ../mail-vue run build"

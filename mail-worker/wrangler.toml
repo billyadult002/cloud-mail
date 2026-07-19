@@ -50,7 +50,7 @@ CLOUDMAIL_RUNTIME_TELEMETRY_AUDIT_ENABLED = "true"
 #jwt_secret = ""			#jwt令牌的密钥,随便填一串字符串
 
 [build]
-command = "npm --prefix ../mail-vue run build"
+command = "CI=true npx --yes pnpm@10.34.5 --dir ../mail-vue install --frozen-lockfile && npx --yes pnpm@10.34.5 --dir ../mail-vue run build"
 
 [env.staging]
 name = "cloud-mail-staging"

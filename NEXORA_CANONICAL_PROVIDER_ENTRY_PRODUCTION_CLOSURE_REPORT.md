@@ -469,6 +469,139 @@ Final verdict remains:
 
 `LOGIC_COMPLETE_PARTIAL`
 
+## 2026-07-19 Apple Design Skill, Option 5 Successor Integration, And PR Gate Evidence
+
+This checkpoint is additive evidence only. It records the Apple-design reviewable integration work on the Option 5 successor branch and does not modify Provider configuration, Cloudflare secrets, production data, D1 migration state, deployment state, or the preserved Callback Mission verdict.
+
+Repository guard:
+
+- Command: `python3 scripts/repository_check.py cloudmail --task "nexora_apple_design_option5_production"`
+- Working directory: `/Users/billtin/Documents/cloudmail`
+- Result: `SUCCESS: Repository check passed.`
+- Canonical repository: `/Users/billtin/Documents/cloudmail`
+
+Apple design skill invocation:
+
+- User-facing skill request: `apple design`
+- Discovered skill identity: `apple-design`
+- Skill path: `/Users/billtin/Documents/cloudmail/.agents/skills/apple-design/SKILL.md`
+- Supporting resources/scripts/templates found: none
+- Version metadata in skill file: none observed
+
+Applied Apple design constraints:
+
+- Use platform-native navigation semantics for the primary iOS workspace rather than a custom safe-area tab strip.
+- Preserve one clear material hierarchy and avoid stacking light translucent controls over another translucent bar.
+- Keep content accessible when it scrolls near translucent chrome.
+- Preserve compact, readable labels on narrow iPhone widths while retaining full VoiceOver labels.
+- Validate with Xcode Beta build output rather than relying on visual inspection alone.
+
+Successor branch topology:
+
+- Successor worktree: `/Users/billtin/Documents/cloudmail/.worktrees/nexora-evidence-first-classification`
+- Successor branch: `codex/nexora-evidence-first-classification`
+- Previous successor remote head before Apple workspace integration: `0b697c9022cf03857772d250d92026a1299f7d98`
+- New successor commit: `a6b28cbe1213f9b7b79c701b048cf70d7d7b1597`
+- Commit subject: `Integrate Apple compact navigation workspace`
+- Push result: `origin/codex/nexora-evidence-first-classification` advanced from `0b697c9` to `a6b28cb`
+
+Apple workspace integration:
+
+- `origin/main` and the pre-existing successor branch contained zero tracked files under `files/GlassMail-project`.
+- The canonical local Apple workspace was imported into the successor branch so review can cover Worker classification and Apple navigation together.
+- Xcode personal state was excluded from the import:
+  - `files/GlassMail-project/GlassMail.xcodeproj/xcuserdata`
+  - `files/GlassMail-project/GlassMail.xcodeproj/project.xcworkspace/xcuserdata`
+- Imported file count after exclusion: `67`
+
+Apple navigation controls:
+
+- File: `/Users/billtin/Documents/cloudmail/.worktrees/nexora-evidence-first-classification/files/GlassMail-project/GlassMail/Views/MainTabView.swift`
+- iOS `TabView` visible labels: `Email`, `Intel`, `Goals`, `Trust`, `Org`
+- Full accessibility labels preserved for compact labels:
+  - `Intel` exposes `Intelligence`
+  - `Org` exposes `Organization`
+- File: `/Users/billtin/Documents/cloudmail/.worktrees/nexora-evidence-first-classification/files/GlassMail-project/GlassMail/Views/InboxView.swift`
+- Bottom content inset constant:
+  - iOS: `inboxFloatingTabContentInset = 124`
+  - non-iOS: `inboxFloatingTabContentInset = 86`
+- Two bottom spacer uses now reference `inboxFloatingTabContentInset`.
+
+Comail reuse assessment for this checkpoint:
+
+- Decision: `NOT_APPLICABLE_NO_OVERLAPPING_COMAIL_IMPLEMENTATION`
+- Reason: the completed work is SwiftUI Apple navigation/workspace integration and build verification. No Comail email protocol, Provider interaction, parsing, synchronization, Worker, IPA, or fixture implementation was copied, translated, adapted, or added as a dependency.
+
+Verification from the successor branch:
+
+- Xcode Beta identity:
+  - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer`
+  - `xcodebuild -version`: `Xcode 27.0`, build `27A5194q`
+- Xcode scheme discovery:
+  - Workspace: `files/GlassMail-project/GlassMail.xcworkspace`
+  - Scheme found: `GlassMail`
+- Xcode Beta build:
+  - Command: `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -workspace files/GlassMail-project/GlassMail.xcworkspace -scheme GlassMail -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build`
+  - Result: `** BUILD SUCCEEDED **`
+  - Notable warnings: pre-existing Swift optional interpolation, nil coalescing, deprecated `onChange`, async-without-await, Codable immutable-property, and orientation warnings.
+- Worker unit/static gate:
+  - Command: `npm test`
+  - Result: PASS
+- Worker RC/reliability gate:
+  - Command: `npm run test:rc`
+  - Result: `13` files, `148` tests PASS
+- Dependency audit:
+  - Command: `npm audit --audit-level=moderate`
+  - Result: `found 0 vulnerabilities`
+- Whitespace/diff gate:
+  - Command: `git diff --check`
+  - Result: PASS
+- Secret scan:
+  - Scope: `mail-worker`, `docs`, `NEXORA_EVIDENCE_FIRST_HYBRID_CLASSIFICATION_IMPLEMENTATION_REPORT.md`, and `files/GlassMail-project`, excluding binary asset catalogs.
+  - Result: only expected environment placeholder names, schema/cookie identifiers, and test fixture token strings were found. No raw Provider credential, private key, session cookie, GitHub token, or production secret value was recorded.
+
+Remote migration gate:
+
+- Command: `npx wrangler d1 migrations list cloud-mail --remote`
+- Result: only `0077_nexora_evidence_first_hybrid_classification.sql` remains pending.
+- No remote migration was applied in this checkpoint.
+
+PR creation gate:
+
+- Command: `gh pr create --base main --head codex/nexora-evidence-first-classification ...`
+- Result: `pull request create failed: GraphQL: Resource not accessible by personal access token (createPullRequest)`
+- Classification: `AUTH_SCOPE_FAILURE`
+- This is not classified as an empty-diff, branch, or repository-topology failure because the successor branch pushed successfully and now differs from `main`.
+
+Production and device boundary:
+
+- No deployment was performed.
+- No Provider registration was performed.
+- No OAuth client or redirect was created or modified.
+- No Cloudflare Secret was read, duplicated, renamed, injected, or modified.
+- No production D1 migration was applied.
+- No authenticated Desktop acceptance was performed.
+- No authenticated physical-iPhone Provider onboarding acceptance was performed.
+- No rollback drill was performed.
+
+Updated classifications:
+
+- `APPLE_DESIGN_SKILL_INVOKED`
+- `APPLE_DESIGN_NATIVE_TAB_INTEGRATION_RECORDED`
+- `OPTION_5_SUCCESSOR_APPLE_WORKSPACE_IMPORTED`
+- `OPTION_5_SUCCESSOR_BRANCH_PUSHED`
+- `XCODE_BETA_GENERIC_IOS_BUILD_PASS`
+- `WORKER_UNIT_GATE_PASS`
+- `WORKER_RC_GATE_PASS`
+- `DEPENDENCY_AUDIT_PASS`
+- `REMOTE_MIGRATION_0077_PENDING_HELD`
+- `PR_CREATION_AUTH_SCOPE_FAILURE`
+- `PRODUCTION_ACCEPTANCE_BLOCKED`
+
+Final verdict remains:
+
+`LOGIC_COMPLETE_PARTIAL`
+
 ## Additive Checkpoint: Evidence-First Hybrid Classification Successor Branch
 
 Assessment date: 2026-07-19

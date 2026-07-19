@@ -16,7 +16,7 @@ const SCHEMA_STATEMENTS = [
 		id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, workspace_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
 		kind TEXT NOT NULL, state TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, idempotency_key TEXT NOT NULL,
 		claim_key TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		completed_at TEXT, UNIQUE(tenant_id,workspace_id,idempotency_key)
+		completed_at TEXT, checkpoint_id TEXT, continuation_idempotency_key TEXT, UNIQUE(tenant_id,workspace_id,idempotency_key)
 	)`,
 	`CREATE TABLE mission_runtime_runs (
 		id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, tenant_id INTEGER NOT NULL, workspace_id INTEGER NOT NULL,
@@ -86,14 +86,35 @@ const SCHEMA_STATEMENTS = [
 		reason_codes_json TEXT NOT NULL DEFAULT '[]', observed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		UNIQUE(onboarding_mission_id, capability_key)
 	)`,
+	`CREATE TABLE mission_runtime_evidence (id TEXT PRIMARY KEY,mission_id TEXT,run_id TEXT,step_id TEXT,action_id TEXT,tenant_id INTEGER,workspace_id INTEGER,claim_key TEXT,evidence_type TEXT,source_type TEXT,producer_type TEXT,producer_id_hash TEXT,reference_hash TEXT,summary_json TEXT,status TEXT,integrity_hash TEXT,observed_at TEXT,expires_at TEXT,created_at TEXT)`,
+	`CREATE TABLE mission_runtime_evidence_relations (id TEXT PRIMARY KEY,tenant_id INTEGER,workspace_id INTEGER,evidence_id TEXT,related_evidence_id TEXT,relation_type TEXT)`,
+	`CREATE TABLE mission_runtime_claims (id TEXT PRIMARY KEY,mission_id TEXT,run_id TEXT,tenant_id INTEGER,workspace_id INTEGER,claim_key TEXT,policy_id TEXT,policy_version INTEGER,version INTEGER)`,
+	`CREATE TABLE mission_runtime_verification_policies (id TEXT,version INTEGER,required_evidence_json TEXT,freshness_seconds INTEGER,minimum_distinct_evidence INTEGER,conflict_mode TEXT,policy_hash TEXT)`,
+	`CREATE TABLE mission_runtime_verifications (id TEXT PRIMARY KEY,mission_id TEXT,run_id TEXT,action_id TEXT,tenant_id INTEGER,workspace_id INTEGER,state TEXT,evidence_id TEXT,verifier TEXT,claim_id TEXT,policy_id TEXT,policy_version INTEGER,evidence_set_hash TEXT,reason_codes_json TEXT,integrity_state TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+	`CREATE TABLE mission_runtime_verification_evidence (verification_id TEXT,evidence_id TEXT,tenant_id INTEGER,workspace_id INTEGER,disposition TEXT,reason_code TEXT,evidence_integrity_hash TEXT)`,
+	`CREATE TABLE nexora_onboarding_provider_connections (id TEXT PRIMARY KEY,onboarding_mission_id TEXT NOT NULL,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,provider TEXT NOT NULL,connection_identity TEXT NOT NULL,generation INTEGER NOT NULL DEFAULT 1,connection_state TEXT NOT NULL DEFAULT 'active',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(tenant_id,workspace_id,provider,connection_identity))`,
+	`CREATE TABLE nexora_onboarding_token_connection_bindings (token_id TEXT PRIMARY KEY,connection_id TEXT NOT NULL UNIQUE,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,provider TEXT NOT NULL,token_generation INTEGER NOT NULL,connection_generation INTEGER NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+	`CREATE TABLE nexora_provider_outcome_results (id TEXT PRIMARY KEY,outcome_kind TEXT NOT NULL,operation_id TEXT NOT NULL,idempotency_key TEXT NOT NULL UNIQUE,authority_tuple_digest TEXT NOT NULL,outcome_digest TEXT NOT NULL,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,provider TEXT NOT NULL,connection_id TEXT,mission_id TEXT NOT NULL,authorization_session_id TEXT,correlation_id TEXT,refresh_job_id TEXT,lease_owner TEXT NOT NULL,fencing_token INTEGER NOT NULL,expected_token_generation INTEGER NOT NULL,committed_token_generation INTEGER NOT NULL,expected_provider_connection_generation INTEGER,committed_provider_connection_generation INTEGER,observation_reference TEXT,normalized_reason_code TEXT NOT NULL,retry_classification TEXT NOT NULL,outcome_status TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,committed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,evidence_outbox_id TEXT)`,
+	`CREATE TABLE nexora_onboarding_evidence_outbox (id TEXT PRIMARY KEY,commit_result_id TEXT NOT NULL,onboarding_mission_id TEXT NOT NULL,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,event_type TEXT NOT NULL,payload_json TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'PENDING',canonical_evidence_reference TEXT,attempt_count INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,delivered_at TEXT)`,
+	`CREATE TABLE nexora_onboarding_evidence_delivery_leases (outbox_id TEXT PRIMARY KEY,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,owner TEXT NOT NULL,fencing_token INTEGER NOT NULL,lease_expires_at TEXT NOT NULL,attempt INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+	`CREATE TABLE nexora_callback_verifier_authorizations (id TEXT PRIMARY KEY,verification_generation INTEGER NOT NULL,verifier_identity TEXT NOT NULL,authority_digest TEXT NOT NULL,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,mission_id TEXT NOT NULL,callback_correlation_id TEXT NOT NULL,expires_at TEXT NOT NULL,consumed_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(tenant_id,workspace_id,mission_id,verification_generation))`,
+	`CREATE TABLE nexora_callback_verification_attempts (id TEXT PRIMARY KEY,verification_policy_id TEXT NOT NULL,verification_generation INTEGER NOT NULL,idempotency_key TEXT NOT NULL UNIQUE,evidence_set_digest TEXT NOT NULL,authority_tuple_digest TEXT NOT NULL,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,mission_id TEXT NOT NULL,callback_correlation_id TEXT NOT NULL,verifier_authorization_id TEXT NOT NULL,status TEXT NOT NULL,result_json TEXT NOT NULL DEFAULT '{}',failure_classification TEXT,canonical_evidence_refs_json TEXT NOT NULL DEFAULT '[]',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,verified_at TEXT)`,
+	`CREATE TABLE nexora_callback_verified_outcome_finalizations (id TEXT PRIMARY KEY,operation_id TEXT NOT NULL,idempotency_key TEXT NOT NULL UNIQUE,authority_tuple_digest TEXT NOT NULL,evidence_set_digest TEXT NOT NULL,verification_attempt_id TEXT NOT NULL,verifier_authorization_id TEXT NOT NULL,verified_outcome_reference TEXT,callback_checkpoint_reference TEXT,expected_token_generation INTEGER NOT NULL,expected_provider_connection_generation INTEGER,state TEXT NOT NULL CHECK(state IN ('READY','FINALIZING','VERIFIED','BLOCKED','FAILED')),tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,mission_id TEXT NOT NULL,callback_correlation_id TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,finalized_at TEXT)`,
+	`CREATE TABLE nexora_callback_verified_results (id TEXT PRIMARY KEY,finalization_operation_id TEXT NOT NULL,finalization_idempotency_key TEXT NOT NULL UNIQUE,verification_attempt_id TEXT NOT NULL UNIQUE,verifier_authorization_id TEXT NOT NULL UNIQUE,verification_policy_id TEXT NOT NULL,verification_generation INTEGER NOT NULL,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,mission_id TEXT NOT NULL,provider TEXT NOT NULL,authorization_session_id TEXT,callback_correlation_id TEXT NOT NULL,replacement_authorization_session_id TEXT,replacement_correlation_id TEXT,authority_tuple_digest TEXT NOT NULL,evidence_set_digest TEXT NOT NULL,atomic_callback_result_id TEXT NOT NULL,provider_outcome_result_id TEXT NOT NULL,token_generation INTEGER NOT NULL,provider_connection_id TEXT,provider_connection_generation INTEGER,canonical_evidence_references_json TEXT NOT NULL DEFAULT '[]',callback_outcome_verified_checkpoint_id TEXT NOT NULL,result_status TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,verified_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(mission_id,callback_correlation_id,verification_generation))`,
+	`CREATE TABLE nexora_reauthorization_completion_results (id TEXT PRIMARY KEY,reauthorization_work_id TEXT NOT NULL,idempotency_key TEXT NOT NULL UNIQUE,authority_tuple_digest TEXT NOT NULL,evidence_set_digest TEXT NOT NULL,verified_result_id TEXT NOT NULL,finalization_id TEXT NOT NULL,verifier_authorization_id TEXT NOT NULL,verification_attempt_id TEXT NOT NULL,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,mission_id TEXT NOT NULL,provider TEXT NOT NULL,authorization_session_id TEXT NOT NULL,callback_correlation_id TEXT NOT NULL,replacement_authorization_session_id TEXT,replacement_correlation_id TEXT,token_generation INTEGER NOT NULL,provider_connection_id TEXT NOT NULL,provider_connection_generation INTEGER NOT NULL,lease_owner TEXT NOT NULL,fencing_token INTEGER NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(reauthorization_work_id),UNIQUE(verified_result_id))`,
+	`CREATE TABLE nexora_callback_correlation_consumption_results (id TEXT PRIMARY KEY,correlation_id TEXT NOT NULL,idempotency_key TEXT NOT NULL UNIQUE,mission_continuation_id TEXT NOT NULL UNIQUE,reauthorization_completion_id TEXT,verified_result_id TEXT NOT NULL,finalization_id TEXT NOT NULL,verifier_authorization_id TEXT NOT NULL,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,mission_id TEXT NOT NULL,provider TEXT NOT NULL,authorization_session_id TEXT NOT NULL,replacement_authorization_session_id TEXT,replacement_correlation_id TEXT,token_generation INTEGER NOT NULL,provider_connection_id TEXT NOT NULL,provider_connection_generation INTEGER NOT NULL,lease_owner TEXT NOT NULL,fencing_token INTEGER NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,consumed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(correlation_id))`,
+	`CREATE TABLE nexora_mission_continuation_results (id TEXT PRIMARY KEY,idempotency_key TEXT NOT NULL UNIQUE,correlation_consumption_id TEXT NOT NULL UNIQUE,verified_result_id TEXT NOT NULL,mission_id TEXT NOT NULL,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,provider TEXT NOT NULL,resume_checkpoint TEXT NOT NULL,token_generation INTEGER NOT NULL,provider_connection_id TEXT NOT NULL,provider_connection_generation INTEGER NOT NULL,lease_owner TEXT NOT NULL,fencing_token INTEGER NOT NULL,sync_intent_id TEXT,sync_dispatch_id TEXT,sync_job_id TEXT,notification_id TEXT,status TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,continued_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(mission_id))`,
+	`CREATE TABLE nexora_initial_sync_intents (id TEXT PRIMARY KEY,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,mission_id TEXT NOT NULL,callback_correlation_id TEXT NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+	`CREATE TABLE nexora_initial_sync_dispatches (id TEXT PRIMARY KEY,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,mission_id TEXT NOT NULL,intent_id TEXT NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+	`CREATE TABLE nexora_onboarding_notifications (id TEXT PRIMARY KEY,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,mission_id TEXT NOT NULL,state TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE nexora_autonomy_jobs (
-		id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, domain TEXT COLLATE NOCASE, job_type TEXT NOT NULL, idempotency_key TEXT NOT NULL UNIQUE,
+		id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, domain TEXT COLLATE NOCASE, job_type TEXT NOT NULL, idempotency_key TEXT NOT NULL UNIQUE,
 		state TEXT NOT NULL CHECK(state IN ('QUEUED','RUNNING','RETRYING','SUCCEEDED','BLOCKED','FAILED')) DEFAULT 'QUEUED', attempt_count INTEGER NOT NULL DEFAULT 0,
 		lease_until TEXT, input_json TEXT NOT NULL DEFAULT '{}', result_json TEXT NOT NULL DEFAULT '{}', blocker_code TEXT, next_attempt_at TEXT,
 		created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`,
 ];
-const TABLES = ['mission_runtime_missions', 'mission_runtime_runs', 'mission_runtime_events', 'nexora_onboarding_state', 'nexora_onboarding_reauthorization_work', 'nexora_onboarding_callback_checkpoints', 'nexora_onboarding_callback_claims', 'nexora_onboarding_callback_correlations', 'nexora_onboarding_authorization_sessions', 'nexora_onboarding_tokens', 'nexora_onboarding_capabilities', 'nexora_autonomy_jobs'];
+const TABLES = ['mission_runtime_missions', 'mission_runtime_runs', 'mission_runtime_events', 'mission_runtime_evidence', 'mission_runtime_evidence_relations', 'mission_runtime_claims', 'mission_runtime_verification_policies', 'mission_runtime_verifications', 'mission_runtime_verification_evidence', 'nexora_onboarding_state', 'nexora_onboarding_reauthorization_work', 'nexora_onboarding_callback_checkpoints', 'nexora_onboarding_callback_claims', 'nexora_onboarding_callback_correlations', 'nexora_onboarding_authorization_sessions', 'nexora_onboarding_tokens', 'nexora_onboarding_capabilities', 'nexora_onboarding_provider_connections', 'nexora_onboarding_token_connection_bindings', 'nexora_provider_outcome_results', 'nexora_onboarding_evidence_outbox', 'nexora_onboarding_evidence_delivery_leases', 'nexora_callback_verifier_authorizations', 'nexora_callback_verification_attempts', 'nexora_callback_verified_outcome_finalizations', 'nexora_callback_verified_results', 'nexora_reauthorization_completion_results', 'nexora_callback_correlation_consumption_results', 'nexora_mission_continuation_results', 'nexora_initial_sync_intents', 'nexora_initial_sync_dispatches', 'nexora_onboarding_notifications', 'nexora_autonomy_jobs'];
 
 async function resetSchema() {
 	await env.db.batch(TABLES.map((t) => env.db.prepare(`DROP TABLE IF EXISTS ${t}`)));
@@ -313,8 +334,35 @@ describe('NEXORA onboarding orchestrator — full real chain: callback code -> t
 		const capabilityRow = await env.db.prepare(`SELECT status FROM nexora_onboarding_capabilities WHERE onboarding_mission_id=?1 AND capability_key='mail_read'`).bind(started.missionId).first();
 		expect(capabilityRow.status).toBe('SUPPORTED');
 
-		const job = await env.db.prepare(`SELECT COUNT(*) n FROM nexora_autonomy_jobs WHERE idempotency_key=?1`).bind(`sync:${started.missionId}`).first();
-		expect(Number(job.n)).toBe(1);
+		const chain = await env.db.prepare(`
+			SELECT
+				(SELECT COUNT(*) FROM nexora_onboarding_provider_connections WHERE onboarding_mission_id=?1) AS provider_connections,
+				(SELECT COUNT(*) FROM nexora_onboarding_token_connection_bindings) AS token_bindings,
+				(SELECT COUNT(*) FROM nexora_provider_outcome_results WHERE mission_id=?1 AND outcome_kind='SUCCESS') AS provider_outcomes,
+				(SELECT COUNT(*) FROM nexora_onboarding_evidence_outbox WHERE onboarding_mission_id=?1 AND status='DELIVERED') AS delivered_evidence,
+				(SELECT COUNT(*) FROM mission_runtime_evidence WHERE mission_id=?1 AND claim_key='nexora_callback_outcome' AND status='supported') AS canonical_evidence,
+				(SELECT COUNT(*) FROM nexora_callback_verification_attempts WHERE mission_id=?1 AND status='VERIFIED') AS verification_attempts,
+				(SELECT COUNT(*) FROM nexora_callback_verified_results WHERE mission_id=?1 AND result_status='VERIFIED') AS verified_results,
+				(SELECT COUNT(*) FROM nexora_callback_correlation_consumption_results WHERE mission_id=?1 AND status='CONSUMED') AS consumed_correlations,
+				(SELECT COUNT(*) FROM nexora_mission_continuation_results WHERE mission_id=?1 AND status='CONTINUED') AS mission_continuations,
+				(SELECT COUNT(*) FROM nexora_initial_sync_intents WHERE mission_id=?1 AND state='READY') AS sync_intents,
+				(SELECT COUNT(*) FROM nexora_initial_sync_dispatches WHERE mission_id=?1 AND state='NOT_DISPATCHED') AS sync_dispatches,
+				(SELECT COUNT(*) FROM nexora_autonomy_jobs WHERE job_type='ZERO_TOUCH_INITIAL_SYNC' AND state='QUEUED') AS sync_jobs
+		`).bind(started.missionId).first();
+		expect(Object.fromEntries(Object.entries(chain).map(([key, value]) => [key, Number(value)]))).toMatchObject({
+			provider_connections: 1,
+			token_bindings: 1,
+			provider_outcomes: 1,
+			delivered_evidence: 1,
+			canonical_evidence: 1,
+			verification_attempts: 1,
+			verified_results: 1,
+			consumed_correlations: 1,
+			mission_continuations: 1,
+			sync_intents: 1,
+			sync_dispatches: 1,
+			sync_jobs: 1,
+		});
 	});
 
 	it('insufficient granted scope blocks with CAPABILITY_SCOPE_INSUFFICIENT rather than falsely proceeding to sync', async () => {

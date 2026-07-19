@@ -147,6 +147,25 @@ deployed as a new release candidate.
 
 Strongest current verdict: **LOGIC_COMPLETE_PARTIAL**.
 
+## Real Provider Callback Exact-Once Continuation Closure — 2026-07-18
+
+Local code-level P1 status: **CLOSED_PENDING_PR_REVIEW**.
+
+The real callback/orchestrator path now uses the existing NEXORA exact-once authorities rather than dispatching initial sync directly after token storage. After verified Google or Microsoft OIDC identity and supported `mail_read` capability discovery, the Worker establishes Provider Connection Generation, Token-to-Connection Binding, immutable Provider Outcome, delivered Evidence outbox, canonical `mission_runtime_evidence`, verifier policy/claim, callback verification attempt, Verifier Authorization, canonical verified callback result, `CALLBACK_OUTCOME_VERIFIED`, Callback Correlation Consumption, Original-Mission Continuation, Initial-Sync Intent, Initial-Sync Dispatch, and Initial-Sync Job.
+
+Evidence:
+
+- Real callback call path: `nexora-onboarding-api.js` -> `onboardingOrchestrator.handleCallback()` -> `handleCallbackExchange()` -> `continueVerifiedCallback()` -> `resolveNexoraCallbackLineage()` -> `finalizeNexoraCallbackVerifiedOutcome()` -> `consumeCorrelation()` -> `continueMission()`.
+- `npm test`: `PASS`
+- `npm run test:rc`: `PASS`, 13 files / 144 tests
+- `git diff --check`: `PASS`
+- `npm audit --audit-level=moderate`: `PASS`, 0 vulnerabilities
+- `npm ls --omit=dev --depth=0`: `PASS`
+- Migration inspection: `MIGRATION_CI_GATE PASS`, `MIGRATION_IDEMPOTENT PASS`
+- Comail reinspected at `https://github.com/NextOSP/comail` commit `38960219de19812bcb8dbd562ee91974e0787737`; classification remains `COMAIL_GUIDED_IMPLEMENTATION_NO_DIRECT_CODE_REUSE`.
+
+No production Provider registration, Cloudflare Secret binding, production D1 migration, Worker deployment, real Provider onboarding, Desktop acceptance, physical-iPhone acceptance, production negative testing, rollback, or restoration occurred in this closure pass. `LOGIC_COMPLETE_PARTIAL` remains the strongest production verdict until those gates produce direct evidence.
+
 ## OAuth correlation and refresh-fencing release-blocker closure — 2026-07-18
 
 - Added migration `0061_nexora_oauth_callback_correlation_and_refresh_fencing.sql`. Every authorization

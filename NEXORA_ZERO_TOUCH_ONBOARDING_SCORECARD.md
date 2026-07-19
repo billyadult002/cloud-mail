@@ -37,3 +37,18 @@ Notes:
 - The scorecard does not claim production acceptance. It records code-level local verification and leaves external gates blocked.
 - No provider registration, secret injection, deployment, desktop acceptance, or physical-iPhone acceptance was performed.
 - No Comail source, dependency, fixture, or test is imported by the Checkpoint 5 implementation.
+
+## Real Callback Exact-Once Successor Checkpoint — 2026-07-18
+
+The integration branch now closes the local real-callback continuation P1 without changing the production verdict. A real callback with verified OIDC identity drives the canonical NEXORA chain through Provider Connection Generation, Provider Outcome, delivered Evidence, canonical `mission_runtime_evidence`, verifier authorization, callback verification attempt, canonical verified callback result, `CALLBACK_OUTCOME_VERIFIED`, Correlation Consumption, Mission Continuation, Initial-Sync Intent, Initial-Sync Dispatch, and Initial-Sync Job.
+
+Updated local verification:
+
+- `npm test`: `PASS`
+- `npm run test:rc`: `PASS`, 13 files / 144 tests
+- `git diff --check`: `PASS`
+- `npm audit --audit-level=moderate`: `PASS`, 0 vulnerabilities
+- `npm ls --omit=dev --depth=0`: `PASS`
+- Migration CI/idempotency inspection: `PASS`
+
+The strongest production verdict remains `LOGIC_COMPLETE_PARTIAL` because PR review, Provider registration, protected Secret binding, production migration, deployment, real Provider onboarding, authenticated Desktop acceptance, authenticated Xcode Beta physical-iPhone acceptance, production negative testing, rollback, and restoration remain unexecuted.

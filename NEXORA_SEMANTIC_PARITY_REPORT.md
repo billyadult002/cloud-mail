@@ -38,10 +38,10 @@ Semantic parity with the immutable NEXORA checkpoint is preserved for the transp
 ## Verification
 
 - `npm test`: PASS.
-- `npm run test:rc`: PASS, 13 files / 141 tests.
+- `npm run test:rc`: PASS, 13 files / 144 tests.
 - `git diff --check`: PASS.
 - `npm ls --omit=dev --depth=0`: PASS.
 - `npm audit --audit-level=moderate`: PASS, 0 vulnerabilities.
 - Migration `0075` checksum: `f28c468954d164d13603d233baecc4fd6975505066c980f05e0c71188cc973e1`.
 
-The previous unrelated-history focused 69-test and complete 512-test evidence remains external evidence for immutable checkpoint `5d7024d1cea12b6425727fdeb28885cfb83cdf7b`; this integration branch records its own remote-main-layout gate as 13 files / 141 tests because only the reviewed NEXORA transplant and closure files are present.
+The successor real-callback continuation diff preserves semantic parity while closing the local P1: real Google/Microsoft callback orchestration now reaches Provider Outcome, delivered Evidence, canonical callback verification/finalization, Correlation Consumption, Mission Continuation, Initial-Sync Intent, Initial-Sync Dispatch, and Initial-Sync Job through existing NEXORA authorities. The previous unrelated-history focused 69-test and complete 512-test evidence remains external evidence for immutable checkpoint `5d7024d1cea12b6425727fdeb28885cfb83cdf7b`; this integration branch records its own remote-main-layout gate as 13 files / 144 tests because only the reviewed NEXORA transplant and closure files are present.

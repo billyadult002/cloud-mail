@@ -167,3 +167,40 @@ The following remain blocked until explicit authorization and external evidence 
 - push and PR creation
 
 Strongest evidence-supported verdict remains `LOGIC_COMPLETE_PARTIAL` until those gates complete.
+
+## Successor PR #1 Real Callback Continuation Evidence — 2026-07-18
+
+Branch: `codex/nexora-production-integration-5d7024d`
+
+Current local status: local real-callback continuation P1 is closed by production-shaped D1 evidence; PR review and production/device gates remain open.
+
+Implemented successor boundary:
+
+- Real Provider callback orchestration now reaches existing NEXORA authorities for Provider Outcome, Evidence delivery, verifier authorization, callback finalization, Correlation Consumption, Mission Continuation, Initial-Sync Intent, Initial-Sync Dispatch, and Initial-Sync Job.
+- Duplicate callback handling treats the durable `CONSUMED` correlation state as completed and mutation-free.
+- Provider outcome success checks remain compatible with the existing `0068_nexora_provider_outcome_results.sql` migration shape where `outcome_status` is absent.
+- Finalization preserves existing atomic rollback tests while marking the callback verification attempt `VERIFIED` when the canonical verified result is committed.
+
+Verification:
+
+- `npm test`: `PASS`
+- `npm run test:rc`: `PASS`, 13 files / 144 tests
+- `git diff --check`: `PASS`
+- `npm audit --audit-level=moderate`: `PASS`, 0 vulnerabilities
+- `npm ls --omit=dev --depth=0`: `PASS`
+- Migration order/idempotency inspection: `PASS`
+- Secret scan: no new live secrets or raw OAuth/provider/device material
+- Comail provenance: reinspected `https://github.com/NextOSP/comail` at `38960219de19812bcb8dbd562ee91974e0787737`; no direct source reuse
+
+External gates still not executed:
+
+- Provider registration
+- production Secret injection
+- production D1 migration apply
+- Worker deployment
+- real Google/Microsoft onboarding
+- authenticated Desktop acceptance
+- authenticated Xcode Beta physical-iPhone acceptance
+- production negative testing
+- rollback and restoration
+- merge

@@ -189,7 +189,7 @@ async function consumeCallback(c, scope, { state, verifier, receivedCallbackFing
 	const resolvedScope = { tenantId: Number(correlation.tenant_id), workspaceId: Number(correlation.workspace_id) };
 	const session = await c.env.db.prepare(`SELECT * FROM nexora_onboarding_authorization_sessions WHERE id=?1 AND state_hash=?2`).bind(correlation.authorization_session_id, stateHash).first();
 	if (!session) return { ok: false, reason: 'INVALID_STATE' }; // fails closed -- never guesses which session this belongs to
-	if (correlation.status === 'consumed') return { ok: true, duplicate: true, alreadyConsumed: true, resumeCheckpoint: session.resume_checkpoint, onboardingMissionId: session.onboarding_mission_id, provider: session.provider, tenantHint: session.tenant_hint, scope: resolvedScope };
+	if (String(correlation.status || '').toLowerCase() === 'consumed' || correlation.consumed_at) return { ok: true, duplicate: true, alreadyConsumed: true, recovery: 'COMPLETED', resumeCheckpoint: session.resume_checkpoint, onboardingMissionId: session.onboarding_mission_id, provider: session.provider, tenantHint: session.tenant_hint, scope: resolvedScope };
 	if (session.status === 'consumed') {
 		// A consumed authorization session is never permission to replay its single-use code.
 		// If the previous worker abandoned after observing an exchange response, acquisition

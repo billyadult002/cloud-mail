@@ -92,3 +92,31 @@ The AGPL-3.0-only license is also a production-governance boundary. Since no Com
 `COMAIL_FIRST_AUDITED_WITH_GUIDED_PATTERNS_NO_DIRECT_REUSE`
 
 Comail materially improves this PR by supplying an authorized reference for OAuth, token refresh, Provider scope separation, retry, sync, and offline-failure categories. It does not replace NEXORA's Worker-side authority model, and it is not copied into the review branch.
+
+## Successor Real-Callback Continuation Assessment — 2026-07-18
+
+The exact Comail repository was reinspected for the successor real-callback continuation fix:
+
+- Repository: `https://github.com/NextOSP/comail`
+- Branch: `master`
+- Commit: `38960219de19812bcb8dbd562ee91974e0787737`
+- Version: `0.2.22`
+- Files inspected: `src-tauri/crates/comail-core/src/oauth/flow.rs`, `src-tauri/crates/comail-core/src/oauth/providers.rs`, `src-tauri/crates/comail-core/src/oauth/tokens.rs`, `src-tauri/crates/comail-core/src/queue/mod.rs`
+
+Decision: `COMAIL_GUIDED_IMPLEMENTATION_NO_DIRECT_CODE_REUSE`.
+
+Comail behavior preserved:
+
+- PKCE S256 verifier/challenge plus state mismatch fail-closed behavior.
+- Provider-specific OAuth endpoint and scope separation, including Microsoft single-resource-token caution.
+- Token refresh `invalid_grant` and consent-required classification as reauthorization signals.
+- Bounded retry/claim behavior for queued work.
+
+NEXORA-specific hardening added instead of direct Comail reuse:
+
+- Server-authoritative Tenant/Workspace/Mission authority from D1 callback correlation.
+- Provider Outcome, Token Generation, Provider Connection Generation, and Token-to-Connection Binding as immutable callback authority.
+- Delivered Evidence Ledger entry, verifier authorization, canonical callback verification, `CALLBACK_OUTCOME_VERIFIED`, Correlation Consumption, Mission Continuation, Initial-Sync Intent, Initial-Sync Dispatch, and Initial-Sync Job.
+- JWKS-backed OIDC verification remains mandatory; Comail's decode-only identity extraction is not reused as trust authority.
+
+No Comail source, tests, fixtures, comments, assets, dependencies, generated code, or license-bearing material were copied, translated, vendored, linked, or imported.

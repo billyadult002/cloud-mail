@@ -23,6 +23,11 @@ function abortOnZeroRows(c, table) {
 	return c.env.db.prepare(`INSERT INTO ${table}(id) SELECT NULL WHERE changes()=0`);
 }
 
+async function hasColumn(db, table, column) {
+	const info = await db.prepare(`PRAGMA table_info(${table})`).all();
+	return (info.results || []).some((row) => row.name === column);
+}
+
 async function verifiedLineage(c, scope, args) {
 	const verified = await c.env.db.prepare(`SELECT * FROM nexora_callback_verified_results WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND mission_id=?4 AND callback_correlation_id=?5 AND result_status='VERIFIED'`).bind(args.verifiedResultId, scope.tenantId, scope.workspaceId, args.missionId, args.callbackCorrelationId).first();
 	assertScope(verified, scope);
@@ -39,7 +44,9 @@ async function verifiedLineage(c, scope, args) {
 	if (blockedVerification) throw new Error('nexora_callback_verification_blocked');
 	const evidence = await c.env.db.prepare(`SELECT id FROM nexora_onboarding_evidence_outbox WHERE commit_result_id=?1 AND onboarding_mission_id=?2 AND tenant_id=?3 AND workspace_id=?4 AND status='DELIVERED'`).bind(verified.provider_outcome_result_id, args.missionId, scope.tenantId, scope.workspaceId).first();
 	if (!evidence) throw new Error('nexora_callback_evidence_not_delivered');
-	const outcome = await c.env.db.prepare(`SELECT * FROM nexora_provider_outcome_results WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND mission_id=?4 AND provider=?5 AND connection_id=?6 AND committed_token_generation=?7 AND committed_provider_connection_generation=?8 AND outcome_status='SUCCESS'`).bind(verified.provider_outcome_result_id, scope.tenantId, scope.workspaceId, args.missionId, args.provider, args.expectedProviderConnectionId, args.expectedTokenGeneration, args.expectedProviderConnectionGeneration).first();
+	const hasOutcomeStatus = await hasColumn(c.env.db, 'nexora_provider_outcome_results', 'outcome_status');
+	const outcomeStatusClause = hasOutcomeStatus ? `outcome_status='SUCCESS'` : `outcome_kind='SUCCESS'`;
+	const outcome = await c.env.db.prepare(`SELECT * FROM nexora_provider_outcome_results WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND mission_id=?4 AND provider=?5 AND connection_id=?6 AND committed_token_generation=?7 AND committed_provider_connection_generation=?8 AND ${outcomeStatusClause}`).bind(verified.provider_outcome_result_id, scope.tenantId, scope.workspaceId, args.missionId, args.provider, args.expectedProviderConnectionId, args.expectedTokenGeneration, args.expectedProviderConnectionGeneration).first();
 	if (!outcome) throw new Error('nexora_callback_provider_outcome_stale');
 	const token = await c.env.db.prepare(`SELECT id FROM nexora_onboarding_tokens WHERE onboarding_mission_id=?1 AND tenant_id=?2 AND workspace_id=?3 AND provider=?4 AND rotation_generation=?5 AND revoked_at IS NULL AND connection_health!='revoked'`).bind(args.missionId, scope.tenantId, scope.workspaceId, args.provider, args.expectedTokenGeneration).first();
 	if (!token) throw new Error('nexora_callback_token_generation_stale');

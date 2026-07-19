@@ -93,6 +93,37 @@ Wire the real callback path through NEXORA's verified callback finalization and 
 
 ## Review Verdict
 
-`PR_REVIEW_BLOCKED_P1_OPEN`
+`LOCAL_P1_REAL_CALLBACK_CONTINUATION_CLOSED_PR_REVIEW_PENDING`
 
-Do not merge, deploy, migrate production D1, bind production Provider Secrets, run real Provider onboarding, or perform Desktop/iPhone acceptance until the open P1 is resolved and the full verification gate is rerun.
+The previous real-callback continuation P1 is now locally closed in the successor diff: the real orchestrator callback path invokes the canonical Provider Outcome, Evidence Ledger, verifier authorization, callback finalization, correlation consumption, Mission continuation, and Initial-Sync intent/dispatch/job authorities instead of directly dispatching legacy sync after token storage.
+
+New local evidence:
+
+- Real callback entrypoints remain `mail-worker/src/api/nexora-onboarding-api.js` Google/Microsoft GET callbacks, which delegate to `onboardingOrchestrator.handleCallback()`.
+- `mail-worker/src/service/nexora-onboarding-orchestrator-service.js` now establishes Provider Connection Generation, Token-to-Connection Binding, Provider Outcome, delivered outbox Evidence, canonical `mission_runtime_evidence`, verifier policy/claim, canonical verification, `CALLBACK_OUTCOME_VERIFIED`, Correlation Consumption, Mission Continuation, Initial-Sync Intent, Initial-Sync Dispatch, and Initial-Sync Job.
+- `mail-worker/src/service/durable-mission-runtime-service.js` now binds callback verifier authority to provider outcome lineage and marks the callback verification attempt `VERIFIED` inside the finalization batch.
+- `mail-worker/src/service/nexora-callback-continuation-service.js` tolerates production migration shape where `outcome_status` is absent and uses `outcome_kind='SUCCESS'` as the compatible success authority.
+- `mail-worker/src/service/nexora-onboarding-oauth-service.js` treats uppercase/lowercase consumed callback correlations as mutation-free completed duplicates.
+- `mail-worker/scripts/reliability-tests/nexora-onboarding-orchestrator.test.mjs` asserts the complete successful real callback chain and duplicate no-reexchange behavior with signed OIDC fixtures.
+
+Verification after successor diff:
+
+- `npm test`: `PASS`
+- `npm run test:rc`: `PASS`, 13 files / 144 tests
+- `git diff --check`: `PASS`
+- `npm audit --audit-level=moderate`: `PASS`, 0 vulnerabilities
+- `npm ls --omit=dev --depth=0`: `PASS`
+- Migration CI inspection: `PASS`, 13 migration files, `0061` through `0075`
+- Migration idempotency inspection: `PASS`, all migration `CREATE TABLE` statements use `IF NOT EXISTS`
+- Secret scan: retained matches are workflow placeholders, documented secret names, and deterministic test fixtures; no live credential, token, OAuth state, authorization code, PKCE verifier, session cookie, private signing material, raw provider payload, or raw device identifier was added.
+
+Comail classification for this successor diff:
+
+- Source inspected: `https://github.com/NextOSP/comail`, branch `master`, commit `38960219de19812bcb8dbd562ee91974e0787737`, version `0.2.22`.
+- Reuse decision: `COMAIL_GUIDED_IMPLEMENTATION_NO_DIRECT_CODE_REUSE`.
+- Preserved behavior: PKCE/state fail-closed semantics, Provider scope separation, `invalid_grant`/reauthorization classification, bounded retry/queue behavior.
+- Direct reuse rejected because Comail is a desktop-local Rust/Tauri personal client and does not provide NEXORA's server-authoritative D1 callback finalization, Tenant/Workspace authority, Evidence Ledger, verifier authorization, Mission continuation, or exact-once Initial-Sync authority.
+
+Remaining gates:
+
+Do not merge, deploy, migrate production D1, bind production Provider Secrets, run real Provider onboarding, or perform Desktop/iPhone acceptance until PR review closure confirms the exact successor commit as the reviewed deployment candidate.

@@ -616,6 +616,71 @@ Checkpoint verdict:
 - `DEPLOYMENT_HELD`
 - `LOGIC_COMPLETE_PARTIAL`
 
+## Additive Checkpoint: Compact Glass Navigation Root Correction
+
+Assessment date: 2026-07-19
+
+Scope:
+
+- Apple workspace inspected: `/Users/billtin/Documents/cloudmail/files/GlassMail-project/GlassMail.xcworkspace`
+- Source files changed in canonical root workspace:
+  - `files/GlassMail-project/GlassMail/Views/MainTabView.swift`
+  - `files/GlassMail-project/GlassMail/Views/InboxView.swift`
+- Comail decision for this navigation-only change: `NOT_APPLICABLE_NO_OVERLAPPING_COMAIL_IMPLEMENTATION`
+
+Root cause classification:
+
+- `LONG_LABEL_COMPACT_WIDTH_PRESSURE`
+- `INSUFFICIENT_SCROLL_BOTTOM_INSET`
+- `CONTENT_OBSCURED_BY_FLOATING_NAVIGATION`
+- Platform iOS 27 `TabView` is the active bottom navigation path; the older custom `iOSTabBar` code remains present but is not the rendered path for the observed screenshot.
+
+Implemented local Apple correction:
+
+- Shortened compact visible iPhone tab labels from `Intelligence` to `Intel` and from `Organization` to `Org`.
+- Preserved full accessibility labels: `Intelligence` and `Organization`.
+- Increased inbox bottom content inset from `86` points to `124` points on iOS so the last visible mail row can scroll above the floating platform tab bar.
+- Left macOS/non-iOS inset at `86` points.
+- Did not suppress the visible data-format warning.
+- Did not change parsing, message models, classification inputs, synchronization, Desktop projection, or IPA projection.
+
+Verification:
+
+- Xcode Beta path: `/Applications/Xcode-beta.app/Contents/Developer`
+- Xcode version: `Xcode 27.0`
+- Xcode build: `27A5194q`
+- Workspace list command found scheme `GlassMail`.
+- Build command:
+  - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -workspace files/GlassMail-project/GlassMail.xcworkspace -scheme GlassMail -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build`
+- Result: `BUILD SUCCEEDED`
+- Warnings observed were pre-existing Swift warnings and an orientation validation warning; no new compile failure occurred.
+
+Integration boundary:
+
+- The pushed Worker successor branch `codex/nexora-evidence-first-classification` does not contain the Apple workspace files at the pinned `origin/main` baseline.
+- Therefore this Apple navigation correction is present in the canonical root workspace but has not been integrated into the pushed Worker successor branch.
+- Creating the required PR remains blocked by GitHub authentication:
+  - local `gh`: `Resource not accessible by personal access token`
+  - GitHub MCP: `Authentication Failed`
+- No IPA was exported, no physical-iPhone install was performed, and no iPhone Mirroring acceptance screenshot was captured in this checkpoint.
+
+Production mutation status:
+
+- Migration `0077`: not applied
+- Worker deployment: not performed
+- Provider registration: unchanged
+- Secrets: unchanged
+- Classification production acceptance: not performed
+- Data-format defect: still `SOURCE_BOUNDARY_OPEN`
+
+Checkpoint verdict:
+
+- `NAVIGATION_ROOT_CORRECTION_LOCAL_BUILD_PASS`
+- `SUCCESSOR_BRANCH_APPLE_INTEGRATION_BLOCKED`
+- `PR_CREATION_BLOCKED_BY_GITHUB_AUTH`
+- `PRODUCTION_MIGRATION_HELD`
+- `LOGIC_COMPLETE_PARTIAL`
+
 ## Additive Checkpoint: Migration Authority Reconciliation, Data-Format Boundary, and Classification Closure
 
 Assessment date: 2026-07-19

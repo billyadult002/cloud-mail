@@ -310,6 +310,14 @@ Required next protected admin action:
 - Open Google Cloud Console in an authenticated browser session with access to the owning project for NEXORA OAuth credentials, then inspect or create the confidential Web client with callback `https://cloud-mail.fastonegroup.workers.dev/v3/onboarding/providers/google/callback`.
 - Open Microsoft Entra Admin Center or Azure Portal in an authenticated browser session with app-registration authority, then inspect or create the confidential Web application with callback `https://cloud-mail.fastonegroup.workers.dev/v3/onboarding/providers/microsoft/callback`.
 
+Third closure pass protected-browser action:
+
+- Opened native browser URL `https://console.cloud.google.com/apis/credentials`.
+- Opened native browser URL `https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade`.
+- Opened native browser URL `https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade`.
+
+Result: protected browser surfaces were opened, but their authenticated administrative contents were not inspectable from this Codex environment. Provider authority therefore remains blocked until an authenticated admin session is available in a toolable browser/admin boundary or a Provider CLI login is completed without exposing authorization artifacts in chat.
+
 ## Provider And Authority Gates
 
 Google Provider application authority: blocked. No authoritative Google Cloud admin surface was available in this environment.
@@ -341,6 +349,29 @@ Xcode MCP session defaults:
 - scheme: not configured
 - simulator: not configured
 - device: not configured
+
+Xcode Beta project metadata from command-scoped `xcodebuild`:
+
+- Workspace: `/Users/billtin/Documents/cloudmail/files/GlassMail-project/GlassMail.xcworkspace`
+- Scheme: `GlassMail`
+- Configuration inspected: `Release`
+- Product name: `NEXORA`
+- Bundle ID: `app.wangbei8554.pingguo736`
+- Marketing version: `3.03`
+- Current build: `357`
+- Development Team: `4GGH43VE67`
+- Code signing identity: `Apple Distribution`
+- Provisioning profile specifier: `0855a35a-f46c-4ddf-95ca-a841a9c27bc1`
+- iOS deployment target: `26.0`
+- Targeted device family: `1,2`
+- Supported platforms: `iphoneos iphonesimulator macosx`
+- App icon: `AppIcon`
+
+Xcode Beta physical-device discovery:
+
+- `xcrun xctrace list devices` listed `Bill's iPhone 17 (27.0)` as offline with redacted evidence suffix `...EC0401C`.
+- `xcrun xctrace list devices` also listed `CA HOME (27.0)` as offline with redacted evidence suffix `...22401E`.
+- No physical-device acceptance was executed because the devices were offline and real Provider onboarding is not complete.
 
 The initial integration-worktree-only scan found no `.xcodeproj`, `.xcworkspace`, `.ipa`, `project.pbxproj`, or Swift source file within max depth 5.
 
@@ -377,6 +408,18 @@ Strongest current Xcode Beta candidate artifact:
 Compatibility conclusion:
 
 Build `357` is useful historical Apple evidence, but it is bound to source commit `5d7024d1cea12b6425727fdeb28885cfb83cdf7b`, not canonical production-provider commit `755a9cd4224e1f9cebabf430b833e1485e25fb0c`. It also predates final canonical Google/Microsoft credential binding and real provider onboarding. Therefore it cannot prove authenticated physical-iPhone production acceptance for the current Mission. A successor Xcode Beta archive/export/install/acceptance pass remains required after Provider credential and Domain/Tenant/Workspace authority are established.
+
+Desktop discovery:
+
+- Found macOS artifact: `/Users/billtin/Documents/cloudmail/artifacts/macos/CloudMail.dmg`
+- SHA-256: `23897e18cd5669fad781da7a4063f087ce6c31d55d95cffab763915e2eacaa32`
+- Size: `3873813` bytes
+- Timestamp: `2026-06-20 23:30:10`
+- The main `GlassMail` scheme reports `macosx` as a supported platform in addition to iOS targets.
+
+Desktop applicability conclusion:
+
+Desktop is not `NOT_APPLICABLE_WITH_ARCHITECTURE_EVIDENCE` at this time. A Desktop-capable artifact and macOS-supported scheme exist, but no current authenticated Desktop acceptance has been run against Worker Version `8bfa8937-1d7b-4e22-9606-2ce13559f9cd`, canonical commit `755a9cd4224e1f9cebabf430b833e1485e25fb0c`, or canonical Provider cutover.
 
 Authenticated Desktop acceptance: not executed.
 

@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS nexora_email_classifications (
  classified_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
- UNIQUE(tenant_id,workspace_id,provider,provider_account_hash,message_fingerprint),
+ UNIQUE(tenant_id,workspace_id,customer_domain,provider,provider_account_hash,message_fingerprint),
  UNIQUE(tenant_id,workspace_id,idempotency_key)
 );
 CREATE INDEX IF NOT EXISTS idx_nexora_email_classifications_scope ON nexora_email_classifications(tenant_id,workspace_id,customer_domain,primary_category);
@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS nexora_email_classification_corrections (
  workspace_id INTEGER NOT NULL,
  provider TEXT NOT NULL,
  provider_account_hash TEXT NOT NULL,
+ customer_domain TEXT NOT NULL,
  message_fingerprint TEXT NOT NULL,
  correction_type TEXT NOT NULL CHECK(correction_type IN (
   'MOVE_TO_VIP','REMOVE_FROM_VIP','MARK_PRIORITY','REMOVE_PRIORITY',
@@ -85,7 +86,7 @@ CREATE TABLE IF NOT EXISTS nexora_email_classification_corrections (
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
  UNIQUE(tenant_id,workspace_id,idempotency_key)
 );
-CREATE INDEX IF NOT EXISTS idx_nexora_email_corrections_message ON nexora_email_classification_corrections(tenant_id,workspace_id,provider,provider_account_hash,message_fingerprint,created_at);
+CREATE INDEX IF NOT EXISTS idx_nexora_email_corrections_message ON nexora_email_classification_corrections(tenant_id,workspace_id,customer_domain,provider,provider_account_hash,message_fingerprint,created_at);
 
 CREATE TABLE IF NOT EXISTS nexora_email_classification_evidence (
  id TEXT PRIMARY KEY,

@@ -96,6 +96,7 @@ export function buildMessageFingerprint(input = {}) {
 	return stableFingerprint([
 		input.provider,
 		input.providerAccountHash,
+		input.customerDomain || input.domain,
 		input.messageId,
 		input.sender,
 		input.subject,
@@ -408,9 +409,9 @@ async function loadCorrections(c, scope, message) {
 	const rows = await c.env.db.prepare(
 		`SELECT correction_type, authority_source, authority_ref, reason_codes_json
 		 FROM nexora_email_classification_corrections
-		 WHERE tenant_id=?1 AND workspace_id=?2 AND provider=?3 AND provider_account_hash=?4 AND message_fingerprint=?5
+		 WHERE tenant_id=?1 AND workspace_id=?2 AND customer_domain=?3 AND provider=?4 AND provider_account_hash=?5 AND message_fingerprint=?6
 		 ORDER BY generation ASC, created_at ASC`
-	).bind(scope.tenantId, scope.workspaceId, message.provider, message.providerAccountHash, message.messageFingerprint).all();
+	).bind(scope.tenantId, scope.workspaceId, message.customerDomain, message.provider, message.providerAccountHash, message.messageFingerprint).all();
 	return (rows.results || []).map((row) => ({
 		correctionType: row.correction_type,
 		authoritySource: row.authority_source,
@@ -419,13 +420,29 @@ async function loadCorrections(c, scope, message) {
 	}));
 }
 
+async function requireVerifiedDomainAuthority(c, scope, customerDomain) {
+	const row = await c.env.db.prepare(
+		`SELECT generation, verification_evidence_ref
+		 FROM nexora_domain_authorities
+		 WHERE tenant_id=?1 AND workspace_id=?2 AND normalized_domain=?3
+		  AND verification_status='verified' AND revoked_at IS NULL
+		 ORDER BY generation DESC LIMIT 1`
+	).bind(scope.tenantId, scope.workspaceId, customerDomain).first();
+	if (!row) throw new Error('verified Domain authority is required');
+	return row;
+}
+
 export async function recordCorrection(c, scopeInput, messageInput, correctionInput) {
 	const scope = assertScope(scopeInput);
+	const customerDomain = normalizeDomain(messageInput.customerDomain || messageInput.domain);
+	if (!customerDomain) throw new Error('customerDomain is required');
+	await requireVerifiedDomainAuthority(c, scope, customerDomain);
 	const correction = validateCorrection(correctionInput);
 	const messageFingerprint = messageInput.messageFingerprint || buildMessageFingerprint(messageInput);
 	const idempotencyKey = correctionInput.idempotencyKey || stableFingerprint([
 		scope.tenantId,
 		scope.workspaceId,
+		customerDomain,
 		messageInput.provider,
 		messageInput.providerAccountHash,
 		messageFingerprint,
@@ -435,15 +452,16 @@ export async function recordCorrection(c, scopeInput, messageInput, correctionIn
 	]);
 	await c.env.db.prepare(
 		`INSERT OR IGNORE INTO nexora_email_classification_corrections
-		 (id,tenant_id,workspace_id,provider,provider_account_hash,message_fingerprint,correction_type,authority_source,authority_ref,reason_codes_json,idempotency_key,generation)
-		 VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,
-		  COALESCE((SELECT MAX(generation)+1 FROM nexora_email_classification_corrections WHERE tenant_id=?2 AND workspace_id=?3 AND provider=?4 AND provider_account_hash=?5 AND message_fingerprint=?6),1))`
+		 (id,tenant_id,workspace_id,provider,provider_account_hash,customer_domain,message_fingerprint,correction_type,authority_source,authority_ref,reason_codes_json,idempotency_key,generation)
+		 VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,
+		  COALESCE((SELECT MAX(generation)+1 FROM nexora_email_classification_corrections WHERE tenant_id=?2 AND workspace_id=?3 AND customer_domain=?6 AND provider=?4 AND provider_account_hash=?5 AND message_fingerprint=?7),1))`
 	).bind(
 		uuid(),
 		scope.tenantId,
 		scope.workspaceId,
 		messageInput.provider,
 		messageInput.providerAccountHash,
+		customerDomain,
 		messageFingerprint,
 		correction.correctionType,
 		correction.authoritySource,
@@ -458,13 +476,15 @@ export async function classifyAndPersist(c, scopeInput, messageInput) {
 	const scope = assertScope(scopeInput);
 	const customerDomain = normalizeDomain(messageInput.customerDomain || messageInput.domain);
 	if (!customerDomain) throw new Error('customerDomain is required');
+	await requireVerifiedDomainAuthority(c, scope, customerDomain);
 	const messageFingerprint = messageInput.messageFingerprint || buildMessageFingerprint(messageInput);
-	const message = { ...messageInput, messageFingerprint };
+	const message = { ...messageInput, customerDomain, messageFingerprint };
 	const corrections = await loadCorrections(c, scope, message);
 	const decision = classifyMessage(message, corrections);
 	const idempotencyKey = messageInput.idempotencyKey || stableFingerprint([
 		scope.tenantId,
 		scope.workspaceId,
+		customerDomain,
 		message.provider,
 		message.providerAccountHash,
 		messageFingerprint,
@@ -485,8 +505,8 @@ export async function classifyAndPersist(c, scopeInput, messageInput) {
 		`INSERT INTO nexora_email_classifications
 		 (id,tenant_id,workspace_id,provider,provider_account_hash,customer_domain,message_fingerprint,thread_fingerprint,primary_category,vip_relationship,priority_level,requires_action,time_sensitive,unread,starred,has_attachment,confidence,reason_codes_json,conflicting_signals_json,classifier_version,rules_version,model_version,authority_source,vip_authority_ref,user_override_ref,administrator_override_ref,evidence_ref,idempotency_key,generation,classified_at,updated_at)
 		 VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,
-		  COALESCE((SELECT generation+1 FROM nexora_email_classifications WHERE tenant_id=?2 AND workspace_id=?3 AND provider=?4 AND provider_account_hash=?5 AND message_fingerprint=?7),1),?29,?29)
-		 ON CONFLICT(tenant_id,workspace_id,provider,provider_account_hash,message_fingerprint) DO UPDATE SET
+		  COALESCE((SELECT generation+1 FROM nexora_email_classifications WHERE tenant_id=?2 AND workspace_id=?3 AND customer_domain=?6 AND provider=?4 AND provider_account_hash=?5 AND message_fingerprint=?7),1),?29,?29)
+		 ON CONFLICT(tenant_id,workspace_id,customer_domain,provider,provider_account_hash,message_fingerprint) DO UPDATE SET
 		  primary_category=excluded.primary_category,
 		  vip_relationship=excluded.vip_relationship,
 		  priority_level=excluded.priority_level,

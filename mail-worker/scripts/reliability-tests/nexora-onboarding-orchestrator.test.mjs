@@ -226,16 +226,29 @@ describe('NEXORA onboarding orchestrator — end-to-end real D1 (Checkpoint 4/8)
 });
 
 describe('NEXORA onboarding orchestrator — full real chain: callback code -> token exchange -> storage -> capability discovery -> sync dispatch', () => {
-	function b64url(obj) {
-		return btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+	const keyFixture = crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
+	function b64urlBytes(bytes) {
+		return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 	}
-	// Unsigned (this pass does not verify id_token signatures -- see decodeIdTokenClaims'
-	// documented limitation), but structurally a real 3-part JWT so decodeIdTokenClaims parses it.
-	function fixtureIdToken(claims) {
-		return `${b64url({ alg: 'none', typ: 'JWT' })}.${b64url(claims)}.fixture-signature`;
+	function b64urlJson(obj) {
+		return b64urlBytes(new TextEncoder().encode(JSON.stringify(obj)));
 	}
-	function fixtureFetch(scopeString, idTokenClaims = { sub: 'fixture-subject-1', email: 'user@example.com' }) {
-		return async () => ({ ok: true, status: 200, json: async () => ({ access_token: 'fixture-access-token', refresh_token: 'fixture-refresh-token', expires_in: 3600, scope: scopeString, id_token: fixtureIdToken(idTokenClaims) }) });
+	async function fixtureIdToken(claims, { kid = 'fixture-kid-1', clientId = 'test-client-id', issuer = 'https://accounts.google.com' } = {}) {
+		const keys = await keyFixture;
+		const header = b64urlJson({ alg: 'RS256', typ: 'JWT', kid });
+		const payload = b64urlJson({ iss: issuer, aud: clientId, exp: Math.floor(Date.now() / 1000) + 3600, ...claims });
+		const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', keys.privateKey, new TextEncoder().encode(`${header}.${payload}`));
+		return `${header}.${payload}.${b64urlBytes(signature)}`;
+	}
+	async function fixtureJwks() {
+		const keys = await keyFixture;
+		return { keys: [{ ...(await crypto.subtle.exportKey('jwk', keys.publicKey)), kid: 'fixture-kid-1', alg: 'RS256', use: 'sig' }] };
+	}
+	function jwksFetch() {
+		return async () => ({ ok: true, status: 200, json: fixtureJwks });
+	}
+	function fixtureFetch(scopeString, idTokenClaims = { sub: 'fixture-subject-1', email: 'user@example.com' }, idTokenOptions = {}) {
+		return async () => ({ ok: true, status: 200, json: async () => ({ access_token: 'fixture-access-token', refresh_token: 'fixture-refresh-token', expires_in: 3600, scope: scopeString, id_token: await fixtureIdToken(idTokenClaims, idTokenOptions) }) });
 	}
 
 	it('Microsoft callback exchange uses the durable tenant hint selected when the authorization session was created', async () => {
@@ -244,10 +257,10 @@ describe('NEXORA onboarding orchestrator — full real chain: callback code -> t
 		let observedUrl = null;
 		const fetchImpl = async (url) => {
 			observedUrl = String(url);
-			return { ok: true, status: 200, json: async () => ({ access_token: 'fixture-at', refresh_token: 'fixture-rt', expires_in: 3600, scope: 'openid profile email Mail.Read', id_token: fixtureIdToken({ sub: 'fixture-subject-ms', email: 'user@example.com', tid: 'contoso-tenant' }) }) };
+			return { ok: true, status: 200, json: async () => ({ access_token: 'fixture-at', refresh_token: 'fixture-rt', expires_in: 3600, scope: 'openid profile email Mail.Read', id_token: await fixtureIdToken({ sub: 'fixture-subject-ms', email: 'user@example.com', tid: 'contoso-tenant' }, { clientId: 'test-ms-client-id', issuer: 'https://login.microsoftonline.com/contoso-tenant/v2.0' }) }) };
 		};
 
-		const result = await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-ms-code', redirectUri: MICROSOFT_REDIRECT_URI, callbackFingerprint: 'fp-ms-tenant-hint', allowedMicrosoftTenantIds: ['contoso-tenant'], fetchImpl });
+		const result = await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-ms-code', redirectUri: MICROSOFT_REDIRECT_URI, callbackFingerprint: 'fp-ms-tenant-hint', allowedMicrosoftTenantIds: ['contoso-tenant'], fetchImpl, jwksFetchImpl: jwksFetch() });
 
 		expect(result.tokenExchangeOk).toBe(true);
 		expect(observedUrl).toContain('login.microsoftonline.com/contoso-tenant/oauth2/v2.0/token');
@@ -279,7 +292,8 @@ describe('NEXORA onboarding orchestrator — full real chain: callback code -> t
 			code: 'fixture-authorization-code',
 			redirectUri: 'https://nexora.example/callback/google',
 			callbackFingerprint: 'fp-chain-1',
-			fetchImpl: fixtureFetch('openid email https://www.googleapis.com/auth/gmail.readonly'),
+			fetchImpl: fixtureFetch('openid email https://www.googleapis.com/auth/gmail.readonly', { sub: 'fixture-subject-1', email: 'user@example.com', nonce: started.nonce }),
+			jwksFetchImpl: jwksFetch(),
 		});
 
 		expect(result.ok).toBe(true);
@@ -308,7 +322,7 @@ describe('NEXORA onboarding orchestrator — full real chain: callback code -> t
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'chain-2' });
 		// Provider grants only 'openid' -- not the requested gmail.readonly scope (e.g. user
 		// denied part of the consent screen).
-		const result = await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-code-2', redirectUri: 'https://x/callback', callbackFingerprint: 'fp-chain-2', fetchImpl: fixtureFetch('openid') });
+		const result = await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-code-2', redirectUri: 'https://x/callback', callbackFingerprint: 'fp-chain-2', fetchImpl: fixtureFetch('openid', { sub: 'fixture-subject-2', email: 'user@example.com', nonce: started.nonce }), jwksFetchImpl: jwksFetch() });
 		expect(result.capabilityStatus).not.toBe('SUPPORTED');
 		expect(result.syncDispatched).toBe(false);
 		expect(result.phase).toBe('blocked');
@@ -333,7 +347,7 @@ describe('NEXORA onboarding orchestrator — full real chain: callback code -> t
 	it('newly wired: an identity conflict (returned email does not match the login hint the user started with) blocks and stores no token', async () => {
 		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI, jwt_secret: 'test-only-pool-workers-encryption-secret' } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'chain-4', loginHint: 'expected@example.com' });
-		const result = await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-code-4', redirectUri: 'https://x/callback', callbackFingerprint: 'fp-chain-4', loginHint: 'expected@example.com', fetchImpl: fixtureFetch('openid email https://www.googleapis.com/auth/gmail.readonly', { sub: 'other-subject', email: 'someone-else@example.com' }) });
+		const result = await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-code-4', redirectUri: 'https://x/callback', callbackFingerprint: 'fp-chain-4', loginHint: 'expected@example.com', fetchImpl: fixtureFetch('openid email https://www.googleapis.com/auth/gmail.readonly', { sub: 'other-subject', email: 'someone-else@example.com', nonce: started.nonce }), jwksFetchImpl: jwksFetch() });
 		expect(result.identityValid).toBe(false);
 		expect(result.phase).toBe('blocked');
 		const phaseRow = await env.db.prepare(`SELECT blocked_reason FROM nexora_onboarding_state WHERE mission_id=?1`).bind(started.missionId).first();
@@ -345,7 +359,7 @@ describe('NEXORA onboarding orchestrator — full real chain: callback code -> t
 	it('newly wired: a Microsoft tenant outside the allowed policy blocks and stores no token', async () => {
 		const c = { env: { ...env, NEXORA_MICROSOFT_OAUTH_CLIENT_ID: 'test-ms-client-id', NEXORA_MICROSOFT_OAUTH_REDIRECT_URI: MICROSOFT_REDIRECT_URI, jwt_secret: 'test-only-pool-workers-encryption-secret' } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'microsoft', capabilities: ['mail_read'], idempotencyKey: 'chain-5' });
-		const result = await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-code-5', redirectUri: 'https://x/callback', callbackFingerprint: 'fp-chain-5', allowedMicrosoftTenantIds: ['allowed-tenant'], fetchImpl: fixtureFetch('openid profile email Mail.Read', { sub: 'sub-5', tid: 'disallowed-tenant' }) });
+		const result = await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-code-5', redirectUri: 'https://x/callback', callbackFingerprint: 'fp-chain-5', allowedMicrosoftTenantIds: ['allowed-tenant'], fetchImpl: fixtureFetch('openid profile email Mail.Read', { sub: 'sub-5', tid: 'disallowed-tenant' }, { clientId: 'test-ms-client-id', issuer: 'https://login.microsoftonline.com/disallowed-tenant/v2.0' }), jwksFetchImpl: jwksFetch() });
 		expect(result.identityValid).toBe(false);
 		const phaseRow = await env.db.prepare(`SELECT blocked_reason FROM nexora_onboarding_state WHERE mission_id=?1`).bind(started.missionId).first();
 		expect(phaseRow.blocked_reason).toBe('TENANT_POLICY_DENIED');
@@ -385,7 +399,8 @@ describe('NEXORA onboarding orchestrator — full real chain: callback code -> t
 	it('a genuinely-already-completed duplicate callback (token already stored) remains a true no-op, does not re-exchange', async () => {
 		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI, jwt_secret: 'test-only-pool-workers-encryption-secret' } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'chain-7' });
-		await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-code-7', redirectUri: 'https://x/callback', callbackFingerprint: 'fp-chain-7', fetchImpl: fixtureFetch('openid email https://www.googleapis.com/auth/gmail.readonly') });
+		await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, code: 'fixture-code-7', redirectUri: 'https://x/callback', callbackFingerprint: 'fp-chain-7', fetchImpl: fixtureFetch('openid email https://www.googleapis.com/auth/gmail.readonly', { sub: 'fixture-subject-1', email: 'user@example.com', nonce: started.nonce }),
+			jwksFetchImpl: jwksFetch() });
 
 		let calls = 0;
 		const countingFetch = async (...args) => {
@@ -396,4 +411,23 @@ describe('NEXORA onboarding orchestrator — full real chain: callback code -> t
 		expect(duplicate.duplicate).toBe(true);
 		expect(calls).toBe(0); // token already stored -- no re-exchange attempted
 	});
-});
+
+	it('production hardening: an unsigned id_token blocks before token storage', async () => {
+		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI, jwt_secret: 'test-only-pool-workers-encryption-secret' } };
+		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'chain-unverified-id-token' });
+		const unsignedToken = `${b64urlJson({ alg: 'none', typ: 'JWT', kid: 'fixture-kid-1' })}.${b64urlJson({ iss: 'https://accounts.google.com', aud: 'test-client-id', exp: Math.floor(Date.now() / 1000) + 3600, sub: 'fixture-subject', email: 'user@example.com', nonce: started.nonce })}.signature`;
+		const result = await onboardingOrchestrator.handleCallback(c, scope, {
+			state: started.state,
+			verifier: started.verifier,
+			code: 'fixture-code-unverified',
+			redirectUri: 'https://x/callback',
+			callbackFingerprint: 'fp-unverified-id-token',
+			fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ access_token: 'fixture-access-token', refresh_token: 'fixture-refresh-token', expires_in: 3600, scope: 'openid email https://www.googleapis.com/auth/gmail.readonly', id_token: unsignedToken }) }),
+			jwksFetchImpl: jwksFetch(),
+		});
+		expect(result.idTokenVerified).toBe(false);
+		expect(result.idTokenErrorCode).toBe('ID_TOKEN_MALFORMED');
+		const tokenCount = await env.db.prepare(`SELECT COUNT(*) n FROM nexora_onboarding_tokens WHERE onboarding_mission_id=?1`).bind(started.missionId).first();
+		expect(Number(tokenCount.n)).toBe(0);
+	});
+	});

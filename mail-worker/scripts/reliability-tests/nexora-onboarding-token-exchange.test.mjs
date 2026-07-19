@@ -6,10 +6,24 @@
 // this mission: it cannot prove Google/Microsoft's real endpoints behave this way, only that
 // this code behaves correctly against the documented OAuth 2.0 token-response shape.
 import { describe, expect, it, vi } from 'vitest';
-import tokenExchange, { tokenEndpointFor } from '../../src/service/nexora-onboarding-token-exchange-service.js';
+import tokenExchange, { tokenEndpointFor, verifyIdTokenClaims } from '../../src/service/nexora-onboarding-token-exchange-service.js';
 
 function fixtureResponse({ ok = true, status = 200, json }) {
 	return { ok, status, json: async () => json };
+}
+
+async function signedJwtFixture(claims, { kid = 'fixture-kid', clientId = 'client-id-fixture', issuer = 'https://accounts.google.com' } = {}) {
+	const keys = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
+	const encodeBytes = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+	const encodeJson = obj => encodeBytes(new TextEncoder().encode(JSON.stringify(obj)));
+	const header = encodeJson({ alg: 'RS256', typ: 'JWT', kid });
+	const payload = encodeJson({ iss: issuer, aud: clientId, exp: Math.floor(Date.now() / 1000) + 3600, ...claims });
+	const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', keys.privateKey, new TextEncoder().encode(`${header}.${payload}`));
+	const publicJwk = await crypto.subtle.exportKey('jwk', keys.publicKey);
+	return {
+		idToken: `${header}.${payload}.${encodeBytes(signature)}`,
+		jwksFetch: async () => ({ ok: true, status: 200, json: async () => ({ keys: [{ ...publicJwk, kid, alg: 'RS256', use: 'sig' }] }) }),
+	};
 }
 
 describe('Token endpoint construction', () => {
@@ -83,6 +97,23 @@ describe('exchangeAuthorizationCode — request construction and response parsin
 		const result = await tokenExchange.exchangeAuthorizationCode(env, { provider: 'google', code: 'c', verifier: 'verifier-should-not-leak', redirectUri: 'https://x/callback' }, fetchImpl);
 		expect(JSON.stringify(result)).not.toContain('super-secret-value');
 		expect(JSON.stringify(result)).not.toContain('verifier-should-not-leak');
+	});
+});
+
+describe('verifyIdTokenClaims', () => {
+	it('verifies RS256 signature, issuer, audience, expiry, and nonce before exposing claims', async () => {
+		const { idToken, jwksFetch } = await signedJwtFixture({ sub: 'sub-1', email: 'user@example.com', nonce: 'nonce-1' });
+		const nonceHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('nonce-1')).then(bytes => [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, '0')).join(''));
+		const result = await verifyIdTokenClaims({ NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'client-id-fixture' }, { provider: 'google', idToken, expectedNonceHash: nonceHash }, jwksFetch);
+		expect(result.ok).toBe(true);
+		expect(result.claims.email).toBe('user@example.com');
+	});
+
+	it('rejects an audience mismatch before identity claims can be trusted', async () => {
+		const { idToken, jwksFetch } = await signedJwtFixture({ sub: 'sub-1', email: 'user@example.com' });
+		const result = await verifyIdTokenClaims({ NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'different-client' }, { provider: 'google', idToken }, jwksFetch);
+		expect(result.ok).toBe(false);
+		expect(result.errorCode).toBe('ID_TOKEN_AUDIENCE_INVALID');
 	});
 });
 

@@ -7,7 +7,7 @@
 import durableMissionRuntime from './durable-mission-runtime-service.js';
 import onboardingStateMachine from './nexora-onboarding-state-machine.js';
 import onboardingOAuth, { insertAuthorizationSession, validateGrantedScopes, validateIdentity, validateMicrosoftTenant } from './nexora-onboarding-oauth-service.js';
-import tokenExchange, { decodeIdTokenClaims } from './nexora-onboarding-token-exchange-service.js';
+import tokenExchange, { verifyIdTokenClaims } from './nexora-onboarding-token-exchange-service.js';
 import tokenStorage from './nexora-onboarding-token-storage-service.js';
 import onboardingSync from './nexora-onboarding-sync-service.js';
 import callbackRecovery from './nexora-onboarding-callback-recovery-service.js';
@@ -57,14 +57,14 @@ async function startOnboarding(c, scope, { provider, capabilities, idempotencyKe
 	// verifier/state must reach the caller (never persisted server-side in cleartext, per
 	// ADR-6) so the API layer can hand them to the client -- typically the verifier via an
 	// httpOnly, short-lived cookie and state is already embedded in authorizationUrl itself.
-	return { ok: true, missionId, authorizationUrl: session.authorizationUrl, sessionId: session.row.id, expiresAt: session.row.expires_at, state: session.state, verifier: session.verifier };
+	return { ok: true, missionId, authorizationUrl: session.authorizationUrl, sessionId: session.row.id, expiresAt: session.row.expires_at, state: session.state, nonce: session.nonce, verifier: session.verifier };
 }
 
 // Consumes a real provider callback and automatically resumes the originating Mission — no
 // user action required beyond the provider consent screen itself. The Mission's underlying
 // mission_runtime_runs lease is claimed here (real, fenced, per durable-mission-runtime-service)
 // so this is restart-safe the same way every other Mission Runtime step is.
-async function handleCallback(c, scope, { state, verifier, code = null, redirectUri = null, callbackFingerprint, fetchImpl, loginHint = null, allowedMicrosoftTenantIds = [], expectedProvider = null }) {
+async function handleCallback(c, scope, { state, verifier, code = null, redirectUri = null, callbackFingerprint, fetchImpl, jwksFetchImpl, loginHint = null, allowedMicrosoftTenantIds = [], expectedProvider = null }) {
 	const consumption = await onboardingOAuth.consumeCallback(c, scope, { state, verifier, receivedCallbackFingerprint: callbackFingerprint, expectedProvider });
 	if (!consumption.ok) return { ok: false, reason: consumption.reason };
 	// Scope originates only from the server-side correlation row.  The optional scope on the
@@ -95,7 +95,7 @@ async function handleCallback(c, scope, { state, verifier, code = null, redirect
 	if (onboardingStateMachine.allowed(afterConsent.phase, 'authorization_received')) await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'authorization_received' });
 
 	const run = await reclaimMissionRun(c, scope, missionId);
-	return handleCallbackExchange(c, scope, { missionId, provider, code, verifier, redirectUri, fetchImpl, loginHint, tenantHint, allowedMicrosoftTenantIds, resumeCheckpoint: consumption.resumeCheckpoint, run, callbackClaim: consumption.callbackClaim, authorizationSessionId: consumption.authorizationSessionId, correlationId: consumption.correlationId });
+	return handleCallbackExchange(c, scope, { missionId, provider, code, verifier, redirectUri, fetchImpl, jwksFetchImpl, loginHint, tenantHint, allowedMicrosoftTenantIds, resumeCheckpoint: consumption.resumeCheckpoint, run, callbackClaim: consumption.callbackClaim, authorizationSessionId: consumption.authorizationSessionId, correlationId: consumption.correlationId });
 }
 
 // Automatic Mission continuation: claim/advance the underlying durable Mission run so the
@@ -111,13 +111,13 @@ async function reclaimMissionRun(c, scope, missionId) {
 }
 
 // Required Output #4 + identity/tenant validation: automatic capability-discovery-to-initial-
-// sync continuation using the REAL provider adapter contract, with identity and (for
-// Microsoft) tenant validation actually enforced against the decoded id_token before any
-// token is trusted -- not just available as an untested helper. Shared by both the normal
+// sync continuation using the REAL provider adapter contract, with id_token signature,
+// issuer, audience, expiry, nonce, identity and (for Microsoft) tenant validation enforced
+// before any token is trusted -- not just available as an untested helper. Shared by both the normal
 // callback path and the restart-safe duplicate-retry path in handleCallback() above, so a
 // Worker eviction between exchange and storage is recoverable via a resupplied callback
 // rather than stranding the Mission.
-async function handleCallbackExchange(c, scope, { missionId, provider, code, verifier, redirectUri, fetchImpl, loginHint, tenantHint = null, allowedMicrosoftTenantIds, resumeCheckpoint, run, callbackClaim = null, authorizationSessionId = null, correlationId = null }) {
+async function handleCallbackExchange(c, scope, { missionId, provider, code, verifier, redirectUri, fetchImpl, jwksFetchImpl, loginHint, tenantHint = null, allowedMicrosoftTenantIds, resumeCheckpoint, run, callbackClaim = null, authorizationSessionId = null, correlationId = null }) {
 	let tokenExchangeResult = null;
 	let capabilityStatus = null;
 	let syncDispatched = false;
@@ -127,7 +127,16 @@ async function handleCallbackExchange(c, scope, { missionId, provider, code, ver
 		tokenExchangeResult = await tokenExchange.exchangeAuthorizationCode(c.env, { provider, code, verifier, redirectUri, tenantHint }, fetchImpl);
 		if (callbackClaim) await callbackRecovery.recordCheckpoint(c, callbackClaim, { step: 'TOKEN_EXCHANGE_RESPONSE_OBSERVED', status: 'EXTERNAL_RESULT_OBSERVED', lastErrorCode: tokenExchangeResult.ok ? null : tokenExchangeResult.errorCode });
 		if (tokenExchangeResult.ok) {
-			const claims = decodeIdTokenClaims(tokenExchangeResult.idToken);
+			const authorizationSession = authorizationSessionId ? await c.env.db.prepare(`SELECT nonce_hash FROM nexora_onboarding_authorization_sessions WHERE id=?1 AND onboarding_mission_id=?2 AND tenant_id=?3 AND workspace_id=?4 AND provider=?5`).bind(authorizationSessionId, missionId, scope.tenantId, scope.workspaceId, provider).first() : null;
+			const verifiedIdToken = await verifyIdTokenClaims(c.env, { provider, idToken: tokenExchangeResult.idToken, expectedNonceHash: authorizationSession?.nonce_hash || null, tenantHint }, jwksFetchImpl || fetch);
+			if (!verifiedIdToken.ok) {
+				const current = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first();
+				if (onboardingStateMachine.allowed(current.phase, 'validating_authority')) await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'validating_authority' });
+				const revalidated = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first();
+				if (onboardingStateMachine.allowed(revalidated.phase, 'blocked')) await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'blocked', blockedReason: verifiedIdToken.errorCode, requiredHumanActor: 'workspace_administrator' });
+				return { ok: true, duplicate: false, missionId, resumeCheckpoint, phase: (await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first()).phase, missionResumed: Boolean(run), tokenExchangeAttempted: true, tokenExchangeOk: true, identityValid: false, capabilityStatus: null, syncDispatched: false, idTokenVerified: false, idTokenErrorCode: verifiedIdToken.errorCode };
+			}
+			const claims = verifiedIdToken.claims;
 			const identityResult = validateIdentity({ expectedLoginHint: loginHint, providerSubject: claims?.sub, providerEmail: claims?.email });
 			const tenantResult = provider === 'microsoft' ? validateMicrosoftTenant({ allowedTenantIds: allowedMicrosoftTenantIds, observedTenantId: claims?.tid }) : { valid: true };
 

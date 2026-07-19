@@ -16,23 +16,82 @@ function tokenEndpointFor(provider, tenantHint) {
 	return spec.tokenEndpoint.replace('{tenant}', tenantHint || 'common');
 }
 
-// Decodes (does NOT cryptographically verify) the id_token's payload claims -- signature
-// verification against the provider's JWKS is a real network/crypto dependency out of this
-// pass's logic-complete scope (same distinction as the token endpoint itself). This is
-// sufficient to wire identity (`sub`/`email`) and Microsoft tenant (`tid`) binding logic
-// deterministically; a production hardening pass should add JWKS signature verification
-// before treating these claims as fully authoritative.
+const JWKS_ENDPOINTS = {
+	google: () => 'https://www.googleapis.com/oauth2/v3/certs',
+	microsoft: (tenantHint) => `https://login.microsoftonline.com/${encodeURIComponent(tenantHint || 'common')}/discovery/v2.0/keys`,
+};
+
+function base64UrlToBytes(value) {
+	const padded = String(value || '').replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (String(value || '').length % 4)) % 4);
+	return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+}
+
 function decodeIdTokenClaims(idToken) {
 	if (!idToken) return null;
 	const parts = String(idToken).split('.');
 	if (parts.length !== 3) return null;
 	try {
-		const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-		const padded = payload + '='.repeat((4 - (payload.length % 4)) % 4);
-		return JSON.parse(atob(padded));
+		return JSON.parse(new TextDecoder().decode(base64UrlToBytes(parts[1])));
 	} catch {
 		return null;
 	}
+}
+
+function decodeIdTokenHeader(idToken) {
+	const parts = String(idToken || '').split('.');
+	if (parts.length !== 3) return null;
+	try {
+		return JSON.parse(new TextDecoder().decode(base64UrlToBytes(parts[0])));
+	} catch {
+		return null;
+	}
+}
+
+async function sha256Hex(value) {
+	const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(value || '')));
+	return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function issuerValid(provider, claims) {
+	if (provider === 'google') return claims.iss === 'accounts.google.com' || claims.iss === 'https://accounts.google.com';
+	if (provider === 'microsoft') return typeof claims.iss === 'string' && /^https:\/\/login\.microsoftonline\.com\/[^/]+\/v2\.0$/.test(claims.iss);
+	return false;
+}
+
+async function verifyIdTokenClaims(env, { provider, idToken, expectedNonceHash = null, tenantHint = null }, jwksFetchImpl = fetch) {
+	const header = decodeIdTokenHeader(idToken);
+	const claims = decodeIdTokenClaims(idToken);
+	if (!header || !claims || header.alg !== 'RS256' || !header.kid) return { ok: false, errorCode: 'ID_TOKEN_MALFORMED' };
+	const clientId = env?.[PROVIDERS[provider]?.clientIdEnv];
+	if (!clientId) return { ok: false, errorCode: 'PROVIDER_APPLICATION_MISSING' };
+	if (!issuerValid(provider, claims)) return { ok: false, errorCode: 'ID_TOKEN_ISSUER_INVALID' };
+	if (claims.aud !== clientId && !(Array.isArray(claims.aud) && claims.aud.includes(clientId))) return { ok: false, errorCode: 'ID_TOKEN_AUDIENCE_INVALID' };
+	const now = Math.floor(Date.now() / 1000);
+	if (!Number.isFinite(Number(claims.exp)) || Number(claims.exp) <= now) return { ok: false, errorCode: 'ID_TOKEN_EXPIRED' };
+	if (claims.nbf != null && Number(claims.nbf) > now + 60) return { ok: false, errorCode: 'ID_TOKEN_NOT_YET_VALID' };
+	if (expectedNonceHash && await sha256Hex(claims.nonce || '') !== expectedNonceHash) return { ok: false, errorCode: 'ID_TOKEN_NONCE_MISMATCH' };
+
+	let jwks;
+	try {
+		const response = await jwksFetchImpl(JWKS_ENDPOINTS[provider](tenantHint));
+		jwks = await response.json();
+	} catch {
+		return { ok: false, errorCode: 'ID_TOKEN_JWKS_UNAVAILABLE' };
+	}
+	const jwk = (jwks.keys || []).find((key) => key.kid === header.kid && key.kty === 'RSA');
+	if (!jwk) return { ok: false, errorCode: 'ID_TOKEN_SIGNING_KEY_NOT_FOUND' };
+	let key;
+	try {
+		key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+	} catch {
+		return { ok: false, errorCode: 'ID_TOKEN_SIGNING_KEY_INVALID' };
+	}
+	const [encodedHeader, encodedPayload, encodedSignature] = String(idToken).split('.');
+	const signed = new TextEncoder().encode(`${encodedHeader}.${encodedPayload}`);
+	const signature = base64UrlToBytes(encodedSignature);
+	const valid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, signature, signed).catch(() => false);
+	if (!valid) return { ok: false, errorCode: 'ID_TOKEN_SIGNATURE_INVALID' };
+	return { ok: true, claims };
 }
 
 async function parseTokenResponse(response) {
@@ -98,5 +157,5 @@ async function refreshAccessToken(env, { provider, refreshToken, tenantHint = nu
 	return parseTokenResponse(response);
 }
 
-export { CLIENT_SECRET_ENV, tokenEndpointFor, decodeIdTokenClaims };
+export { CLIENT_SECRET_ENV, tokenEndpointFor, decodeIdTokenClaims, verifyIdTokenClaims };
 export default { exchangeAuthorizationCode, refreshAccessToken };

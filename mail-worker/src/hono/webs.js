@@ -22,5 +22,6 @@ import '../api/telegram-api'
 import '../api/oauth-api'
 import '../api/nexora-onboarding-api'
 import '../api/nexora-email-classification-api'
+import '../api/nexora-domain-authority-api'
 import '../api/mission-runtime-status-api'
 export default app;

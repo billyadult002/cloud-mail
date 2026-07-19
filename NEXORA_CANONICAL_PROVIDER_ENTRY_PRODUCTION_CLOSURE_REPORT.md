@@ -468,3 +468,92 @@ Final production-provider and real-device acceptance cannot pass yet because the
 Final verdict remains:
 
 `LOGIC_COMPLETE_PARTIAL`
+
+## 2026-07-19 Xcode Beta Build 358 And Physical-Device Session Recovery Evidence
+
+This checkpoint is additive evidence only. It does not modify implementation files, Provider configuration, Cloudflare secrets, production data, Mission Runtime state, or the preserved Callback Mission verdict.
+
+Canonical implementation branch bindings were rechecked before this evidence update:
+
+- `origin/main`: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
+- `origin/codex/nexora-production-integration-5d7024d`: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
+- Evidence branch parent remains the canonical implementation commit.
+
+Xcode Beta environment:
+
+- `DEVELOPER_DIR`: `/Applications/Xcode-beta.app/Contents/Developer`
+- `xcodebuild -version`: `Xcode 27.0`, build `27A5194q`
+- Workspace: `/Users/billtin/Documents/cloudmail/files/GlassMail-project/GlassMail.xcworkspace`
+- Scheme: `GlassMail`
+- Configuration: `Release`
+- Destination: `generic/platform=iOS`
+- Signing mode: manual
+- Team: `4GGH43VE67`
+- Provisioning profile specifier: `0855a35a-f46c-4ddf-95ca-a841a9c27bc1`
+- Build number override: `CURRENT_PROJECT_VERSION=358`
+
+Build 358 archive and export:
+
+- Archive: `/Users/billtin/Documents/cloudmail/artifacts/nexora-xcode-beta-candidate-20260719-build358-223025/NEXORA.xcarchive`
+- IPA: `/Users/billtin/Documents/cloudmail/artifacts/nexora-xcode-beta-candidate-20260719-build358-223025/export/NEXORA.ipa`
+- IPA SHA-256: `8d2bbe7f483f3caeac9765d21ea3bf5c44277c098d9042f4767f9311fb2798e9`
+- IPA size: `10007898` bytes
+- IPA timestamp from local filesystem: `Jul 18 22:33:10 2026`
+- Export result: `** EXPORT SUCCEEDED **`
+
+Archive identity:
+
+- App bundle exists at archive path.
+- `CFBundleIdentifier`: `app.wangbei8554.pingguo736`
+- `CFBundleName`: `NEXORA`
+- `CFBundleShortVersionString`: `3.03`
+- `CFBundleVersion`: `358`
+- Code signature format: app bundle with Mach-O thin `arm64`
+- Signing authority: `Apple Distribution: jian sun (4GGH43VE67)`
+- Team identifier: `4GGH43VE67`
+- Entitlements observed: `application-identifier`, `com.apple.developer.team-identifier`, `get-task-allow=false`
+
+Production backend binding in the Apple source remains:
+
+- `/Users/billtin/Documents/cloudmail/files/GlassMail-project/GlassMail/Services/AppState.swift`
+- Default `serverURL`: `https://cloud-mail.fastonegroup.workers.dev`
+- Fallback `serverURL`: `https://cloud-mail.fastonegroup.workers.dev`
+
+Physical-device session recovery:
+
+- `devicectl list devices` reported the target iPhone as available, paired, physical, booted, and running iOS 27.0.
+- Raw device identifiers are intentionally not recorded in this evidence report.
+- `devicectl device install app` installed bundle `app.wangbei8554.pingguo736` successfully.
+- `devicectl device process launch` launched bundle `app.wangbei8554.pingguo736` successfully.
+
+Viewport evidence:
+
+- Screenshot 1: `/Users/billtin/Documents/cloudmail/artifacts/nexora-xcode-beta-candidate-20260719-build358-223025/iphone17-launch-screenshot.png`
+- Screenshot 1 SHA-256: `2ba61f99f42eb13a0a795a8b2162317cd23b4fd2212d7a88e2377adac3249dd7`
+- Screenshot 2: `/Users/billtin/Documents/cloudmail/artifacts/nexora-xcode-beta-candidate-20260719-build358-223025/iphone17-launch-screenshot-2.png`
+- Screenshot 2 SHA-256: `2ba61f99f42eb13a0a795a8b2162317cd23b4fd2212d7a88e2377adac3249dd7`
+- Dimensions: `1320x2868`
+- Both screenshots were fully black. This is not accepted as functional viewport evidence.
+
+Provider-admin session status:
+
+- `gcloud` is installed, but no active Google account or project was returned by local status commands.
+- Azure CLI was not found.
+- PowerShell was not found.
+- Provider-admin console inspection remains blocked without an inspectable authenticated admin session.
+- No OAuth client, redirect URI, Provider registration, or Cloudflare secret mutation was performed in this checkpoint.
+
+Physical-device acceptance conclusion:
+
+- `XCODE_BETA_ARCHIVE_EXPORT_PASS`: build 358 archive and IPA export succeeded.
+- `PHYSICAL_DEVICE_INSTALL_PASS`: build 358 installed on a paired physical iPhone.
+- `PHYSICAL_DEVICE_LAUNCH_COMMAND_PASS`: build 358 launch command succeeded.
+- `FUNCTIONAL_VIEWPORT_ACCEPTANCE_BLOCKED`: screenshots are black and cannot prove visible UI readiness.
+- `AUTHENTICATED_PROVIDER_ACCEPTANCE_BLOCKED`: canonical Google/Microsoft Provider credentials and admin confirmation remain unresolved.
+- `REAL_ONBOARDING_ACCEPTANCE_BLOCKED`: no real Google or Microsoft onboarding was completed.
+
+This checkpoint improves Apple real-device evidence from "offline" to "install and launch command succeeded", but it still does not satisfy authenticated real-device production acceptance.
+
+Final verdict remains:
+
+`LOGIC_COMPLETE_PARTIAL`

@@ -7,6 +7,7 @@ import app from '../hono/hono';
 import result from '../model/result';
 import userContext from '../security/user-context';
 import onboardingOrchestrator from '../service/nexora-onboarding-orchestrator-service';
+import { providerEnv } from '../service/nexora-onboarding-oauth-service.js';
 import providerDiscovery from '../service/nexora-onboarding-provider-discovery-service';
 import missionRuntimeStatusService from '../service/mission-runtime-status-service';
 
@@ -66,7 +67,7 @@ app.get('/v3/onboarding/status/:missionId', async (c) => {
 async function handleProviderCallback(c, expectedProvider) {
 	const q = c.req.query();
 	const verifier = readCookie(c, 'nexora_pkce_verifier') || '';
-	const redirectUri = c.env?.[expectedProvider === 'google' ? 'NEXORA_GOOGLE_OAUTH_REDIRECT_URI' : 'NEXORA_MICROSOFT_OAUTH_REDIRECT_URI'];
+	const redirectUri = providerEnv(c.env, expectedProvider, 'redirectUriEnv');
 	// Provider redirects are deliberately not scoped from query parameters, the active UI
 	// workspace, or the logged-in user.  `state` resolves exactly one durable correlation row.
 	const data = await onboardingOrchestrator.handleCallback(c, null, {
@@ -91,7 +92,7 @@ app.post('/v3/onboarding/callback', async (c) => {
 	const body = await c.req.json().catch(() => ({}));
 	const workspaceId = Number(q.workspace_id || body.workspace_id);
 	const provider = String(body.provider || '');
-	const redirectUri = c.env?.[provider === 'google' ? 'NEXORA_GOOGLE_OAUTH_REDIRECT_URI' : provider === 'microsoft' ? 'NEXORA_MICROSOFT_OAUTH_REDIRECT_URI' : ''];
+	const redirectUri = providerEnv(c.env, provider, 'redirectUriEnv');
 	const data = await onboardingOrchestrator.handleCallback(c, { tenantId, workspaceId }, { state: String(body.state || ''), verifier: String(body.code_verifier || ''), code: body.code ? String(body.code) : null, redirectUri, callbackFingerprint: body.callback_fingerprint || null, expectedProvider: provider || null });
 	return c.json(result.ok(data));
 });

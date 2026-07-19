@@ -6,7 +6,7 @@
 // mission_runtime_missions run, with no further user action required.
 import durableMissionRuntime from './durable-mission-runtime-service.js';
 import onboardingStateMachine from './nexora-onboarding-state-machine.js';
-import onboardingOAuth, { insertAuthorizationSession, validateGrantedScopes, validateIdentity, validateMicrosoftTenant } from './nexora-onboarding-oauth-service.js';
+import onboardingOAuth, { insertAuthorizationSession, providerEnv, validateGrantedScopes, validateIdentity, validateMicrosoftTenant } from './nexora-onboarding-oauth-service.js';
 import tokenExchange, { verifyIdTokenClaims } from './nexora-onboarding-token-exchange-service.js';
 import tokenStorage from './nexora-onboarding-token-storage-service.js';
 import callbackRecovery from './nexora-onboarding-callback-recovery-service.js';
@@ -293,7 +293,7 @@ async function handleCallbackExchange(c, scope, { missionId, provider, code, ver
 			const adminConsentRequired = provider === 'microsoft' && ['admin_consent_required', 'authorization_required', 'consent_required'].includes(tokenExchangeResult.errorCode);
 			if (adminConsentRequired && onboardingStateMachine.allowed(current.phase, 'waiting_for_admin_consent')) {
 				const tenantId = tenantHint || allowedMicrosoftTenantIds?.[0] || 'common';
-				const adminConsentUrl = onboardingOAuth.buildMicrosoftAdminConsentUrl({ tenantId, clientId: c.env.NEXORA_MICROSOFT_OAUTH_CLIENT_ID, redirectUri });
+				const adminConsentUrl = onboardingOAuth.buildMicrosoftAdminConsentUrl({ tenantId, clientId: providerEnv(c.env, 'microsoft', 'clientIdEnv'), redirectUri });
 				await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'waiting_for_admin_consent', blockedReason: 'ADMIN_APPROVAL_REQUIRED', requiredHumanActor: 'tenant_administrator', resumeToken: adminConsentUrl });
 				capabilityStatus = 'ADMIN_APPROVAL_REQUIRED';
 			} else if (onboardingStateMachine.allowed(current.phase, 'failed')) await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'failed', blockedReason: tokenExchangeResult.errorCode });

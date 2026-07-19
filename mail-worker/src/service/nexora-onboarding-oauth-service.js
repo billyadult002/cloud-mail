@@ -33,7 +33,9 @@ const PROVIDERS = Object.freeze({
 		authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
 		tokenEndpoint: 'https://oauth2.googleapis.com/token',
 		clientIdEnv: 'NEXORA_GOOGLE_OAUTH_CLIENT_ID',
+		clientIdEnvAliases: ['GOOGLE_OAUTH_CLIENT_ID'],
 		redirectUriEnv: 'NEXORA_GOOGLE_OAUTH_REDIRECT_URI',
+		redirectUriEnvAliases: ['GOOGLE_OAUTH_REDIRECT_URI'],
 		// Google's PKCE-capable public/native flow does not require a client_secret; the
 		// confidential server-side exchange (if used) reads NEXORA_GOOGLE_OAUTH_CLIENT_SECRET
 		// at token-exchange time only -- never referenced from this contract-construction module.
@@ -44,11 +46,24 @@ const PROVIDERS = Object.freeze({
 		authorizationEndpoint: 'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize',
 		tokenEndpoint: 'https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token',
 		clientIdEnv: 'NEXORA_MICROSOFT_OAUTH_CLIENT_ID',
+		clientIdEnvAliases: ['MICROSOFT_OAUTH_CLIENT_ID'],
 		redirectUriEnv: 'NEXORA_MICROSOFT_OAUTH_REDIRECT_URI',
+		redirectUriEnvAliases: ['MICROSOFT_OAUTH_REDIRECT_URI'],
 		supportsIncrementalConsent: true,
 		defaultClientType: 'confidential',
 	},
 });
+
+function providerEnv(env, provider, field) {
+	const spec = PROVIDERS[provider];
+	if (!spec) return null;
+	const primary = spec[field];
+	if (primary && env?.[primary]) return env[primary];
+	for (const alias of spec[`${field}Aliases`] || []) {
+		if (env?.[alias]) return env[alias];
+	}
+	return null;
+}
 
 // Minimum-scope planning: only the scopes a specific NEXORA capability genuinely needs.
 // Read-only mail visibility never implies send, calendar, contacts, or directory access.
@@ -109,8 +124,8 @@ async function pkceChallengeFor(verifier) {
 // stolen database row alone cannot complete the PKCE exchange.
 async function createAuthorizationSession(env, { onboardingMissionId, tenantId, workspaceId, provider, clientRegistrationMode = 'first_party', capabilities, existingGrantedScopes = [], tenantHint = null, loginHint = null, ttlSeconds = 600 }) {
 	if (!PROVIDERS[provider]) throw new Error('nexora_onboarding_unsupported_provider');
-	const clientId = env?.[PROVIDERS[provider].clientIdEnv];
-	const redirectUri = env?.[PROVIDERS[provider].redirectUriEnv];
+	const clientId = providerEnv(env, provider, 'clientIdEnv');
+	const redirectUri = providerEnv(env, provider, 'redirectUriEnv');
 	if (!clientId || !redirectUri) {
 		// Explicit, honest failure -- never construct a redirect to a provider with no
 		// registered application. This is the exact signal the operational-visibility
@@ -268,5 +283,5 @@ async function discoverCapability(c, scope, { onboardingMissionId, provider, cap
 	return { status, reasonCodes: decision.reasonCodes || [] };
 }
 
-export { PROVIDERS, CAPABILITY_SCOPES, CAPABILITY_STATES, planScopes, planIncrementalScopes, randomVerifier, pkceChallengeFor, buildAuthorizationUrl, buildMicrosoftAdminConsentUrl, insertAuthorizationSession, cancelAuthorizationSession, validateIdentity, validateMicrosoftTenant, validateGrantedScopes, mapDecisionToCapabilityState };
+export { PROVIDERS, CAPABILITY_SCOPES, CAPABILITY_STATES, providerEnv, planScopes, planIncrementalScopes, randomVerifier, pkceChallengeFor, buildAuthorizationUrl, buildMicrosoftAdminConsentUrl, insertAuthorizationSession, cancelAuthorizationSession, validateIdentity, validateMicrosoftTenant, validateGrantedScopes, mapDecisionToCapabilityState };
 export default { createAuthorizationSession, consumeCallback, cancelAuthorizationSession, discoverCapability, planScopes, planIncrementalScopes, buildMicrosoftAdminConsentUrl, validateIdentity, validateMicrosoftTenant, validateGrantedScopes };

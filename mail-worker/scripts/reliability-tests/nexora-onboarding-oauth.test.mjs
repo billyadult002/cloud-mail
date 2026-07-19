@@ -16,6 +16,7 @@ import onboardingOAuth, {
 	buildAuthorizationUrl,
 	buildMicrosoftAdminConsentUrl,
 	insertAuthorizationSession,
+	providerEnv,
 	validateIdentity,
 	validateMicrosoftTenant,
 	validateGrantedScopes,
@@ -176,6 +177,20 @@ describe('Durable authorization session — real D1 persistence, restart-safe, r
 		expect(result.ok).toBe(false);
 		expect(result.reason).toBe('PROVIDER_APPLICATION_MISSING');
 		expect(result.requiredEnv).toBe('NEXORA_GOOGLE_OAUTH_CLIENT_ID');
+	});
+
+	it('uses canonical NEXORA provider env names first and legacy Google names only as cutover aliases', async () => {
+		const legacyEnv = {
+			GOOGLE_OAUTH_CLIENT_ID: 'legacy-google-client',
+			GOOGLE_OAUTH_REDIRECT_URI: 'https://cloud-mail.fastonegroup.workers.dev/v3/onboarding/providers/google/callback',
+		};
+		expect(providerEnv(legacyEnv, 'google', 'clientIdEnv')).toBe('legacy-google-client');
+		expect(providerEnv({ ...legacyEnv, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'canonical-google-client' }, 'google', 'clientIdEnv')).toBe('canonical-google-client');
+
+		const created = await onboardingOAuth.createAuthorizationSession(legacyEnv, { onboardingMissionId: 'ob-legacy-google', tenantId: TENANT_ID, workspaceId: WORKSPACE_ID, provider: 'google', capabilities: ['mail_read'] });
+		expect(created.ok).toBe(true);
+		expect(created.authorizationUrl).toContain('client_id=legacy-google-client');
+		expect(created.authorizationUrl).toContain('redirect_uri=https%3A%2F%2Fcloud-mail.fastonegroup.workers.dev%2Fv3%2Fonboarding%2Fproviders%2Fgoogle%2Fcallback');
 	});
 
 	it('E14/V17: a created session survives being re-read after a simulated restart (fresh read from D1, not in-memory)', async () => {

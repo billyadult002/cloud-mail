@@ -5,6 +5,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import app from '../../src/hono/webs.js';
+import worker from '../../src/index.js';
 import onboardingOrchestrator from '../../src/service/nexora-onboarding-orchestrator-service.js';
 import onboardingStateMachine from '../../src/service/nexora-onboarding-state-machine.js';
 import tokenStorage from '../../src/service/nexora-onboarding-token-storage-service.js';
@@ -320,6 +321,32 @@ describe('NEXORA onboarding orchestrator — full real chain: callback code -> t
 			sync_dispatches: 1,
 			sync_jobs: 1,
 		});
+	});
+
+	it('production Worker entry routes provider-registered /v3 callbacks to Hono instead of the SPA fallback', async () => {
+		const callbackFetch = Symbol.for('nexora.internal.providerCallbackFetch');
+		const callbackJwksFetch = Symbol.for('nexora.internal.providerCallbackJwksFetch');
+		const routeEnv = {
+			...env,
+			NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id',
+			NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI,
+			jwt_secret: 'test-only-pool-workers-encryption-secret',
+			[callbackFetch]: fixtureFetch('openid email https://www.googleapis.com/auth/gmail.readonly', { sub: 'entry-subject-1', email: 'entry-user@example.com' }),
+			[callbackJwksFetch]: jwksFetch(),
+		};
+		const started = await onboardingOrchestrator.startOnboarding({ env: routeEnv }, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'entry-route-chain-1' });
+		routeEnv[callbackFetch] = fixtureFetch('openid email https://www.googleapis.com/auth/gmail.readonly', { sub: 'entry-subject-1', email: 'entry-user@example.com', nonce: started.nonce });
+
+		const res = await worker.fetch(new Request(`https://cloud-mail.fastonegroup.workers.dev/v3/onboarding/providers/google/callback?state=${encodeURIComponent(started.state)}&code=entry-route-code-1`, {
+			method: 'GET',
+			headers: { Cookie: `nexora_pkce_verifier=${encodeURIComponent(started.verifier)}` },
+		}), routeEnv, {});
+		expect(res.status).toBe(200);
+		expect(res.headers.get('content-type')).toContain('application/json');
+		const body = await res.json();
+		expect(body.data.ok).toBe(true);
+		expect(body.data.provider).toBe('google');
+		expect(body.data.syncDispatched).toBe(true);
 	});
 
 	it('Microsoft callback exchange uses the durable tenant hint selected when the authorization session was created', async () => {

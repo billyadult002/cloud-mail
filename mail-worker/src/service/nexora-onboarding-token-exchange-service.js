@@ -6,9 +6,22 @@
 // Never logs, returns in an error message, or otherwise surfaces the raw authorization code,
 // client secret, access token, or refresh token -- callers pass the result straight into
 // nexora-onboarding-token-storage-service.storeTokens(), which encrypts before persisting.
-import { PROVIDERS } from './nexora-onboarding-oauth-service.js';
+import { PROVIDERS, providerEnv } from './nexora-onboarding-oauth-service.js';
 
-const CLIENT_SECRET_ENV = { google: 'NEXORA_GOOGLE_OAUTH_CLIENT_SECRET', microsoft: 'NEXORA_MICROSOFT_OAUTH_CLIENT_SECRET' };
+const CLIENT_SECRET_ENV = Object.freeze({
+	google: { primary: 'NEXORA_GOOGLE_OAUTH_CLIENT_SECRET', aliases: ['GOOGLE_OAUTH_CLIENT_SECRET'] },
+	microsoft: { primary: 'NEXORA_MICROSOFT_OAUTH_CLIENT_SECRET', aliases: ['MICROSOFT_OAUTH_CLIENT_SECRET'] },
+});
+
+function clientSecret(env, provider) {
+	const spec = CLIENT_SECRET_ENV[provider];
+	if (!spec) return null;
+	if (env?.[spec.primary]) return env[spec.primary];
+	for (const alias of spec.aliases || []) {
+		if (env?.[alias]) return env[alias];
+	}
+	return null;
+}
 
 function tokenEndpointFor(provider, tenantHint) {
 	const spec = PROVIDERS[provider];
@@ -62,7 +75,7 @@ async function verifyIdTokenClaims(env, { provider, idToken, expectedNonceHash =
 	const header = decodeIdTokenHeader(idToken);
 	const claims = decodeIdTokenClaims(idToken);
 	if (!header || !claims || header.alg !== 'RS256' || !header.kid) return { ok: false, errorCode: 'ID_TOKEN_MALFORMED' };
-	const clientId = env?.[PROVIDERS[provider]?.clientIdEnv];
+	const clientId = providerEnv(env, provider, 'clientIdEnv');
 	if (!clientId) return { ok: false, errorCode: 'PROVIDER_APPLICATION_MISSING' };
 	if (!issuerValid(provider, claims)) return { ok: false, errorCode: 'ID_TOKEN_ISSUER_INVALID' };
 	if (claims.aud !== clientId && !(Array.isArray(claims.aud) && claims.aud.includes(clientId))) return { ok: false, errorCode: 'ID_TOKEN_AUDIENCE_INVALID' };
@@ -122,12 +135,12 @@ async function parseTokenResponse(response) {
 async function exchangeAuthorizationCode(env, { provider, code, verifier, redirectUri, tenantHint = null }, fetchImpl = fetch) {
 	const spec = PROVIDERS[provider];
 	if (!spec) throw new Error('nexora_onboarding_unsupported_provider');
-	const clientId = env?.[spec.clientIdEnv];
-	const clientSecret = env?.[CLIENT_SECRET_ENV[provider]];
+	const clientId = providerEnv(env, provider, 'clientIdEnv');
+	const secret = clientSecret(env, provider);
 	if (!clientId) return { ok: false, errorCode: 'PROVIDER_APPLICATION_MISSING' };
 
 	const params = new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri, client_id: clientId, code_verifier: verifier });
-	if (clientSecret) params.set('client_secret', clientSecret); // confidential client; PKCE alone would suffice for a public client
+	if (secret) params.set('client_secret', secret); // confidential client; PKCE alone would suffice for a public client
 
 	let response;
 	try {
@@ -141,12 +154,12 @@ async function exchangeAuthorizationCode(env, { provider, code, verifier, redire
 async function refreshAccessToken(env, { provider, refreshToken, tenantHint = null }, fetchImpl = fetch) {
 	const spec = PROVIDERS[provider];
 	if (!spec) throw new Error('nexora_onboarding_unsupported_provider');
-	const clientId = env?.[spec.clientIdEnv];
-	const clientSecret = env?.[CLIENT_SECRET_ENV[provider]];
+	const clientId = providerEnv(env, provider, 'clientIdEnv');
+	const secret = clientSecret(env, provider);
 	if (!clientId) return { ok: false, errorCode: 'PROVIDER_APPLICATION_MISSING' };
 
 	const params = new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: clientId });
-	if (clientSecret) params.set('client_secret', clientSecret);
+	if (secret) params.set('client_secret', secret);
 
 	let response;
 	try {
@@ -157,5 +170,5 @@ async function refreshAccessToken(env, { provider, refreshToken, tenantHint = nu
 	return parseTokenResponse(response);
 }
 
-export { CLIENT_SECRET_ENV, tokenEndpointFor, decodeIdTokenClaims, verifyIdTokenClaims };
+export { CLIENT_SECRET_ENV, clientSecret, tokenEndpointFor, decodeIdTokenClaims, verifyIdTokenClaims };
 export default { exchangeAuthorizationCode, refreshAccessToken };

@@ -6,7 +6,7 @@
 // this mission: it cannot prove Google/Microsoft's real endpoints behave this way, only that
 // this code behaves correctly against the documented OAuth 2.0 token-response shape.
 import { describe, expect, it, vi } from 'vitest';
-import tokenExchange, { tokenEndpointFor, verifyIdTokenClaims } from '../../src/service/nexora-onboarding-token-exchange-service.js';
+import tokenExchange, { clientSecret, tokenEndpointFor, verifyIdTokenClaims } from '../../src/service/nexora-onboarding-token-exchange-service.js';
 
 function fixtureResponse({ ok = true, status = 200, json }) {
 	return { ok, status, json: async () => json };
@@ -64,6 +64,23 @@ describe('exchangeAuthorizationCode — request construction and response parsin
 		expect(result.accessToken).toBe('fixture-access-token');
 		expect(result.refreshToken).toBe('fixture-refresh-token');
 		expect(result.grantedScopes).toEqual(['openid', 'email', 'https://www.googleapis.com/auth/gmail.readonly']);
+	});
+
+	it('uses legacy Google OAuth secret names as cutover aliases while canonical NEXORA names take precedence', async () => {
+		const fetchImpl = vi.fn().mockResolvedValue(fixtureResponse({ json: { access_token: 'fixture-access-token', expires_in: 3600 } }));
+		const legacyEnv = {
+			GOOGLE_OAUTH_CLIENT_ID: 'legacy-client-id',
+			GOOGLE_OAUTH_CLIENT_SECRET: 'legacy-client-secret',
+		};
+		expect(clientSecret(legacyEnv, 'google')).toBe('legacy-client-secret');
+		expect(clientSecret({ ...legacyEnv, NEXORA_GOOGLE_OAUTH_CLIENT_SECRET: 'canonical-client-secret' }, 'google')).toBe('canonical-client-secret');
+
+		const result = await tokenExchange.exchangeAuthorizationCode(legacyEnv, { provider: 'google', code: 'auth-code-fixture', verifier: 'verifier-fixture', redirectUri: 'https://cloud-mail.fastonegroup.workers.dev/v3/onboarding/providers/google/callback' }, fetchImpl);
+		expect(result.ok).toBe(true);
+		const body = new URLSearchParams(fetchImpl.mock.calls[0][1].body);
+		expect(body.get('client_id')).toBe('legacy-client-id');
+		expect(body.get('client_secret')).toBe('legacy-client-secret');
+		expect(JSON.stringify(result)).not.toContain('legacy-client-secret');
 	});
 
 	it('a provider error response (e.g. invalid_grant for a reused/expired code) is classified, not thrown', async () => {

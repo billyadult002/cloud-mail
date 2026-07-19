@@ -469,6 +469,131 @@ Final verdict remains:
 
 `LOGIC_COMPLETE_PARTIAL`
 
+## Additive Checkpoint: Migration Authority Reconciliation, Data-Format Boundary, and Classification Closure
+
+Assessment date: 2026-07-19
+
+Evidence branch pre-checkpoint state:
+
+- Branch: `codex/nexora-production-evidence-755a9cd`
+- Pre-checkpoint HEAD: `293f297767ad36ad51c9cab827d85f1714b11c30`
+- Pre-checkpoint report SHA-256: `d778224662f4a05b1cc1f35b679d9d3f9d70323b170b170dafca4765a1892dcf`
+- Canonical implementation commit remains: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
+- Production mutation freeze observed: no D1 migrations were applied, no Worker deployment was performed, no Provider registration was changed, and no Secrets were written or renamed.
+
+Migration authority reconciliation:
+
+- Initial discrepancy context: `/Users/billtin/Documents/cloudmail/platform/cloud-mail/mail-worker`
+- Initial Wrangler version: `4.110.0`
+- Initial config path: `/Users/billtin/Documents/cloudmail/platform/cloud-mail/mail-worker/wrangler.toml`
+- Initial D1 binding: `db`
+- Initial D1 name: `cloud-mail`
+- Initial D1 UUID: `4c05f52d-5d8c-4fb5-9a6d-888bebf8c596`
+- Initial command: `npx wrangler d1 migrations list cloud-mail --remote`
+- Initial result: pending local migration files `0057_mission_runtime_compensation.sql`, `0058_nexora_zero_touch_onboarding_kernel.sql`, `0059_nexora_onboarding_phase_state_machine.sql`, `0060_nexora_onboarding_token_storage.sql`, and `0062_nexora_cloudflare_provider_authority.sql`
+- Classification of initial result: `DIFFERENT_CONFIG_CONTEXT` / `LOCAL_MIGRATION_PATH_MISMATCH`
+
+Canonical migration authority:
+
+- Canonical Worker directory: `/Users/billtin/Documents/cloudmail/.worktrees/nexora-production-integration-5d7024d/mail-worker`
+- Canonical Wrangler version: `4.112.0`
+- Canonical config path: `/Users/billtin/Documents/cloudmail/.worktrees/nexora-production-integration-5d7024d/mail-worker/wrangler.toml`
+- Canonical D1 binding: `db`
+- Canonical D1 name: `cloud-mail`
+- Canonical D1 UUID: `4c05f52d-5d8c-4fb5-9a6d-888bebf8c596`
+- Canonical command: `npx wrangler d1 migrations list cloud-mail --remote`
+- Canonical result: `No migrations to apply`
+- Authority conclusion: the production migration status for the pinned implementation commit is `MIGRATION_AUTHORITY_PASS`; the earlier pending list came from a non-canonical local migration directory.
+
+Remote migration ledger observations:
+
+- `d1_migrations` columns observed: `id INTEGER PRIMARY KEY`, `name TEXT`, `applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`
+- Ledger range queried for `0057` through `0076` contained canonical applied migrations `0061`, `0063`, `0064`, `0065`, `0066`, `0067`, `0068`, `0070`, `0071`, `0072`, `0073`, `0074`, `0075`, and `0076`
+- `0076_nexora_onboarding_base_authority_tables.sql` was observed as applied at `2026-07-19 02:05:17`
+- No duplicate migration names were observed in the queried `0057` through `0076` range.
+- The remote ledger contained 73 rows at reconciliation time.
+
+Canonical migration checksum inventory:
+
+- Missing from the canonical migration directory for the pinned implementation commit: `0057`, `0058`, `0059`, `0060`, `0062`, and `0069`
+- `0061_nexora_oauth_callback_correlation_and_refresh_fencing.sql`: `14df9675b8c9c62180c3385735f484ce88321d3067e9bef8e70225251432b379`
+- `0063_nexora_callback_delivery_outbox.sql`: `2eb2ef1b0467098be7a43bcda01667ba3ccb27cc431494807273c7a0bb231bdb`
+- `0064_nexora_reauth_commit_resume.sql`: `75c5364b5f5bc1cd9ab058076ab00a3fbd6f68cf6827f1f0dc46efe94ae5cd6d`
+- `0065_nexora_reauth_evidence_delivery.sql`: `5d1ae6d7278a4cb64ca0825ff223f6f253bb90b5161eee5e1b792acafc9c3db3`
+- `0066_nexora_reauth_provider_connection_recovery.sql`: `ec0468cbbce027e5f17717792132c7b2664f6e8e62cba2e73334ba7933a736e6`
+- `0067_nexora_reauth_waiting_state.sql`: `8ce986b0604c516539dbdf6712d71cb26afe5d18052b28732260d191de126fa3`
+- `0068_nexora_provider_outcome_results.sql`: `bbaf4c38ae968a69a727c4699d20f9894244db91987d7e980d4617aa34708430`
+- `0070_nexora_cloudflare_authority_runtime.sql`: `b6d63caa655b9f3b668067efcd1e8dd0b31e9cca4fb9272e3eb1ccb54f554f78`
+- `0071_nexora_callback_verifier_authority.sql`: `1eac0edd8f53f7930cd9842e91214146be392078058404384ffe9d3aead62c53`
+- `0072_nexora_callback_continuation_runtime.sql`: `c7b84c03f80a5ce431eda1163a860a69819e6f584b596815ab3686f10d42a1ea`
+- `0073_nexora_callback_continuation_outbox.sql`: `c90d4675b3c7081c69666a483d97e0b514145b0173151060937375bb9f25d24d`
+- `0074_nexora_callback_continuation_lease_fencing.sql`: `456af97923a25eb2981c8aa1e75bd0d76f0c8ed196810e0e2cdea8e84dbb4813`
+- `0075_nexora_callback_continuation_generation_guard.sql`: `f28c468954d164d13603d233baecc4fd6975505066c980f05e0c71188cc973e1`
+- `0076_nexora_onboarding_base_authority_tables.sql`: `a023d710d76ee21de059f1b03464e20fba2133d6f221a2f19f467421adec55b4`
+
+Remote schema boundary:
+
+- The production D1 schema contains NEXORA onboarding authority, callback, refresh, notification, and token tables associated with the canonical applied migration set.
+- Schema effects similar to non-canonical `0058` through `0060` were observed in production, but those non-canonical files are not authority for the pinned implementation commit.
+- `mission_runtime_compensations` and the non-canonical `0062` Cloudflare authority tables were not observed in production schema and are not present in the canonical migration directory at `755a9cd`.
+- Those absent objects are therefore not a pending-production blocker for the canonical commit. Introducing them would require a successor implementation mission with explicit migration authority.
+
+Build 358 evidence preservation:
+
+- Existing build 358 physical-iPhone install and launch evidence remains preserved.
+- The prior black-frame screenshot capture-path failure remains unchanged.
+- The later readable viewport evidence remains accepted only for viewport readability, not for authenticated real-provider completion.
+- The visible runtime warning remains open: `The data couldn't be read because it isn't in the correct format.`
+
+Data-format defect boundary:
+
+- The exact endpoint, payload shape, and decoder path that produced the visible runtime warning remain unproven in this checkpoint.
+- The likely defect class remains an Apple runtime decode or API contract mismatch, but no raw provider payloads, tokens, private message bodies, or session material were captured.
+- No parsing, model, synchronization, or message-decoding implementation was changed during this checkpoint.
+- Comail inspection remains pattern-only for this defect class: tolerant DTO decoding, optional/default fields, MIME/header parsing discipline, sync error isolation, and continuing valid records are useful patterns. No Comail source code, functions, fixtures, or dependencies were copied, translated, adapted, or added.
+
+Classification and VIP authority audit:
+
+- Canonical Worker search at `755a9cd` found onboarding/token lifecycle classification and provider outcome classification, but did not find a server-authoritative mail semantic classification or VIP evidence model for inbox messages.
+- Apple source contains local smart-mail classification and local profile-based VIP contacts.
+- `AppState.swift` uses canonical projection category when present, user classification memory as a fallback, and local profile sets such as `vipContactEmails`.
+- `InboxView.swift` maps the VIP filter to `app.isVIPContact(email.fromAddress)`.
+- `InboxView.swift` prevents promotion-classified messages from being elevated into the critical smart bucket solely because of VIP status, but VIP filter membership itself remains local profile authority rather than a strict server-authoritative VIP boundary.
+- Classification closure verdict: `PARTIAL_IMPLEMENTATION`.
+
+Required successor boundary for classification/VIP closure:
+
+- Define server-authoritative classification records per message/conversation with tenant, workspace, provider, account, message or thread identity, category, VIP state, evidence reason codes, rule version, optional model version, source authority, override authority, and timestamp.
+- Treat VIP as explicit user or admin authority only. Sender reputation, promotional language, newsletters, bulk signals, AI labels, or provider folder names must not create VIP.
+- Provide deterministic fallback rules when AI is unavailable.
+- Require human override and durable correction records.
+- Persist Evidence Ledger entries for classification mutations and overrides without storing private message bodies.
+- Add negative tests proving promotional/newsletter/bulk messages cannot become VIP or executive-priority without explicit authority.
+- Add conflict tests for server category versus local cache, user correction versus AI suggestion, and stale-device VIP preference versus current server authority.
+- Add acknowledgement-loss recovery and idempotency tests for classification mutation writes before any production deployment.
+
+Provider and production acceptance status:
+
+- Provider-admin authority remains unresolved for canonical Google and Microsoft configuration inspection.
+- Existing Cloudflare secret values were not read back and no secret names were changed.
+- No authenticated real Google or Microsoft onboarding journey was completed.
+- No rollback drill was executed.
+
+Final checkpoint verdicts:
+
+- `MIGRATION_AUTHORITY_PASS`
+- `NO_PRODUCTION_MUTATION_PERFORMED`
+- `BUILD_358_VIEWPORT_EVIDENCE_PRESERVED`
+- `DATA_FORMAT_DEFECT_SOURCE_OPEN`
+- `COMAIL_REUSE_PATTERN_ONLY`
+- `CLASSIFICATION_VIP_AUTHORITY_PARTIAL`
+- `AUTHENTICATED_PROVIDER_ACCEPTANCE_BLOCKED`
+- `REAL_ONBOARDING_ACCEPTANCE_BLOCKED`
+
+Overall final verdict remains:
+
+`LOGIC_COMPLETE_PARTIAL`
+
 ## 2026-07-19 Build 358 Readable Viewport And Data-Format Defect Evidence
 
 This checkpoint is additive Evidence only. It does not modify implementation files, pinned implementation branches, Provider registration, Cloudflare Secret values, production data, or the preserved Callback Mission verdict.

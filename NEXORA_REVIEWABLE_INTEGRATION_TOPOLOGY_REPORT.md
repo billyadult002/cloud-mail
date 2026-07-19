@@ -66,6 +66,8 @@ Excluded from the integration branch:
 
 ## Comail
 
-Decision for this integration work: `NOT_APPLICABLE_NO_OVERLAPPING_IMPLEMENTATION`.
+Decision for this integration work: `COMAIL_FIRST_AUDITED_WITH_GUIDED_PATTERNS_NO_DIRECT_REUSE`.
 
-No Comail source, dependency, fixture, or control flow was copied, translated, adapted, imported, or used.
+The authorized Comail repository was inspected at commit `38960219de19812bcb8dbd562ee91974e0787737`. Comail has overlapping OAuth, token lifecycle, Provider configuration, sync, retry, IMAP/SMTP, MIME, desktop, and fixture/test capabilities. For this reviewable Worker integration, direct copy, translation, vendoring, or dependency reuse is rejected because Comail is an `AGPL-3.0-only` Tauri/Rust desktop client with local keyring, local SQLite, IMAP/SMTP account authority, and app-local synchronization semantics, while NEXORA must preserve server-authoritative Tenant and Workspace authority, Durable Mission Runtime, Evidence Ledger, Verified Action Boundary, Provider capability contracts, leases, fencing, generations, exact-once continuation, and safe degradation.
+
+The detailed source-path matrix, license boundary, accepted patterns, rejected behaviors, tests, Worker/Desktop/IPA impact, and production-use decision are recorded in `NEXORA_COMAIL_FIRST_COMPATIBILITY_AUDIT.md`.

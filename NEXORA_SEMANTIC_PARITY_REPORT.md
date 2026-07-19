@@ -25,6 +25,7 @@ Semantic parity with the immutable NEXORA checkpoint is preserved for the transp
 - Operational visibility: preserved by mission runtime status API and service.
 - Exact-once behavior: preserved by idempotency keys, unique result tables, fences, generations, and retry semantics.
 - Restart and takeover safety: preserved by lease expiry, owner, fencing token, and takeover tests.
+- Comail-first compatibility: preserved by source-level audit of authorized Comail OAuth, token lifecycle, Provider configuration, sync, retry, protocol, and fixture/test capabilities, with direct reuse rejected where it would replace NEXORA's Worker authority model. See `NEXORA_COMAIL_FIRST_COMPATIBILITY_AUDIT.md`.
 
 ## Conflict Resolutions
 

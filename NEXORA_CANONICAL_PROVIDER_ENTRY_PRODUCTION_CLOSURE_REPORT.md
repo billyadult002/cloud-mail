@@ -469,6 +469,86 @@ Final verdict remains:
 
 `LOGIC_COMPLETE_PARTIAL`
 
+## Additive Checkpoint: Evidence-First Hybrid Classification Successor Branch
+
+Assessment date: 2026-07-19
+
+Evidence branch pre-checkpoint state:
+
+- Branch: `codex/nexora-production-evidence-755a9cd`
+- Pre-checkpoint HEAD: `dba41e88cb9f445c10a19c38d4fc1d97bff1ee3b`
+- Pre-checkpoint report SHA-256: `04e468df15c0460f3414b76bc1372a35eeb1a9e4cc822ed48f198ab13cc2f6b6`
+
+Pinned implementation branch status:
+
+- `origin/main`: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
+- `origin/codex/nexora-production-integration-5d7024d`: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
+- These branches remain unchanged by the classification work.
+
+Successor implementation branch:
+
+- Branch: `codex/nexora-evidence-first-classification`
+- Base: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
+- Commit: `1f258681a1307c7c7bd919f34eee5f34bf7be788`
+- Report: `NEXORA_EVIDENCE_FIRST_HYBRID_CLASSIFICATION_IMPLEMENTATION_REPORT.md`
+- ADR: `docs/ADR-NEXORA-EVIDENCE-FIRST-HYBRID-CLASSIFICATION.md`
+
+Implemented successor scope:
+
+- Server-authoritative classification migration `0077_nexora_evidence_first_hybrid_classification.sql`.
+- Durable redacted tables for verified Domain authority, message classification state, user/admin correction records, and classification Evidence.
+- Worker classification service and API for deterministic Option 5 classification, persistence, and correction.
+- Semantic category is separated from VIP, Priority, Action, unread, starred, attachment, and time-sensitive attributes.
+- Strong promotional, newsletter, list, campaign, fan-out, tracking-link, and one-way sender signals prohibit automatic VIP unless explicit user or administrator authority exists.
+- User corrections bind authority to authenticated user context.
+- Classification persistence and administrator corrections require configured admin authority.
+- AI classification is not enabled in this slice and cannot establish authoritative VIP.
+
+Comail provenance:
+
+- Repository: `https://github.com/NextOSP/comail`
+- Branch inspected: `master`
+- Commit inspected: `38960219de19812bcb8dbd562ee91974e0787737`
+- Release tag inspected: `v0.2.22` at `deba788b6386f2f2fc78aa7b6e0dc3a0a961be66`
+- Paths inspected: `LICENSE`, `src-tauri/crates/comail-core/src/models.rs`
+- License observed: AGPL-3.0
+- Reuse classification: `COMAIL_GUIDED_IMPLEMENTATION`
+- Copied code: none
+- Translated code: none
+- Adapted code: none
+- New dependencies: none
+
+Verification:
+
+- `npm ci`: passed with `0 vulnerabilities`
+- `npm test`: passed
+- `node scripts/classification-contract-check.mjs`: passed
+- `npm run test:rc`: 13 files / 148 tests passed
+- `npm audit --audit-level=moderate`: `0 vulnerabilities`
+- `git diff --check`: passed
+- Changed-file secret-pattern scan: retained match only in the contract test's forbidden-symbol list
+- Read-only remote migration list from successor branch: only `0077_nexora_evidence_first_hybrid_classification.sql` is pending
+
+Production and acceptance boundary:
+
+- Remote migration `0077` was not applied.
+- Worker was not deployed.
+- Provider registration and Cloudflare Secrets were not changed.
+- Desktop and physical-iPhone classification acceptance were not performed because the Apple source tree is outside the pinned implementation branch.
+- The visible data-format warning remains open and was not suppressed.
+- Real Provider onboarding and production acceptance remain blocked until Provider/admin authority and review are complete.
+
+Checkpoint verdict:
+
+- `SERVER_CLASSIFICATION_AUTHORITY_IMPLEMENTED_REVIEW_REQUIRED`
+- `PRODUCTION_MUTATION_NOT_PERFORMED`
+- `DESKTOP_IPHONE_CLASSIFICATION_ACCEPTANCE_BLOCKED`
+- `DATA_FORMAT_DEFECT_SOURCE_OPEN`
+
+Overall final verdict remains:
+
+`LOGIC_COMPLETE_PARTIAL`
+
 ## Additive Checkpoint: Migration Authority Reconciliation, Data-Format Boundary, and Classification Closure
 
 Assessment date: 2026-07-19

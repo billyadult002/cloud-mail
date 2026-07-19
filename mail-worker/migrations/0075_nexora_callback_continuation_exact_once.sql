@@ -1,0 +1,87 @@
+-- Checkpoint 4 exact-once authorities. These tables store only operational
+-- lineage, digests, leases, and idempotency keys; no OAuth code, token, PKCE,
+-- cookie, credential, or provider payload is persisted here.
+CREATE TABLE IF NOT EXISTS nexora_reauthorization_completion_results (
+ id TEXT PRIMARY KEY,
+ reauthorization_work_id TEXT NOT NULL,
+ idempotency_key TEXT NOT NULL UNIQUE,
+ authority_tuple_digest TEXT NOT NULL,
+ evidence_set_digest TEXT NOT NULL,
+ verified_result_id TEXT NOT NULL,
+ finalization_id TEXT NOT NULL,
+ verifier_authorization_id TEXT NOT NULL,
+ verification_attempt_id TEXT NOT NULL,
+ tenant_id INTEGER NOT NULL,
+ workspace_id INTEGER NOT NULL,
+ mission_id TEXT NOT NULL,
+ provider TEXT NOT NULL,
+ authorization_session_id TEXT NOT NULL,
+ callback_correlation_id TEXT NOT NULL,
+ replacement_authorization_session_id TEXT,
+ replacement_correlation_id TEXT,
+ token_generation INTEGER NOT NULL,
+ provider_connection_id TEXT NOT NULL,
+ provider_connection_generation INTEGER NOT NULL,
+ lease_owner TEXT NOT NULL,
+ fencing_token INTEGER NOT NULL,
+ status TEXT NOT NULL CHECK(status='COMPLETED'),
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ UNIQUE(reauthorization_work_id),
+ UNIQUE(verified_result_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nexora_reauth_completion_scope ON nexora_reauthorization_completion_results(tenant_id,workspace_id,mission_id,callback_correlation_id);
+
+CREATE TABLE IF NOT EXISTS nexora_callback_correlation_consumption_results (
+ id TEXT PRIMARY KEY,
+ correlation_id TEXT NOT NULL,
+ idempotency_key TEXT NOT NULL UNIQUE,
+ mission_continuation_id TEXT NOT NULL UNIQUE,
+ reauthorization_completion_id TEXT,
+ verified_result_id TEXT NOT NULL,
+ finalization_id TEXT NOT NULL,
+ verifier_authorization_id TEXT NOT NULL,
+ tenant_id INTEGER NOT NULL,
+ workspace_id INTEGER NOT NULL,
+ mission_id TEXT NOT NULL,
+ provider TEXT NOT NULL,
+ authorization_session_id TEXT NOT NULL,
+ replacement_authorization_session_id TEXT,
+ replacement_correlation_id TEXT,
+ token_generation INTEGER NOT NULL,
+ provider_connection_id TEXT NOT NULL,
+ provider_connection_generation INTEGER NOT NULL,
+ lease_owner TEXT NOT NULL,
+ fencing_token INTEGER NOT NULL,
+ status TEXT NOT NULL CHECK(status='CONSUMED'),
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ consumed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ UNIQUE(correlation_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nexora_callback_consumption_scope ON nexora_callback_correlation_consumption_results(tenant_id,workspace_id,mission_id);
+
+CREATE TABLE IF NOT EXISTS nexora_mission_continuation_results (
+ id TEXT PRIMARY KEY,
+ idempotency_key TEXT NOT NULL UNIQUE,
+ correlation_consumption_id TEXT NOT NULL UNIQUE,
+ verified_result_id TEXT NOT NULL,
+ mission_id TEXT NOT NULL,
+ tenant_id INTEGER NOT NULL,
+ workspace_id INTEGER NOT NULL,
+ provider TEXT NOT NULL,
+ resume_checkpoint TEXT NOT NULL,
+ token_generation INTEGER NOT NULL,
+ provider_connection_id TEXT NOT NULL,
+ provider_connection_generation INTEGER NOT NULL,
+ lease_owner TEXT NOT NULL,
+ fencing_token INTEGER NOT NULL,
+ sync_intent_id TEXT,
+ sync_dispatch_id TEXT,
+ sync_job_id TEXT,
+ notification_id TEXT,
+ status TEXT NOT NULL CHECK(status='CONTINUED'),
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ continued_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ UNIQUE(mission_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nexora_mission_continuation_scope ON nexora_mission_continuation_results(tenant_id,workspace_id,mission_id);

@@ -1,0 +1,4 @@
+-- Extends NEXORA's reauthorization authority with replacement-callback and generation lineage.
+ALTER TABLE nexora_onboarding_reauthorization_work ADD COLUMN replacement_correlation_id TEXT;
+ALTER TABLE nexora_onboarding_reauthorization_work ADD COLUMN replacement_token_generation INTEGER;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_nexora_reauthorization_replacement_correlation ON nexora_onboarding_reauthorization_work(replacement_correlation_id);

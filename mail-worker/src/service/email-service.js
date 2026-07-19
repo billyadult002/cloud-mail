@@ -22,6 +22,12 @@ import account from "../entity/account";
 import { att } from '../entity/att';
 import telegramService from './telegram-service';
 
+function normalizeRecipientList(value) {
+	if (!value) return [];
+	const list = Array.isArray(value) ? value : String(value).split(',');
+	return [...new Set(list.map((item) => String(item || '').trim()).filter(Boolean))];
+}
+
 const emailService = {
 
 	async list(c, params, userId) {
@@ -157,11 +163,20 @@ const emailService = {
 			sendType, //发件类型
 			emailId, //邮件id，如果是回复邮件会带
 			receiveEmail, //收件人邮箱
+			cc,
+			bcc,
 			text, //邮件纯文本
 			content, //邮件内容
 			subject, //邮件标题
 			attachments //附件
 		} = params;
+
+		receiveEmail = normalizeRecipientList(receiveEmail);
+		cc = normalizeRecipientList(cc);
+		bcc = normalizeRecipientList(bcc);
+		if (receiveEmail.length === 0) {
+			throw new BizError('At least one valid recipient is required.', 400);
+		}
 
 		const { resendTokens, r2Domain, send, domainList } = await settingService.query(c);
 
@@ -266,6 +281,8 @@ const emailService = {
 			const sendForm = {
 				from: `${name} <${accountRow.email}>`,
 				to: [...receiveEmail],
+				cc: [...cc],
+				bcc: [...bcc],
 				subject: subject,
 				text: text,
 				html: html,
@@ -315,6 +332,8 @@ const emailService = {
 		});
 
 		emailData.recipient = JSON.stringify(recipient);
+		emailData.cc = JSON.stringify(cc.map((item) => ({ address: item, name: '' })));
+		emailData.bcc = JSON.stringify(bcc.map((item) => ({ address: item, name: '' })));
 
 		if (sendType === 'reply') {
 			emailData.inReplyTo = emailRow.messageId;

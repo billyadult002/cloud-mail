@@ -1,23 +1,26 @@
 name = "cloud-mail"
 main = "src/index.js"
-compatibility_date = "2025-06-04"
+compatibility_date = "2025-09-01"
 keep_vars = true
 
 [observability]
 enabled = true
 
-#[[d1_databases]]
-#binding = "db"			#d1数据库绑定名默认不可修改
-#database_name = ""		#d1数据库名字
-#database_id = ""		#d1数据库id
+[[d1_databases]]
+binding = "db"
+database_name = "cloud-mail"
+database_id = "4c05f52d-5d8c-4fb5-9a6d-888bebf8c596"
 
-#[[kv_namespaces]]
-#binding = "kv"			#kv绑定名默认不可修改
-#id = ""					#kv数据库id
+[[kv_namespaces]]
+binding = "kv"
+id = "78c5a7476f2b4a298779ba592eb48cc8"
 
-#[[r2_buckets]]
-#binding = "r2"			#r2对象存储绑定名默认不可修改
-#bucket_name = ""		#r2对象存储桶的名字
+[[r2_buckets]]
+binding = "r2"
+bucket_name = "cloud-mail-r2"
+
+#[[send_email]]
+#name = "email"			#CF发件, 配置后优先使用
 
 [assets]
 binding = "assets"		#静态资源绑定名默认不可修改
@@ -26,14 +29,68 @@ not_found_handling = "single-page-application"
 run_worker_first = true
 
 [triggers]
-crons = ["0 16 * * *"]	#定时任务每天晚上12点执行
+crons = ["* * * * *", "0 16 * * *"]	#每分钟同步Gmail；每天晚上12点执行每日任务,刷新分析缓存
 
 
-#[vars]
-#orm_log = false
+[vars]
+CLOUDFLARE_ZONE_ID = "b50196aa3c373872d7ba23861e29cac1"
+CLOUDFLARE_EMAIL_WORKER = "cloud-mail"
+CLOUDFLARE_CATCH_ALL_ENABLED = "true"
+CLOUDFLARE_CATCH_ALL_RULE_ID = "aa77a8abc8bc45a6a9e24b42ac346484"
+domain = ["fastonegroup.com", "hengmao.org"]
+CLASSIFICATION_INTELLIGENCE_ENABLED = "true"
+UCS_ACTIVATION_ENABLED = "true"
+UCS_HWM_COMPLETION_ENABLED = "true"
+CLOUDMAIL_RUNTIME_TELEMETRY_AUDIT_ENABLED = "true"
+#ai_model = ""			#ai模型,不填默认使用@cf/meta/llama-3.1-8b-instruct
+#analysis_cache = false			#是否开启分析数据缓存
+#orm_log = false			#是否sql日志
 #domain = []				#邮件域名可可配置多个 示例: ["example1.com","example2.com"]
 #admin = ""				#管理员的邮箱	示例: admin@example.com
 #jwt_secret = ""			#jwt令牌的密钥,随便填一串字符串
 
 [build]
-command = "pnpm --prefix ../mail-vue install && pnpm --prefix ../mail-vue run build"
+command = "npm --prefix ../mail-vue run build"
+
+[env.staging]
+name = "cloud-mail-staging"
+
+[env.staging.observability]
+enabled = true
+
+[[env.staging.d1_databases]]
+binding = "db"
+database_name = "cloud-mail-staging"
+database_id = "acf160ae-4efd-48d0-9d1b-7500f4cd0f41"
+
+[[env.staging.kv_namespaces]]
+binding = "kv"
+id = "7e5a23c8462548d995c1ffc01ebb3422"
+
+[[env.staging.r2_buckets]]
+binding = "r2"
+bucket_name = "cloud-mail-staging-r2"
+
+[env.staging.assets]
+binding = "assets"
+directory = "./dist"
+not_found_handling = "single-page-application"
+run_worker_first = true
+
+[env.staging.triggers]
+crons = []
+
+[env.staging.vars]
+CLOUDFLARE_ZONE_ID = ""
+CLOUDFLARE_EMAIL_WORKER = "cloud-mail-staging"
+CLOUDFLARE_CATCH_ALL_ENABLED = "false"
+CLOUDFLARE_CATCH_ALL_RULE_ID = ""
+CLOUDMAIL_STAGING_TELEMETRY_ENABLED = "true"
+CLOUDMAIL_STAGING_DIAGNOSTICS_ENABLED = "true"
+CLASSIFICATION_INTELLIGENCE_ENABLED = "false"
+CLOUDMAIL_STAGING_LEDGER_ANALYTICS_ENABLED = "true"
+CLOUDMAIL_STAGING_TELEMETRY_SINK = "dry-run"
+CLOUDMAIL_STAGING_SMOKE_SAFE_SKIP_AUTHORIZED = "true"
+CLOUDMAIL_STAGING_OAUTH_SAFE_SKIP_AUTHORIZED = "true"
+CLOUDMAIL_STAGING_ROLLBACK_REF = "cloud-mail-staging worker rollback requires separate approval"
+CLOUDMAIL_STAGING_NAMESPACE_SEPARATION_EVIDENCE_REF = "wrangler-env-staging-cloud-mail-staging-bindings"

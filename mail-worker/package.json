@@ -4,21 +4,24 @@
 	"private": true,
 	"scripts": {
 		"dev": "wrangler dev --config wrangler-dev.toml",
-		"test": "wrangler deploy --config wrangler-test.toml",
+		"check": "find src -name '*.js' -print0 | xargs -0 -n1 node --check",
+		"test": "npm run test:unit",
+		"test:unit": "node scripts/send-contract-check.mjs && npm run check",
+		"test:rc": "vitest run scripts/reliability-tests",
 		"deploy": "wrangler deploy",
 		"start": "wrangler dev"
 	},
 	"devDependencies": {
-		"@cloudflare/vitest-pool-workers": "^0.7.5",
-		"vitest": "~3.0.7",
-		"wrangler": "^4.7.0"
+		"@cloudflare/vitest-pool-workers": "^0.18.4",
+		"vitest": "^4.1.10",
+		"wrangler": "^4.93.0"
 	},
 	"dependencies": {
 		"@aws-sdk/client-s3": "^3.882.0",
-		"@cloudflare/vite-plugin": "1.6.0",
+		"@cloudflare/vite-plugin": "1.44.0",
 		"dayjs": "^1.11.13",
-		"drizzle-orm": "^0.42.0",
-		"hono": "^4.7.5",
+		"drizzle-orm": "0.45.2",
+		"hono": "4.12.29",
 		"i18next": "^25.3.2",
 		"linkedom": "^0.18.10",
 		"postal-mime": "^2.4.3",

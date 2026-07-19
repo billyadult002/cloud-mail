@@ -549,6 +549,73 @@ Overall final verdict remains:
 
 `LOGIC_COMPLETE_PARTIAL`
 
+## Additive Checkpoint: Option 5 Review Gate And Production Migration Hold
+
+Assessment date: 2026-07-19
+
+Evidence branch pre-checkpoint state:
+
+- Branch: `codex/nexora-production-evidence-755a9cd`
+- Pre-checkpoint HEAD: `6c27024c1acaeed52be1bb00314f994daad4b209`
+- Pre-checkpoint report SHA-256: `675bbe30d40fdb3f180adfdb71ef6bf902ce0b8b98803081db00de7d687d8170`
+
+Pinned baseline status:
+
+- `origin/main`: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
+- `origin/codex/nexora-production-integration-5d7024d`: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
+- Baseline branches remained unchanged.
+
+Successor branch status:
+
+- Branch: `codex/nexora-evidence-first-classification`
+- Initial reviewed-successor commit: `1f258681a1307c7c7bd919f34eee5f34bf7be788`
+- P1 review-fix commit: `ed57db5b18ecb7ea81e387940a30d3df1d5ce1cb`
+- Review gate report commit: `0b697c95377af7b8c62e74c1e867e828443065ca`
+
+Independent review findings closed on successor branch:
+
+- `P1_CROSS_TENANT_CORRECTION_AUTHORITY`: non-admin corrections now require authenticated user scope and Workspace membership.
+- `P1_DOMAIN_IDENTITY_COLLISION`: durable classification identity now includes `customer_domain`.
+- `P1_UNVERIFIED_DOMAIN_MUTATION`: durable classification persistence and correction now require verified, non-revoked Domain authority.
+- `P1_MESSAGE_FINGERPRINT_DOMAIN_SCOPE`: message fingerprint construction now includes customer Domain.
+
+Verification after review fixes:
+
+- `npm test`: passed
+- `npm run test:rc`: 13 files / 148 tests passed
+- `npm audit --audit-level=moderate`: `0 vulnerabilities`
+- `git diff --check`: passed
+- Changed-file secret-pattern scan: retained match only in the contract test's forbidden-symbol list
+- Migration `0077` SHA-256: `4343427a90fbc8add8dca33552204288bb1014cee70faf60e6fdde91fb5a0c61`
+- Local migration idempotency harness: first local apply through `0077` passed; second local apply reported `No migrations to apply`
+- Local schema verification found `nexora_domain_authorities`, `nexora_email_classifications`, `nexora_email_classification_corrections`, `nexora_email_classification_evidence`, and expected indexes.
+- Read-only remote migration list still reports only `0077_nexora_evidence_first_hybrid_classification.sql` pending.
+
+PR and review status:
+
+- Local `gh pr create` failed: `GraphQL: Resource not accessible by personal access token (createPullRequest)`.
+- GitHub MCP PR creation failed: `Authentication Failed: Requires authentication`.
+- No Pull Request was created in this checkpoint.
+- Because PR Review PASS is a required precondition, remote Migration `0077` was not applied and Worker deployment was not performed.
+
+Production mutation status:
+
+- Remote migration: not applied
+- Worker deployment: not performed
+- Provider registration: unchanged
+- Secrets: unchanged
+- Desktop acceptance: not performed
+- Physical-iPhone classification acceptance: not performed
+- Data-format defect: still `SOURCE_BOUNDARY_OPEN`
+
+Checkpoint verdict:
+
+- `P1_REVIEW_FINDINGS_CLOSED_LOCALLY`
+- `PR_CREATION_BLOCKED_BY_GITHUB_AUTH`
+- `PRODUCTION_MIGRATION_HELD`
+- `DEPLOYMENT_HELD`
+- `LOGIC_COMPLETE_PARTIAL`
+
 ## Additive Checkpoint: Migration Authority Reconciliation, Data-Format Boundary, and Classification Closure
 
 Assessment date: 2026-07-19

@@ -469,6 +469,122 @@ Final verdict remains:
 
 `LOGIC_COMPLETE_PARTIAL`
 
+## 2026-07-19 Build 358 Readable Viewport And Data-Format Defect Evidence
+
+This checkpoint is additive Evidence only. It does not modify implementation files, pinned implementation branches, Provider registration, Cloudflare Secret values, production data, or the preserved Callback Mission verdict.
+
+Evidence checkpoint reverified:
+
+- Evidence branch before this checkpoint: `codex/nexora-production-evidence-755a9cd`
+- Evidence head before this checkpoint: `9d8f44171f32baf5c7b6c7b3d35029cad4ceff40`
+- Committed report checksum before this checkpoint: `a00f2192538b2da3b1b23ae0494709ab8434c75887c1315c9ac6c8e9fe277420`
+- `origin/main`: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
+- `origin/codex/nexora-production-integration-5d7024d`: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
+- Evidence branch diff remains report-only.
+
+Readable physical-iPhone viewport:
+
+- Capture method: `IPHONE_MIRRORING`
+- Protected original capture: `/Users/billtin/Documents/cloudmail/artifacts/nexora-xcode-beta-candidate-20260719-build358-223025/iphone-mirroring-readable-original-20260718-224031.png`
+- Original capture SHA-256: `6b36666aa865bbddd5214257eb53ad6b0a32376b9d9d1896c70d57a97fb831dc`
+- Original dimensions: `3456x2234`
+- Original size: `2655161` bytes
+- Device-focused crop: `/Users/billtin/Documents/cloudmail/artifacts/nexora-xcode-beta-candidate-20260719-build358-223025/iphone-mirroring-readable-iphone-crop-20260718-224031.png`
+- Crop SHA-256: `8a8371409d0ca8b0cfc10a67ad173843d8a3584be99a0378d8c0f95f0d3dfae3`
+- Crop dimensions: `800x1718`
+- Crop size: `648791` bytes
+- Crop black-pixel proportion: `0.009122`
+- Crop near-black-pixel proportion: `0.016798`
+- Crop RGB variance: `[3990.784110663817, 3911.900438214947, 3830.16423075908]`
+- Crop non-black bounding region: full crop extent
+- Foreground application identity: NEXORA physical-iPhone application visible through iPhone Mirroring
+- Visible surface: Inbox, search, category filters, mail list, and bottom navigation
+- Production backend identity remains source-bound to `https://cloud-mail.fastonegroup.workers.dev`
+
+The earlier Xcode Beta `devicectl` screenshots remain preserved:
+
+- `/Users/billtin/Documents/cloudmail/artifacts/nexora-xcode-beta-candidate-20260719-build358-223025/iphone17-launch-screenshot.png`
+- `/Users/billtin/Documents/cloudmail/artifacts/nexora-xcode-beta-candidate-20260719-build358-223025/iphone17-launch-screenshot-2.png`
+- Both are fully black and share SHA-256 `2ba61f99f42eb13a0a795a8b2162317cd23b4fd2212d7a88e2377adac3249dd7`.
+
+Black-frame classification:
+
+- `BLACK_FRAME_CAPTURE_PATH_FAILURE`
+- Reason: the same Build 358 session produced readable iPhone Mirroring viewport Evidence while the `devicectl` capture path produced black images.
+- No implementation rendering defect is proven by the black images.
+- No successor implementation or rebuild is authorized by this Evidence alone.
+
+Build 358 installed runtime state:
+
+- Installed app inventory reports bundle `app.wangbei8554.pingguo736`, version `3.03`, build `358`.
+- Installed application is third-party/developer-installed and container-accessible.
+- Device process inventory reports a running `NEXORA.app/NEXORA` process.
+- No local macOS DiagnosticReports crash file was found for NEXORA, GlassMail, CloudMail, or the bundle identifier string.
+- `PHYSICAL_DEVICE_RUNTIME_PASS` remains supported by install, launch, visible foreground viewport, and running process evidence.
+
+Visible data-format defect:
+
+- Visible error text: `The data couldn't be read because it isn't in the correct format.`
+- Error surface: foreground Inbox toast/banner during Build 358 physical-iPhone session.
+- The visible Inbox remained populated and operable behind the error.
+- This is not authenticated Provider acceptance and not data-format closure.
+
+Current source-bound source isolation:
+
+- Global Inbox refresh calls `GET /api/v2/mail/all` through `Backend.globalMailLedger(...)` when no account is selected.
+- Account-scoped refresh calls `GET /api/email/list` through `Backend.emails(...)`.
+- The current checked source uses lossy mail-row decoding for both mail-list endpoints and maps generic decoding/correct-format errors to a product-safe message in `AppState.handle(...)`.
+- The visible Build 358 error is the raw Apple decoding string, so the strongest direct classification is `APPLE_RUNTIME_DATA_FORMAT_ERROR_VISIBLE_SOURCE_BOUNDARY_UNCLOSED`.
+- Direct endpoint, HTTP status, content type, response schema, and exact decoder were not verified from device or Worker logs in this checkpoint.
+- No authenticated token, raw Provider payload, message content export, device container copy, or unrelated device log extraction was performed.
+
+Comail-first parsing and contract assessment:
+
+- Canonical Comail repository: `https://github.com/NextOSP/comail`
+- Remote `HEAD` and `master`: `38960219de19812bcb8dbd562ee91974e0787737`
+- Latest observed tag: `v0.2.22` at `deba788b6386f2f2fc78aa7b6e0dc3a0a961be66`
+- Relevant inspected paths:
+  - `src-tauri/crates/comail-core/src/mime/mod.rs`
+  - `src-tauri/crates/comail-core/src/models.rs`
+  - `src-tauri/crates/comail-core/src/sync/engine.rs`
+- Applicability:
+  - Comail uses Rust/Tauri, SQLite, IMAP, `serde`, and local sync actors, so direct use is incompatible with NEXORA's Swift iOS client and Cloudflare Worker/D1 authority.
+  - Relevant transferable behavior is pattern-level only: optional/default DTO fields, tolerant MIME/header handling, bounded sync error isolation, and continuing unrelated valid records when one record is malformed.
+- Reuse decision for this checkpoint: `PATTERN_ONLY`.
+- No Comail source, tests, fixtures, dependencies, or assets were copied, translated, adapted, imported into Worker, imported into IPA, or deployed.
+
+Provider and production authority status:
+
+- Google Cloud local status returned no active account and no active project.
+- Azure CLI was not found.
+- PowerShell was not found.
+- Cloudflare Worker Secret names still include `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_CONSENT_CONFIGURED`, `GOOGLE_OAUTH_REDIRECT_URI`, `NEXORA_GOOGLE_OAUTH_REDIRECT_URI`, `NEXORA_MICROSOFT_OAUTH_REDIRECT_URI`, and `PROVIDER_TOKEN_SECRET`.
+- Canonical `NEXORA_GOOGLE_OAUTH_CLIENT_ID`, `NEXORA_GOOGLE_OAUTH_CLIENT_SECRET`, `NEXORA_MICROSOFT_OAUTH_CLIENT_ID`, and `NEXORA_MICROSOFT_OAUTH_CLIENT_SECRET` names were not present in the secret-name inventory.
+- No Secret values were read or written.
+- No Provider application, OAuth redirect, Domain, Tenant, Workspace, onboarding, Desktop acceptance, authenticated physical-iPhone acceptance, negative test, rollback, or restoration pass is claimed.
+
+Migration-state observation:
+
+- A fresh `wrangler d1 migrations list cloud-mail --remote` from `/Users/billtin/Documents/cloudmail/platform/cloud-mail/mail-worker` reported pending migrations `0057`, `0058`, `0059`, `0060`, and `0062`.
+- This conflicts with earlier recorded `NO_MIGRATIONS_TO_APPLY` and is recorded as `MIGRATION_STATE_DISCREPANCY_REQUIRES_RECONCILIATION`.
+- No migration was applied in this checkpoint.
+
+Updated classifications:
+
+- `BUILD_358_ARTIFACT_PASS`
+- `PHYSICAL_DEVICE_INSTALL_PASS`
+- `PHYSICAL_DEVICE_LAUNCH_PASS`
+- `PHYSICAL_DEVICE_RUNTIME_PASS`
+- `PHYSICAL_DEVICE_VIEWPORT_PASS`
+- `BLACK_FRAME_CAPTURE_PATH_FAILURE`
+- `DATA_FORMAT_DEFECT_OPEN_SOURCE_BOUNDARY_UNCLOSED`
+- `AUTHENTICATED_PROVIDER_ACCEPTANCE_BLOCKED`
+- `PRODUCTION_AND_REAL_DEVICE_PASS_BLOCKED`
+
+Final verdict remains:
+
+`LOGIC_COMPLETE_PARTIAL`
+
 ## 2026-07-19 Xcode Beta Build 358 And Physical-Device Session Recovery Evidence
 
 This checkpoint is additive evidence only. It does not modify implementation files, Provider configuration, Cloudflare secrets, production data, Mission Runtime state, or the preserved Callback Mission verdict.

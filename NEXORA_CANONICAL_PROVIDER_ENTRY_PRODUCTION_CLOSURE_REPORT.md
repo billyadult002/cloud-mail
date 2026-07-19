@@ -469,6 +469,79 @@ Final verdict remains:
 
 `LOGIC_COMPLETE_PARTIAL`
 
+## 2026-07-19 PR Recovery And Fresh Successor Checkout Evidence
+
+This checkpoint is additive evidence only. It records PR recovery attempts through non-PAT browser/app boundaries and verifies the pushed successor Apple workspace from a detached clean worktree. It does not modify production, apply migration 0077, deploy Worker code, register Providers, mutate Secrets, or claim physical-device acceptance.
+
+Branch identity recheck:
+
+- `origin/main`: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
+- `origin/codex/nexora-production-integration-5d7024d`: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
+- `origin/codex/nexora-evidence-first-classification`: `a6b28cbe1213f9b7b79c701b048cf70d7d7b1597`
+- `origin/codex/nexora-production-evidence-755a9cd`: `183b03ae30615a57feb172b53be7a246bf865826`
+- Local successor review-fix commit remains unpushed because GitHub push authority is blocked: `43ee19ff47d3b0c1c48a88e93ecfd2bdd8c4c25d`
+- Local evidence checkpoint remains unpushed because GitHub push authority is blocked: `7285df4c4f144b8a1ebf64d14396b910425f8baf`
+
+Repository guard:
+
+- Command: `python3 scripts/repository_check.py cloudmail --task "nexora_apple_design_review_pr_recovery_option5_deployment"`
+- Result: `SUCCESS: Repository check passed.`
+
+apple design Skill invocation:
+
+- User-facing Skill name: `apple design`
+- Canonical invocation identity: `apple-design`
+- Installed Skill directory: `/Users/billtin/Documents/cloudmail/.agents/skills/apple-design`
+- `SKILL.md` path: `/Users/billtin/Documents/cloudmail/.agents/skills/apple-design/SKILL.md`
+- Supporting resources: none found
+- Version, commit, release, or checksum metadata: none recorded in the skill file
+- Relevant required workflow applied: use native semantic controls where available, preserve one clear material hierarchy, avoid stacked light translucent surfaces, preserve direct feedback and accessibility, verify in context with Xcode Beta builds, and avoid claiming device acceptance without readable device evidence.
+
+GitHub Web and connector PR recovery:
+
+- Authenticated GitHub connector attempt: `_list_repositories(owner="billyadult002")`
+- Result: connector failed with HTTP 401 `token_invalidated`; no repository mutation occurred.
+- Browser automation attempt: Playwright navigation to `https://github.com/billyadult002/cloud-mail/compare/main...codex/nexora-evidence-first-classification?quick_pull=1`
+- Result: failed because the Chrome Playwright extension was not installed at `/Users/billtin/Library/Application Support/Google/Chrome`.
+- Browser handoff: macOS `open` successfully opened the exact compare URL in the normal browser session.
+- PR creation status remains `NOT_CREATED` from Codex-observable evidence.
+- Blocker classification: `AUTH_SCOPE_FAILURE` plus `BROWSER_AUTOMATION_UNAVAILABLE`.
+- No unchanged PAT REST or GraphQL PR creation attempt was repeated in this checkpoint.
+
+Fresh clean successor checkout verification:
+
+- Detached clean worktree path: `/Users/billtin/Documents/cloudmail/.worktrees/nexora-evidence-first-classification-clean-a6`
+- Source: `origin/codex/nexora-evidence-first-classification`
+- HEAD: `a6b28cbe1213f9b7b79c701b048cf70d7d7b1597`
+- Worktree status: clean before build
+- Build command: `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -workspace files/GlassMail-project/GlassMail.xcworkspace -scheme GlassMail -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build`
+- Result: `** BUILD SUCCEEDED **`
+- Conclusion: the imported Apple workspace at the pushed successor head is self-contained and builds outside the root workspace.
+
+Gate status:
+
+- PR Review PASS: not achieved
+- Migration 0077: still held, not applied
+- Worker deployment: not performed
+- Build 359 production acceptance IPA: still blocked by codesign/keychain failure recorded in the prior checkpoint
+- Authenticated Desktop acceptance: not performed
+- Physical-iPhone Provider onboarding/classification acceptance: not performed
+- Negative testing, rollback, and restoration: not performed
+
+Updated classifications:
+
+- `GITHUB_CONNECTOR_TOKEN_INVALIDATED`
+- `GITHUB_WEB_COMPARE_OPENED`
+- `BROWSER_AUTOMATION_UNAVAILABLE`
+- `FRESH_SUCCESSOR_WORKTREE_BUILD_PASS`
+- `PR_REVIEW_PASS_BLOCKED`
+- `REMOTE_MIGRATION_0077_PENDING_HELD`
+- `PRODUCTION_AND_REAL_DEVICE_ACCEPTANCE_BLOCKED`
+
+Final verdict remains:
+
+`LOGIC_COMPLETE_PARTIAL`
+
 ## 2026-07-19 Apple Design PR Review, Build 359, And Option 5 Gate Evidence
 
 This checkpoint is additive evidence only. It records the successor diff audit, apple design Skill review, a local P1 navigation-source cleanup, PR recovery attempts, and Build 359 archive status. It does not apply migration 0077, deploy Worker code, register Providers, mutate Secrets, or change production state.

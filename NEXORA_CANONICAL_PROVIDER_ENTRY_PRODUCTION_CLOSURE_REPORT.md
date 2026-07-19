@@ -279,14 +279,21 @@ Google Cloud:
 
 - `gcloud` is installed at `/opt/homebrew/bin/gcloud`.
 - No active `gcloud` account or project is configured.
+- `gcloud config configurations list` reports the `default` configuration active, with no account and no project.
+- `gcloud projects list` fails because no active account is selected.
+- Application Default Credentials can mint an access token locally, but no account/project/authority identity was established from it without exposing credential material; ADC presence alone is not sufficient Google OAuth application administration authority.
 - No authoritative Google Cloud OAuth client administration session was available.
 - Available `gcloud alpha iap oauth-brands` help is IAP-specific and deprecated; it is not sufficient authority to inspect or create the required Google confidential Web OAuth client for NEXORA.
+- Browser-based inspection attempt for `https://console.cloud.google.com/apis/credentials` could not start because the Playwright extension was not installed in the local Chrome profile.
 
 Microsoft Entra:
 
 - `az` CLI was not found.
+- PowerShell / `pwsh` was not found.
+- No Microsoft Graph or Entra environment variables were present by name.
 - No Microsoft Entra application-registration administration tool was available.
 - Microsoft Teams connector availability is not Microsoft Entra application-registration authority.
+- Browser-based inspection could not be performed through Playwright for the same missing-extension reason.
 
 Google Drive:
 
@@ -297,6 +304,11 @@ Conclusion:
 - Google Provider administration remains blocked on an authoritative Google Cloud admin session.
 - Microsoft Provider administration remains blocked on an authoritative Microsoft Entra admin session.
 - No Provider application identity, client ID, client secret, redirect configuration, consent screen, test-user list, credential rotation, or revocation capability was fabricated.
+
+Required next protected admin action:
+
+- Open Google Cloud Console in an authenticated browser session with access to the owning project for NEXORA OAuth credentials, then inspect or create the confidential Web client with callback `https://cloud-mail.fastonegroup.workers.dev/v3/onboarding/providers/google/callback`.
+- Open Microsoft Entra Admin Center or Azure Portal in an authenticated browser session with app-registration authority, then inspect or create the confidential Web application with callback `https://cloud-mail.fastonegroup.workers.dev/v3/onboarding/providers/microsoft/callback`.
 
 ## Provider And Authority Gates
 
@@ -330,11 +342,45 @@ Xcode MCP session defaults:
 - simulator: not configured
 - device: not configured
 
-Canonical worktree scan found no `.xcodeproj`, `.xcworkspace`, `.ipa`, `project.pbxproj`, or Swift source file within max depth 5.
+The initial integration-worktree-only scan found no `.xcodeproj`, `.xcworkspace`, `.ipa`, `project.pbxproj`, or Swift source file within max depth 5.
+
+Canonical-workspace-wide Apple discovery later found the authoritative local Apple project and acceptance project under `/Users/billtin/Documents/cloudmail`:
+
+- Main app workspace: `/Users/billtin/Documents/cloudmail/files/GlassMail-project/GlassMail.xcworkspace`
+- Main app project: `/Users/billtin/Documents/cloudmail/files/GlassMail-project/GlassMail.xcodeproj`
+- Main app project file: `/Users/billtin/Documents/cloudmail/files/GlassMail-project/GlassMail.xcodeproj/project.pbxproj`
+- Acceptance project: `/Users/billtin/Documents/cloudmail/acceptance/CloudMailDeviceAcceptance/CloudMailDeviceAcceptance.xcodeproj`
+- Acceptance host: `/Users/billtin/Documents/cloudmail/acceptance/CloudMailDeviceAcceptance/Host/AcceptanceHostApp.swift`
+- Acceptance tests: `/Users/billtin/Documents/cloudmail/acceptance/CloudMailDeviceAcceptance/Tests/CloudMailDeviceAcceptanceTests.swift`
+
+Relevant IPA evidence artifacts discovered:
+
+- `/Users/billtin/Documents/cloudmail/artifacts/nexora-xcode-beta-candidate-20260718b/export/NEXORA.ipa`
+- `/Users/billtin/Documents/cloudmail/artifacts/nexora-xcode-beta-candidate-20260718b/IPA_EVIDENCE_MANIFEST.md`
+- `/Users/billtin/Documents/cloudmail/artifacts/nexora-zero-touch-ipa-acceptance/export/NEXORA.ipa`
+- `/Users/billtin/Documents/cloudmail/artifacts/nexora-zero-touch-ipa-acceptance/IPA_EVIDENCE_MANIFEST.md`
+
+Strongest current Xcode Beta candidate artifact:
+
+- IPA: `/Users/billtin/Documents/cloudmail/artifacts/nexora-xcode-beta-candidate-20260718b/export/NEXORA.ipa`
+- SHA-256: `f537737aa7bc08bf6b23077e942809ca6825015f71a47dd4dc00e03ad65f207f`
+- Size: `10007903` bytes
+- Bundle ID: `app.wangbei8554.pingguo736`
+- Version/build: `3.03 (357)`
+- Source commit recorded in manifest: `5d7024d1cea12b6425727fdeb28885cfb83cdf7b`
+- Production backend default: `https://cloud-mail.fastonegroup.workers.dev`
+- Xcode Beta: `27.0`, build `27A5194q`
+- Signing team: `4GGH43VE67`
+- Provisioning profile UUID: `0855a35a-f46c-4ddf-95ca-a841a9c27bc1`
+- Prior classification: `XCODE_BETA_ARCHIVE_EXPORT_PASS`, `PHYSICAL_DEVICE_INSTALL_PASS`, `PHYSICAL_DEVICE_LAUNCH_PASS`, `NOT_PRODUCTION_AND_REAL_DEVICE_PASS`
+
+Compatibility conclusion:
+
+Build `357` is useful historical Apple evidence, but it is bound to source commit `5d7024d1cea12b6425727fdeb28885cfb83cdf7b`, not canonical production-provider commit `755a9cd4224e1f9cebabf430b833e1485e25fb0c`. It also predates final canonical Google/Microsoft credential binding and real provider onboarding. Therefore it cannot prove authenticated physical-iPhone production acceptance for the current Mission. A successor Xcode Beta archive/export/install/acceptance pass remains required after Provider credential and Domain/Tenant/Workspace authority are established.
 
 Authenticated Desktop acceptance: not executed.
 
-Authenticated physical-iPhone acceptance: blocked by absence of a canonical app project/IPA/device-control path in this worktree and absence of completed real provider onboarding.
+Authenticated physical-iPhone acceptance: blocked by absence of completed real provider onboarding and absence of a current IPA proven compatible with commit `755a9cd`, Worker Version `8bfa8937-1d7b-4e22-9606-2ce13559f9cd`, Migration 0076, and canonical Provider credential cutover.
 
 ## Comail Applicability
 

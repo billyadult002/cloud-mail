@@ -2,9 +2,9 @@
 
 Date: 2026-07-19
 
-Mission: `NEXORA DOMAIN OWNERSHIP VALIDATION AND AUTHORITY BOOTSTRAP DESIGN`
+Mission: `NEXORA VERIFIED DOMAIN AUTHORITY BOOTSTRAP AND CLASSIFICATION ACTIVATION`
 
-Verdict: `DESIGN_READY_IMPLEMENTATION_PARTIAL`
+Verdict: `IMPLEMENTED_DEPLOYED_ACTIVATION_BLOCKED`
 
 Project verdict remains: `LOGIC_COMPLETE_PARTIAL (MERGED + MIGRATED + DEPLOYED, ACCEPTANCE PENDING)`
 
@@ -40,7 +40,7 @@ flowchart TD
 
 ## Validation Sources Inventory
 
-- DNS TXT challenge: accepted root ownership source; not currently implemented in production.
+- DNS TXT challenge: accepted root ownership source; implemented and deployed through migration `0078` plus authenticated production APIs.
 - Cloudflare zone control: accepted root ownership source when provider API confirms account/zone control; `cloudmail_domains` currently has `0` rows.
 - Google Workspace admin/domain metadata: accepted root ownership source when provider evidence binds tenant/domain; provider grant table currently has `0` rows.
 - Microsoft tenant/admin verified-domain metadata: accepted root ownership source when provider evidence binds tenant/domain; provider grant table currently has `0` rows.
@@ -53,16 +53,22 @@ flowchart TD
 
 ## Authority Creation Path
 
-Current deployed production has no authority creation path. A local, un-deployed candidate path was staged on branch `codex/nexora-domain-authority-bootstrap`:
+Current deployed production now has a root-proof and bootstrap path staged from commit `02dd1ba6` on branch `codex/nexora-domain-authority-bootstrap`:
 
 - `mail-worker/src/api/nexora-domain-authority-api.js`
 - `mail-worker/src/service/nexora-domain-authority-bootstrap-service.mjs`
+- `mail-worker/src/service/nexora-domain-ownership-service.mjs`
+- `mail-worker/migrations/0078_nexora_domain_ownership_validation.sql`
 - `mail-worker/scripts/domain-authority-bootstrap-contract-check.mjs`
 
-Candidate behavior:
+Implemented behavior:
 
 - Requires authenticated admin authority.
 - Requires tenant/workspace binding through `workspace_members`.
+- Rejects public mailbox domains before root-proof verification.
+- Creates a DNS TXT challenge through `/v3/domain-ownership/dns-challenges`.
+- Verifies the DNS TXT challenge through `/v3/domain-ownership/dns-challenges/verify`.
+- Sets `workspace_domains.authority_state='VERIFIED'` only after DNS TXT proof is observed.
 - Requires verified `workspace_domains` authority state.
 - Treats CloudMail domain, account binding, and email aggregates as supplemental audit context only.
 - Upserts `nexora_domain_authorities` idempotently by `(tenant_id, workspace_id, normalized_domain)`.
@@ -82,7 +88,7 @@ Activation remains blocked until root domain ownership exists:
 
 ## Production Read-Only Evidence
 
-Commands were run read-only against remote D1 `cloud-mail`; all reported `changed_db=false`.
+Pre-migration commands were run read-only against remote D1 `cloud-mail`; all reported `changed_db=false`.
 
 - `nexora_domain_authorities = 0`.
 - Verified `workspace_domains = 0`.
@@ -93,30 +99,48 @@ Commands were run read-only against remote D1 `cloud-mail`; all reported `change
 - `nexora_email_classifications = 0`.
 - `nexora_email_classification_evidence = 0`.
 
+Post-deployment production evidence:
+
+- Migration `0078_nexora_domain_ownership_validation.sql` applied successfully to remote D1 `cloud-mail`.
+- Follow-up migration list returned `No migrations to apply`.
+- Production Worker deployed successfully.
+- Production Worker version ID: `efc31a3a-0f49-494b-800e-38cd80e6df47`.
+- Production URL: `https://cloud-mail.fastonegroup.workers.dev`.
+- Production root returned HTTP `200`.
+- Unauthenticated `POST /api/v3/domain-ownership/dns-challenges` returned HTTP `200` with envelope code `401`.
+- Unauthenticated `POST /api/v3/domain-ownership/dns-challenges/verify` returned HTTP `200` with envelope code `401`.
+- Unauthenticated `POST /api/v3/domain-authorities/bootstrap` returned HTTP `200` with envelope code `401`.
+- Unauthenticated `POST /api/v3/classification/persist` returned HTTP `200` with envelope code `401`.
+- Post-deploy D1 counts: `nexora_domain_ownership_challenges=0`, verified `workspace_domains=0`, `nexora_domain_authorities=0`, `nexora_email_classifications=0`, `nexora_email_classification_evidence=0`.
+- Post-deploy D1 verification reported `changed_db=false` for the count queries.
+
 ## Verification
 
 - Repository guard passed for `/Users/billtin/Documents/cloudmail`.
 - Apple Design Skill re-read; device viewport evidence remains visual acceptance evidence only.
 - `npm run test:unit` passed in the clean production worktree.
+- `npm run test:rc` passed: 13 files / 148 tests.
 - New contract check passed: `domain authority bootstrap contract check passed`.
 - `git diff --check` passed.
-- No production writes, deployment, migration, direct D1 business insert, Provider registration, or secret operation was performed.
+- No direct D1 business insert, Provider registration, secret operation, mailbox escalation, email aggregate authority proof, or persist-boundary bypass was performed.
 
 ## Acceptance Decision
 
-Domain Authority Bootstrap design is ready at the architecture boundary, but production acceptance is not complete.
+Domain Authority Bootstrap implementation is deployed at the production boundary, but business activation is not complete.
 
 Reason:
 
 - Any legal domain can be modeled into a verification flow.
 - Unverified domains cannot receive authority under the accepted model.
-- A bootstrap endpoint candidate exists and is tested locally.
-- Production lacks root ownership validation records, verified workspace-domain records, and deployed bootstrap execution.
+- DNS TXT root-proof flow and bootstrap endpoints are deployed.
+- Production lacks an authenticated admin session in this execution context.
+- Production lacks a completed DNS TXT root proof.
+- Production lacks verified workspace-domain records and bootstrap execution.
 - Classification runtime cannot activate until verified authority exists.
 
-Final design verdict:
+Final implementation verdict:
 
-`DESIGN_READY_IMPLEMENTATION_PARTIAL`
+`IMPLEMENTED_DEPLOYED_ACTIVATION_BLOCKED`
 
 Overall project verdict remains:
 

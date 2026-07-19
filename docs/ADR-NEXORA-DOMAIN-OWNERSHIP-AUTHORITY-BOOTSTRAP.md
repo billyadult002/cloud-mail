@@ -94,7 +94,7 @@ No raw OAuth state, authorization code, provider token, PKCE verifier, session c
 
 ## Current Production Finding
 
-Read-only production verification on 2026-07-19 found:
+Read-only production verification before activation on 2026-07-19 found:
 
 - `nexora_domain_authorities = 0`.
 - Verified `workspace_domains = 0`.
@@ -108,18 +108,27 @@ Read-only production verification on 2026-07-19 found:
 
 `mailbox_authorizations` are mailbox-level delegation evidence only. They are not accepted as domain-wide ownership evidence.
 
-## Candidate Implementation Note
+## Production Implementation Update
 
-A local, un-deployed candidate endpoint has been staged on branch `codex/nexora-domain-authority-bootstrap`:
+Commit `02dd1ba6` on branch `codex/nexora-domain-authority-bootstrap` implements the root-proof and bootstrap path:
 
 - `mail-worker/src/api/nexora-domain-authority-api.js`.
 - `mail-worker/src/service/nexora-domain-authority-bootstrap-service.mjs`.
+- `mail-worker/src/service/nexora-domain-ownership-service.mjs`.
+- `mail-worker/migrations/0078_nexora_domain_ownership_validation.sql`.
 - `mail-worker/scripts/domain-authority-bootstrap-contract-check.mjs`.
 
-The candidate endpoint is admin-only, binds tenant and workspace through `workspace_members`, requires verified `workspace_domains` authority state, writes only `nexora_domain_authorities` plus redacted audit rows, and rejects mailbox/account/email aggregates as root evidence.
+The deployed endpoints are admin-only, bind tenant and workspace through `workspace_members`, reject public mailbox domains before ownership verification, issue DNS TXT ownership challenges, verify DNS TXT proof through a resolver, write verified `workspace_domains` only after root proof, require verified `workspace_domains` authority state before bootstrap, write only `nexora_domain_authorities` plus redacted audit rows during bootstrap, and reject mailbox/account/email aggregates as root evidence.
 
-This candidate is not production acceptance evidence until reviewed, merged, deployed, and executed against real verified ownership evidence.
+Production deployment evidence:
+
+- Migration `0078_nexora_domain_ownership_validation.sql` applied to remote D1.
+- Production Worker deployed with version ID `efc31a3a-0f49-494b-800e-38cd80e6df47`.
+- Unauthenticated probes for DNS challenge creation, DNS challenge verification, Domain authority bootstrap, and classification persist returned envelope code `401`, preserving the Authentication Boundary.
+- Post-deploy D1 counts remain zero for ownership challenges, verified workspace domains, Domain authorities, classifications, and classification Evidence because no authenticated admin session or DNS TXT root proof was available in this execution context.
+
+This implementation is production deployed, but it is not business-activated acceptance evidence until an authenticated admin creates a DNS challenge, the DNS TXT proof is published and verified, bootstrap creates `nexora_domain_authorities`, and `/v3/classification/persist` generates retrievable classification and Evidence rows.
 
 ## Consequences
 
-The current verdict cannot advance to `FULL_PASS`. The correct next Mission is Domain Ownership Validation implementation: create the server-issued challenge and provider-backed ownership proof path that can set `workspace_domains.authority_state=VERIFIED` with auditable Evidence. Only then may bootstrap and classification persistence produce production business Evidence.
+The current verdict cannot advance to `FULL_PASS`. The implementation boundary is deployed, but activation remains blocked until real DNS root proof and authenticated admin execution occur. Only then may bootstrap and classification persistence produce production business Evidence.

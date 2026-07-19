@@ -1,0 +1,36 @@
+name: NEXORA
+options:
+  bundleIdPrefix: com.fastonegroup
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "26.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "3.03"
+    CURRENT_PROJECT_VERSION: "303"
+    DEVELOPMENT_TEAM: XC7JTUHQ33
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  GlassMail:
+    type: application
+    supportedDestinations: [iOS, macOS]
+    sources:
+      - path: GlassMail
+    settings:
+      base:
+        PRODUCT_NAME: NEXORA
+        PRODUCT_BUNDLE_IDENTIFIER: app.wangbei8554.pingguo736
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Info.plist
+        CODE_SIGN_ENTITLEMENTS: GlassMail/GlassMail.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_PREVIEWS: YES
+        ENABLE_HARDENED_RUNTIME: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO

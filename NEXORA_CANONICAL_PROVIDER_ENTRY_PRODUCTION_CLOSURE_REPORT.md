@@ -469,6 +469,55 @@ Final verdict remains:
 
 `LOGIC_COMPLETE_PARTIAL`
 
+## 2026-07-19 GitHub Auth Recovery Attempt And Production Gate Hold
+
+This checkpoint is additive evidence only. It records a fresh GitHub authorization recovery attempt for the mission `NEXORA PR RECOVERY, EVIDENCE FINALIZATION, AND PRODUCTION ACCEPTANCE`. It does not apply migration 0077, deploy Worker code, register Providers, mutate Secrets, or claim Desktop or physical-iPhone acceptance.
+
+Repository guard:
+
+- Command: `python3 scripts/repository_check.py cloudmail --task "nexora_pr_recovery_evidence_finalization_production_acceptance"`
+- Result: `SUCCESS: Repository check passed.`
+
+apple design Skill:
+
+- User-facing Skill name: `apple design`
+- Installed Skill identity: `apple-design`
+- Installed Skill directory: `/Users/billtin/Documents/cloudmail/.agents/skills/apple-design`
+- `SKILL.md` path: `/Users/billtin/Documents/cloudmail/.agents/skills/apple-design/SKILL.md`
+- Supporting files: none found
+- Version, commit, release, or checksum metadata: none recorded in the skill file
+
+GitHub authorization recovery:
+
+- Command attempted: `gh auth refresh --hostname github.com --scopes repo,workflow`
+- GitHub CLI opened a device-code flow at `https://github.com/login/device`.
+- The flow did not complete within the bounded wait window and was cancelled.
+- No token value, credential, Secret, or browser session material was recorded.
+- Successor review-fix push remains blocked.
+- Evidence branch push remains blocked.
+- PR creation remains blocked.
+
+Gate status:
+
+- Review-fix commit pushed: NO
+- Evidence commit pushed: NO
+- PR URL: NONE
+- Review disposition: NOT_STARTED
+- Migration 0077 execution: NOT_EXECUTED
+- Deployment: NOT_EXECUTED
+- Desktop acceptance: NOT_EXECUTED
+- Physical iPhone acceptance: NOT_EXECUTED
+- Rollback/restoration: NOT_EXECUTED
+
+Blocker classification:
+
+- `AUTH_SCOPE_FAILURE`
+- `GITHUB_DEVICE_AUTH_PENDING_OR_NOT_COMPLETED`
+
+Final verdict remains:
+
+`LOGIC_COMPLETE_PARTIAL`
+
 ## 2026-07-19 PR Recovery And Fresh Successor Checkout Evidence
 
 This checkpoint is additive evidence only. It records PR recovery attempts through non-PAT browser/app boundaries and verifies the pushed successor Apple workspace from a detached clean worktree. It does not modify production, apply migration 0077, deploy Worker code, register Providers, mutate Secrets, or claim physical-device acceptance.

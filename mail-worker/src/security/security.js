@@ -21,6 +21,11 @@ const exclude = [
 	'/oauth'
 ];
 
+const publicProviderCallbacks = new Set([
+	'/v3/onboarding/providers/google/callback',
+	'/v3/onboarding/providers/microsoft/callback'
+]);
+
 const requirePerms = [
 	'/email/send',
 	'/email/delete',
@@ -90,6 +95,10 @@ const premKey = {
 app.use('*', async (c, next) => {
 
 	const path = c.req.path;
+
+	if (publicProviderCallbacks.has(path)) {
+		return await next();
+	}
 
 	const index = exclude.findIndex(item => {
 		return path.startsWith(item);

@@ -93,7 +93,7 @@ Wire the real callback path through NEXORA's verified callback finalization and 
 
 ## Review Verdict
 
-`LOCAL_P1_REAL_CALLBACK_CONTINUATION_CLOSED_PR_REVIEW_PENDING`
+`LOCAL_P1_REAL_CALLBACK_CONTINUATION_CLOSED_PR_REVIEW_PENDING_SUCCESSOR_ROUTE_FIX`
 
 The previous real-callback continuation P1 is now locally closed in the successor diff: the real orchestrator callback path invokes the canonical Provider Outcome, Evidence Ledger, verifier authorization, callback finalization, correlation consumption, Mission continuation, and Initial-Sync intent/dispatch/job authorities instead of directly dispatching legacy sync after token storage.
 
@@ -106,16 +106,27 @@ New local evidence:
 - `mail-worker/src/service/nexora-onboarding-oauth-service.js` treats uppercase/lowercase consumed callback correlations as mutation-free completed duplicates.
 - `mail-worker/scripts/reliability-tests/nexora-onboarding-orchestrator.test.mjs` asserts the complete successful real callback chain and duplicate no-reexchange behavior with signed OIDC fixtures.
 
-Verification after successor diff:
+Additional final-review finding:
+
+P1: the real Provider GET callback routes were still behind the global CloudMail application-auth middleware. A normal Google or Microsoft OAuth redirect cannot provide the CloudMail `Authorization` header, so production Provider onboarding would fail before D1 state correlation.
+
+Resolution:
+
+- `mail-worker/src/security/security.js` now exempts only the exact Google and Microsoft Provider callback paths from the application auth middleware.
+- `mail-worker/src/api/nexora-onboarding-api.js` remains the only route authority. The public callback is still gated by OAuth `state`, PKCE verifier cookie, expected Provider, durable callback correlation, authorization-session consumption, OIDC JWKS verification, callback claim lease/fence, Provider Outcome, Evidence Ledger, verifier authorization, finalization, correlation consumption, and Mission continuation.
+- `mail-worker/scripts/reliability-tests/nexora-onboarding-orchestrator.test.mjs` now exercises the real Hono `GET /v3/onboarding/providers/google/callback` route with a signed OIDC fixture and asserts the complete exact-once chain.
+
+Verification after successor route fix:
 
 - `npm test`: `PASS`
-- `npm run test:rc`: `PASS`, 13 files / 144 tests
+- `npm run test:rc`: `PASS`, 13 files / 145 tests
 - `git diff --check`: `PASS`
 - `npm audit --audit-level=moderate`: `PASS`, 0 vulnerabilities
 - `npm ls --omit=dev --depth=0`: `PASS`
 - Migration CI inspection: `PASS`, 13 migration files, `0061` through `0075`
 - Migration idempotency inspection: `PASS`, all migration `CREATE TABLE` statements use `IF NOT EXISTS`
 - Secret scan: retained matches are workflow placeholders, documented secret names, and deterministic test fixtures; no live credential, token, OAuth state, authorization code, PKCE verifier, session cookie, private signing material, raw provider payload, or raw device identifier was added.
+- Test inventory reconciliation: `NEXORA_TEST_INVENTORY_RECONCILIATION_REPORT.md`; historical 53 files / 512 tests are external immutable evidence, while the integration review candidate passes the remote-main-layout 13 files / 145 tests with all outcome-critical missing historical suites mapped or excluded.
 
 Comail classification for this successor diff:
 
@@ -126,4 +137,4 @@ Comail classification for this successor diff:
 
 Remaining gates:
 
-Do not merge, deploy, migrate production D1, bind production Provider Secrets, run real Provider onboarding, or perform Desktop/iPhone acceptance until PR review closure confirms the exact successor commit as the reviewed deployment candidate.
+Do not deploy, migrate production D1, bind production Provider Secrets, run real Provider onboarding, or perform Desktop/iPhone acceptance until PR review closure confirms the exact successor commit as the reviewed deployment candidate and the merge identity is recorded.

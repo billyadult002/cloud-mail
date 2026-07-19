@@ -10,6 +10,9 @@ import onboardingOrchestrator from '../service/nexora-onboarding-orchestrator-se
 import providerDiscovery from '../service/nexora-onboarding-provider-discovery-service';
 import missionRuntimeStatusService from '../service/mission-runtime-status-service';
 
+const PROVIDER_CALLBACK_TEST_FETCH = Symbol.for('nexora.internal.providerCallbackFetch');
+const PROVIDER_CALLBACK_TEST_JWKS_FETCH = Symbol.for('nexora.internal.providerCallbackJwksFetch');
+
 function readCookie(c, name) {
 	const header = c.req.header('Cookie') || '';
 	for (const part of header.split(';')) {
@@ -69,6 +72,8 @@ async function handleProviderCallback(c, expectedProvider) {
 	const data = await onboardingOrchestrator.handleCallback(c, null, {
 		state: String(q.state || ''), verifier, code: q.code ? String(q.code) : null, redirectUri,
 		callbackFingerprint: q.code ? await callbackFingerprint(String(q.code)) : null, expectedProvider,
+		fetchImpl: c.env?.[PROVIDER_CALLBACK_TEST_FETCH],
+		jwksFetchImpl: c.env?.[PROVIDER_CALLBACK_TEST_JWKS_FETCH],
 	});
 	if (data.ok) c.header('Set-Cookie', `nexora_pkce_verifier=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/v3/onboarding`); // single-use, clear immediately
 	c.header('Cache-Control', 'private, no-store');

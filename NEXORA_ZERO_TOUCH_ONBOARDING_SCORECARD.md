@@ -45,7 +45,7 @@ The integration branch now closes the local real-callback continuation P1 withou
 Updated local verification:
 
 - `npm test`: `PASS`
-- `npm run test:rc`: `PASS`, 13 files / 144 tests
+- `npm run test:rc`: `PASS`, 13 files / 145 tests
 - `git diff --check`: `PASS`
 - `npm audit --audit-level=moderate`: `PASS`, 0 vulnerabilities
 - `npm ls --omit=dev --depth=0`: `PASS`

@@ -153,11 +153,13 @@ Local code-level P1 status: **CLOSED_PENDING_PR_REVIEW**.
 
 The real callback/orchestrator path now uses the existing NEXORA exact-once authorities rather than dispatching initial sync directly after token storage. After verified Google or Microsoft OIDC identity and supported `mail_read` capability discovery, the Worker establishes Provider Connection Generation, Token-to-Connection Binding, immutable Provider Outcome, delivered Evidence outbox, canonical `mission_runtime_evidence`, verifier policy/claim, callback verification attempt, Verifier Authorization, canonical verified callback result, `CALLBACK_OUTCOME_VERIFIED`, Callback Correlation Consumption, Original-Mission Continuation, Initial-Sync Intent, Initial-Sync Dispatch, and Initial-Sync Job.
 
+Final review found and closed one additional real-route P1: the Google and Microsoft Provider GET callback routes were previously behind the global CloudMail app-auth middleware, which would reject normal Provider redirects before state correlation. The callback URLs are now exact-path public exemptions while retaining state, PKCE, expected Provider, D1 correlation, OIDC verification, claim lease/fence, Evidence, verifier authorization, finalization, and exact-once continuation as the real callback authority.
+
 Evidence:
 
 - Real callback call path: `nexora-onboarding-api.js` -> `onboardingOrchestrator.handleCallback()` -> `handleCallbackExchange()` -> `continueVerifiedCallback()` -> `resolveNexoraCallbackLineage()` -> `finalizeNexoraCallbackVerifiedOutcome()` -> `consumeCorrelation()` -> `continueMission()`.
 - `npm test`: `PASS`
-- `npm run test:rc`: `PASS`, 13 files / 144 tests
+- `npm run test:rc`: `PASS`, 13 files / 145 tests
 - `git diff --check`: `PASS`
 - `npm audit --audit-level=moderate`: `PASS`, 0 vulnerabilities
 - `npm ls --omit=dev --depth=0`: `PASS`

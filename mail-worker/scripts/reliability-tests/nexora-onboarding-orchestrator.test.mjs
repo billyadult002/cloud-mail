@@ -4,6 +4,7 @@
 // required between a valid callback and the underlying Mission resuming.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
+import app from '../../src/hono/webs.js';
 import onboardingOrchestrator from '../../src/service/nexora-onboarding-orchestrator-service.js';
 import onboardingStateMachine from '../../src/service/nexora-onboarding-state-machine.js';
 import tokenStorage from '../../src/service/nexora-onboarding-token-storage-service.js';
@@ -271,6 +272,55 @@ describe('NEXORA onboarding orchestrator — full real chain: callback code -> t
 	function fixtureFetch(scopeString, idTokenClaims = { sub: 'fixture-subject-1', email: 'user@example.com' }, idTokenOptions = {}) {
 		return async () => ({ ok: true, status: 200, json: async () => ({ access_token: 'fixture-access-token', refresh_token: 'fixture-refresh-token', expires_in: 3600, scope: scopeString, id_token: await fixtureIdToken(idTokenClaims, idTokenOptions) }) });
 	}
+
+	it('real Google provider GET callback route is public but state+PKCE+D1-authorized and completes the exact-once chain', async () => {
+		const callbackFetch = Symbol.for('nexora.internal.providerCallbackFetch');
+		const callbackJwksFetch = Symbol.for('nexora.internal.providerCallbackJwksFetch');
+		const routeEnv = {
+			...env,
+			NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id',
+			NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI,
+			jwt_secret: 'test-only-pool-workers-encryption-secret',
+			[callbackFetch]: fixtureFetch('openid email https://www.googleapis.com/auth/gmail.readonly', { sub: 'route-subject-1', email: 'route-user@example.com' }),
+			[callbackJwksFetch]: jwksFetch(),
+		};
+		const started = await onboardingOrchestrator.startOnboarding({ env: routeEnv }, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'route-chain-1' });
+		routeEnv[callbackFetch] = fixtureFetch('openid email https://www.googleapis.com/auth/gmail.readonly', { sub: 'route-subject-1', email: 'route-user@example.com', nonce: started.nonce });
+
+		const res = await app.request(`/v3/onboarding/providers/google/callback?state=${encodeURIComponent(started.state)}&code=route-code-1`, {
+			method: 'GET',
+			headers: { Cookie: `nexora_pkce_verifier=${encodeURIComponent(started.verifier)}` },
+		}, routeEnv);
+		expect(res.status).toBe(200);
+		const body = await res.json();
+		expect(body.code).toBe(200);
+		expect(body.data.ok).toBe(true);
+		expect(body.data.provider).toBe('google');
+		expect(body.data.phase).toBe('starting_initial_sync');
+		expect(body.data.syncDispatched).toBe(true);
+
+		const chain = await env.db.prepare(`
+			SELECT
+				(SELECT COUNT(*) FROM nexora_provider_outcome_results WHERE mission_id=?1 AND provider='google') AS provider_outcomes,
+				(SELECT COUNT(*) FROM nexora_callback_verified_results WHERE mission_id=?1 AND provider='google' AND result_status='VERIFIED') AS verified_results,
+				(SELECT COUNT(*) FROM nexora_onboarding_callback_checkpoints WHERE correlation_id=(SELECT id FROM nexora_onboarding_callback_correlations WHERE onboarding_mission_id=?1) AND step='CALLBACK_OUTCOME_VERIFIED' AND status='VERIFIED') AS verified_checkpoints,
+				(SELECT COUNT(*) FROM nexora_callback_correlation_consumption_results WHERE mission_id=?1 AND provider='google' AND status='CONSUMED') AS consumed_correlations,
+				(SELECT COUNT(*) FROM nexora_mission_continuation_results WHERE mission_id=?1 AND provider='google' AND status='CONTINUED') AS continuations,
+				(SELECT COUNT(*) FROM nexora_initial_sync_intents WHERE mission_id=?1 AND state='READY') AS sync_intents,
+				(SELECT COUNT(*) FROM nexora_initial_sync_dispatches WHERE mission_id=?1 AND state='NOT_DISPATCHED') AS sync_dispatches,
+				(SELECT COUNT(*) FROM nexora_autonomy_jobs WHERE job_type='ZERO_TOUCH_INITIAL_SYNC' AND state='QUEUED') AS sync_jobs
+		`).bind(started.missionId).first();
+		expect(Object.fromEntries(Object.entries(chain).map(([key, value]) => [key, Number(value)]))).toMatchObject({
+			provider_outcomes: 1,
+			verified_results: 1,
+			verified_checkpoints: 1,
+			consumed_correlations: 1,
+			continuations: 1,
+			sync_intents: 1,
+			sync_dispatches: 1,
+			sync_jobs: 1,
+		});
+	});
 
 	it('Microsoft callback exchange uses the durable tenant hint selected when the authorization session was created', async () => {
 		const c = { env: { ...env, NEXORA_MICROSOFT_OAUTH_CLIENT_ID: 'test-ms-client-id', NEXORA_MICROSOFT_OAUTH_REDIRECT_URI: MICROSOFT_REDIRECT_URI, jwt_secret: 'test-only-pool-workers-encryption-secret' } };

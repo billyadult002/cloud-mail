@@ -681,6 +681,51 @@ Checkpoint verdict:
 - `PRODUCTION_MIGRATION_HELD`
 - `LOGIC_COMPLETE_PARTIAL`
 
+## Additive Checkpoint: PR Recovery Retry and Branch Topology Confirmation
+
+Assessment date: 2026-07-19
+
+Successor branch verification:
+
+- Branch: `codex/nexora-evidence-first-classification`
+- Local head: `0b697c9022cf03857772d250d92026a1299f7d98`
+- Remote head: `0b697c9022cf03857772d250d92026a1299f7d98`
+- `origin/main`: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
+- `origin/codex/nexora-production-integration-5d7024d`: `755a9cd4224e1f9cebabf430b833e1485e25fb0c`
+
+PR recovery attempts:
+
+- `gh pr list --head codex/nexora-evidence-first-classification --base main`: no existing PR returned.
+- `gh repo view billyadult002/cloud-mail`: authenticated read access reported viewer permission `ADMIN`.
+- `gh api repos/billyadult002/cloud-mail/pulls -X POST ...`: failed with HTTP `403`, message `Resource not accessible by personal access token`.
+- Classification: `AUTH_SCOPE_FAILURE`.
+- This is not classified as `UNRELATED_HISTORY`, `EMPTY_DIFF`, `REPOSITORY_RULE`, or implementation failure.
+
+Apple navigation branch topology:
+
+- The pushed successor branch does not contain `files/GlassMail-project/GlassMail/Views/MainTabView.swift` or `files/GlassMail-project/GlassMail/Views/InboxView.swift`.
+- The canonical root checkout contains those Apple files and local navigation edits.
+- Integrating the Apple correction into the exact Worker successor branch would require adding Apple workspace files to a branch whose remote baseline does not contain them, or creating a topology-specific integration branch. Neither was completed in this checkpoint.
+
+Production mutation status:
+
+- Migration `0077`: not applied
+- Worker deployment: not performed
+- Provider registration: unchanged
+- Secrets: unchanged
+- PR: not created
+- PR Review: not completed
+- IPA export: not performed
+- Physical-iPhone acceptance: not performed
+
+Checkpoint verdict:
+
+- `PR_RECOVERY_BLOCKED_AUTH_SCOPE_FAILURE`
+- `SUCCESSOR_BRANCH_REVIEWABLE_BUT_PR_AUTH_BLOCKED`
+- `APPLE_NAVIGATION_PATCH_LOCAL_NOT_IN_SUCCESSOR_BRANCH`
+- `PRODUCTION_MIGRATION_HELD`
+- `LOGIC_COMPLETE_PARTIAL`
+
 ## Additive Checkpoint: Migration Authority Reconciliation, Data-Format Boundary, and Classification Closure
 
 Assessment date: 2026-07-19

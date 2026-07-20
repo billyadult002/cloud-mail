@@ -1,0 +1,42 @@
+{
+  "classification": {
+    "id": "classification-1",
+    "generation": 2,
+    "primaryCategory": "BUSINESS",
+    "confidence": 91,
+    "authoritySource": "DETERMINISTIC_RULES",
+    "evidenceRef": "entry-digest-2",
+    "classifiedAt": "2026-07-19T12:02:00Z",
+    "updatedAt": "2026-07-19T12:02:00Z"
+  },
+  "provenance": {
+    "source": "CANONICAL_EMAIL",
+    "canonicalMessageId": 42,
+    "canonicalAccountId": 9,
+    "sourceCreatedAt": "2026-07-19T11:59:00Z",
+    "provenanceRef": "provenance-1",
+    "bodyPersisted": false
+  },
+  "evidence": [
+    {
+      "eventId": "event-1",
+      "evidenceId": "evidence-1",
+      "runId": "run-1",
+      "generation": 1,
+      "entryDigest": "entry-digest-1",
+      "redactionLevel": "BODYLESS",
+      "bodyPersisted": false,
+      "observedAt": "2026-07-19T12:01:00Z"
+    },
+    {
+      "eventId": "event-2",
+      "evidenceId": "evidence-2",
+      "runId": "run-2",
+      "generation": 2,
+      "entryDigest": "entry-digest-2",
+      "redactionLevel": "BODYLESS",
+      "bodyPersisted": false,
+      "observedAt": "2026-07-19T12:02:00Z"
+    }
+  ]
+}

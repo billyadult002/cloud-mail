@@ -34,6 +34,11 @@
             <el-alert v-if="email.status === 4" :closable="false" :title="$t('complained')" class="email-msg" type="warning" show-icon />
             <el-alert v-if="email.status === 5" :closable="false" :title="$t('delayed')" class="email-msg" type="warning" show-icon />
           </div>
+          <ClassificationEvidenceCard
+            v-if="isAdmin && email.emailId && (email.accountId || accountStore.currentAccountId)"
+            :account-id="email.accountId || accountStore.currentAccountId"
+            :canonical-message-id="email.emailId"
+          />
           <el-scrollbar class="htm-scrollbar" :class="email.attList.length === 0 ? 'bottom-distance' : ''">
             <ShadowHtml class="shadow-html" :html="formatImage(email.content)" v-if="email.content" />
             <pre v-else class="email-text" >{{email.text}}</pre>
@@ -75,7 +80,7 @@
 </template>
 <script setup>
 import ShadowHtml from '@/components/shadow-html/index.vue'
-import {reactive, ref, watch, onMounted, onUnmounted} from "vue";
+import {computed, reactive, ref, watch, onMounted, onUnmounted} from "vue";
 import {useRouter} from 'vue-router'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import {emailDelete, emailRead} from "@/request/email.js";
@@ -92,15 +97,19 @@ import {allEmailDelete} from "@/request/all-email.js";
 import {useUiStore} from "@/store/ui.js";
 import {useI18n} from "vue-i18n";
 import {EmailUnreadEnum} from "@/enums/email-enum.js";
+import ClassificationEvidenceCard from '@/features/nexora-classification/ClassificationEvidenceCard.vue'
+import {useUserStore} from '@/store/user.js'
 
 const uiStore = useUiStore();
 const settingStore = useSettingStore();
 const accountStore = useAccountStore();
 const emailStore = useEmailStore();
+const userStore = useUserStore();
 const router = useRouter()
 const email = emailStore.contentData.email
 const showPreview = ref(false)
 const srcList = reactive([])
+const isAdmin = computed(() => Array.isArray(userStore.user?.permKeys) && userStore.user.permKeys.includes('*'))
 
 const { t } = useI18n()
 watch(() => accountStore.currentAccountId, () => {

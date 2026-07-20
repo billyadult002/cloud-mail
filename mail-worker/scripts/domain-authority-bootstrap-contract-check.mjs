@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const apiSource = readFileSync(new URL('../src/api/nexora-domain-authority-api.js', import.meta.url), 'utf8');
 const serviceSource = readFileSync(new URL('../src/service/nexora-domain-authority-bootstrap-service.mjs', import.meta.url), 'utf8');
 const ownershipSource = readFileSync(new URL('../src/service/nexora-domain-ownership-service.mjs', import.meta.url), 'utf8');
+const workspaceAuthoritySource = readFileSync(new URL('../src/service/nexora-workspace-authority-service.mjs', import.meta.url), 'utf8');
 const ownershipMigrationSource = readFileSync(new URL('../migrations/0078_nexora_domain_ownership_validation.sql', import.meta.url), 'utf8');
 const websSource = readFileSync(new URL('../src/hono/webs.js', import.meta.url), 'utf8');
 
@@ -11,6 +12,8 @@ assert.ok(websSource.includes("import '../api/nexora-domain-authority-api'"), 'd
 assert.ok(apiSource.includes("app.post('/v3/domain-authorities/bootstrap'"), 'bootstrap endpoint must exist');
 assert.ok(apiSource.includes("app.post('/v3/domain-ownership/dns-challenges'"), 'DNS ownership challenge endpoint must exist');
 assert.ok(apiSource.includes("app.post('/v3/domain-ownership/dns-challenges/verify'"), 'DNS ownership verify endpoint must exist');
+assert.ok(apiSource.includes("app.get('/v3/domain-authorities/workspace-selector'"), 'actor-scoped workspace selector must exist');
+assert.ok(apiSource.includes("app.post('/v3/domain-authorities/workspace-selector/validate'"), 'workspace selection validation endpoint must exist');
 assert.ok(apiSource.includes('requireAdmin(c);'), 'bootstrap endpoint must require admin authority');
 assert.ok(apiSource.includes("user.email !== c.env.admin"), 'bootstrap endpoint must bind admin authority to configured admin identity');
 assert.ok(apiSource.includes('tenant scope must match authenticated user'), 'request tenant scope must not override authenticated authority');
@@ -18,14 +21,15 @@ assert.ok(apiSource.includes('tenantId: Number(actor.userId)'), 'request tenant 
 assert.ok(ownershipSource.includes('public mailbox domains cannot bootstrap authority'), 'public mailbox domains must be rejected before ownership verification');
 assert.ok(ownershipSource.includes('cloudflare-dns.com/dns-query'), 'DNS TXT verification must use resolver evidence');
 assert.ok(ownershipSource.includes("authority_state='VERIFIED'"), 'DNS verification must create verified workspace domain state');
-assert.ok(ownershipSource.includes('JOIN workspace_members'), 'DNS ownership must bind tenant and workspace authority');
-assert.ok(ownershipSource.includes('actor.userId'), 'DNS ownership must bind workspace membership to the authenticated actor');
+assert.ok(ownershipSource.includes("assertWorkspaceCapability(c, actor, scope.workspaceId, 'domain:write')"), 'DNS ownership must require server-authoritative domain write capability');
 assert.ok(ownershipSource.includes('domain is already bound to another workspace'), 'DNS verification must reject cross-workspace domain reassignment');
 assert.ok(ownershipMigrationSource.includes('nexora_domain_ownership_challenges'), 'domain ownership challenge table must exist');
 assert.ok(serviceSource.includes('domain bootstrap evidence is required'), 'bootstrap must require existing production evidence before verification');
-assert.ok(serviceSource.includes('workspace authority is required'), 'bootstrap must require an existing workspace');
-assert.ok(serviceSource.includes('JOIN workspace_members'), 'bootstrap must bind tenant and workspace authority');
-assert.ok(serviceSource.includes('actor.userId'), 'bootstrap must bind workspace membership to the authenticated actor');
+assert.ok(serviceSource.includes("assertWorkspaceCapability(c, actor, scope.workspaceId, 'domain:write')"), 'bootstrap must require server-authoritative domain write capability');
+assert.ok(workspaceAuthoritySource.includes('JOIN workspace_members'), 'workspace selection must derive membership server-side');
+assert.ok(workspaceAuthoritySource.includes('m.user_id=?2'), 'workspace validation must bind membership to the authenticated actor');
+assert.ok(workspaceAuthoritySource.includes('workspace tenant lineage does not match authenticated actor'), 'workspace validation must reject mismatched tenant lineage');
+assert.ok(workspaceAuthoritySource.includes("includes('domain:write')"), 'workspace selector must expose domain activation eligibility from server role capabilities');
 assert.ok(serviceSource.includes('workspace_domains'), 'bootstrap must consider workspace domain authority state');
 assert.ok(serviceSource.includes('VERIFIED_WORKSPACE_DOMAIN_AUTHORITY_STATES'), 'bootstrap must require verified workspace domain authority state');
 assert.ok(serviceSource.includes('cloudmail_domains'), 'bootstrap must consider CloudMail domain readiness state');

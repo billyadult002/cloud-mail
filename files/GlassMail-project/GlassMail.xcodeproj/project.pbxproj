@@ -44,6 +44,9 @@
 		CAFEA178AF15294BF4E45287 /* AIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23816C4FED6F82F3EA82F69F /* AIProvider.swift */; };
 		CE01954626044D76D7DDA0D5 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B28B58C9B08119CAE9D4B89 /* AppState.swift */; };
 		DC335E49AAE3D9A2343538A2 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8071CB486EB65382B7FE668B /* Models.swift */; };
+		E6A5D7C8B9F041C2A3D4E5F6 /* ServerCorrelation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7B6E8D9C0A152D3B4E5F607 /* ServerCorrelation.swift */; };
+		A10000000000000000000001 /* ServerCorrelationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* ServerCorrelationTests.swift */; };
+		A10000000000000000000002 /* ServerCorrelation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7B6E8D9C0A152D3B4E5F607 /* ServerCorrelation.swift */; };
 		DD991414A993F1128A2D355B /* ResetPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B87C1405188890DE1B050CBE /* ResetPasswordView.swift */; };
 		EE593F30F81C008E0E9A1B67 /* ContactSuggestionProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B772EB828E16471803E30AE1 /* ContactSuggestionProvider.swift */; };
 		F10F798CF7292FA49C8ABA9D /* ExecutionTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B5475BEAC70111E5D2ECB5B /* ExecutionTimelineView.swift */; };
@@ -76,6 +79,9 @@
 		7408F2C0206B58E308769334 /* OpenAIProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIProvider.swift; sourceTree = "<group>"; };
 		76665A53C20213D91EB54965 /* MobileWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileWorkspaceView.swift; sourceTree = "<group>"; };
 		8071CB486EB65382B7FE668B /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		F7B6E8D9C0A152D3B4E5F607 /* ServerCorrelation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerCorrelation.swift; sourceTree = "<group>"; };
+		B10000000000000000000001 /* ServerCorrelationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerCorrelationTests.swift; sourceTree = "<group>"; };
+		B10000000000000000000002 /* GlassMailTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GlassMailTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8E3F0A4329D141B7A81B7D10 /* EnterpriseContactGraph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnterpriseContactGraph.swift; sourceTree = "<group>"; };
 		8E3F0A4529D141B7A81B7D10 /* EnterpriseDirectoryProfileSyncView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnterpriseDirectoryProfileSyncView.swift; sourceTree = "<group>"; };
 		8F0D2A8028BC41E9A15B62CA /* EnterpriseProductivityPlatformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnterpriseProductivityPlatformView.swift; sourceTree = "<group>"; };
@@ -103,6 +109,7 @@
 			children = (
 				B481B4149972822D71CF3BB6 /* ActionRegistry.swift */,
 				8071CB486EB65382B7FE668B /* Models.swift */,
+				F7B6E8D9C0A152D3B4E5F607 /* ServerCorrelation.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -111,6 +118,7 @@
 			isa = PBXGroup;
 			children = (
 				D68C2C68CE3039CDF8B37722 /* GlassMail */,
+				C10000000000000000000001 /* GlassMailTests */,
 				BB12C78CEFDE9D51557B9686 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -132,6 +140,7 @@
 			isa = PBXGroup;
 			children = (
 				EE0608475F6E8AC32F024158 /* GlassMail.app */,
+				B10000000000000000000002 /* GlassMailTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -149,6 +158,14 @@
 				D793BC9B994C65D7F642429E /* Views */,
 			);
 			path = GlassMail;
+			sourceTree = "<group>";
+		};
+		C10000000000000000000001 /* GlassMailTests */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000001 /* ServerCorrelationTests.swift */,
+			);
+			path = GlassMailTests;
 			sourceTree = "<group>";
 		};
 		D793BC9B994C65D7F642429E /* Views */ = {
@@ -217,6 +234,24 @@
 			productReference = EE0608475F6E8AC32F024158 /* GlassMail.app */;
 			productType = "com.apple.product-type.application";
 		};
+		E10000000000000000000001 /* GlassMailTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = G10000000000000000000001 /* Build configuration list for PBXNativeTarget "GlassMailTests" */;
+			buildPhases = (
+				D10000000000000000000001 /* Sources */,
+				D10000000000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = GlassMailTests;
+			packageProductDependencies = (
+			);
+			productName = GlassMailTests;
+			productReference = B10000000000000000000002 /* GlassMailTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -229,6 +264,9 @@
 					AA909FF04234213789372631 = {
 						DevelopmentTeam = XC7JTUHQ33;
 						ProvisioningStyle = Automatic;
+					};
+					E10000000000000000000001 = {
+						CreatedOnToolsVersion = 27.0;
 					};
 				};
 			};
@@ -247,11 +285,19 @@
 			projectRoot = "";
 			targets = (
 				AA909FF04234213789372631 /* GlassMail */,
+				E10000000000000000000001 /* GlassMailTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		D10000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		3446850D1E0C6AFE9E01A490 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -263,6 +309,15 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		D10000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* ServerCorrelationTests.swift in Sources */,
+				A10000000000000000000002 /* ServerCorrelation.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		4FBD5188C1A002FE2F386291 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -300,6 +355,7 @@
 				ADD6923FA182310A0FC2BE4D /* MainTabView.swift in Sources */,
 				8D3433A02EE507D43A267F91 /* MobileWorkspaceView.swift in Sources */,
 				DC335E49AAE3D9A2343538A2 /* Models.swift in Sources */,
+				E6A5D7C8B9F041C2A3D4E5F6 /* ServerCorrelation.swift in Sources */,
 				9614FD7C4FB6F246F5AE7A22 /* OnboardingView.swift in Sources */,
 				8551EE1F8810A143F431FBB8 /* OpenAIProvider.swift in Sources */,
 				7CCE58199D76800DE4438D4D /* RegisterView.swift in Sources */,
@@ -313,6 +369,42 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		F10000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.wangbei8554.pingguo736.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "";
+			};
+			name = Debug;
+		};
+		F10000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.wangbei8554.pingguo736.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "";
+			};
+			name = Release;
+		};
 		4C16236FF61863B3D2149E84 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -500,6 +592,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		G10000000000000000000001 /* Build configuration list for PBXNativeTarget "GlassMailTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F10000000000000000000001 /* Debug */,
+				F10000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		56D7249FB28D28BE7D74FEE9 /* Build configuration list for PBXNativeTarget "GlassMail" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

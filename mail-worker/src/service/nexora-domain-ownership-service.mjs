@@ -74,7 +74,11 @@ async function serverVerificationContext(c, scope, challengeId, operationId) {
 	};
 }
 
-async function workspaceAuthority(c, scope, actor) {
+async function workspaceAuthority(c, scope, actor, input) {
+	await workspaceAuthorityService.requireWorkspaceSelectionCredential(
+		c, actor, scope.workspaceId, 'domain:write',
+		input?.workspaceSelectionCredential ?? input?.workspace_selection_credential
+	);
 	return workspaceAuthorityService.assertWorkspaceCapability(c, actor, scope.workspaceId, 'domain:write');
 }
 
@@ -95,7 +99,7 @@ function auditStatements(c, scope, actor, domain, action, objectRef, afterState,
 async function createDnsChallenge(c, scopeInput, input, actor) {
 	const scope = assertScope(scopeInput);
 	const domain = assertDomain(input?.domain);
-	await workspaceAuthority(c, scope, actor);
+	await workspaceAuthority(c, scope, actor, input);
 	const token = randomToken();
 	const tokenHash = await deriveCorrelationRef(c.env, 'dns-txt-token', token);
 	const idempotencyKey = input?.idempotencyKey || classificationService.stableFingerprint([
@@ -157,7 +161,7 @@ async function resolveTxt(name, fetchImpl = fetch) {
 async function verifyDnsChallenge(c, scopeInput, input, actor, fetchImpl = fetch) {
 	const scope = assertScope(scopeInput);
 	const domain = assertDomain(input?.domain);
-	await workspaceAuthority(c, scope, actor);
+	await workspaceAuthority(c, scope, actor, input);
 	const challengeId = String(input?.challengeId || input?.challenge_id || '').trim();
 	const expectedGeneration = Number(input?.expectedGeneration ?? input?.expected_generation);
 	if (!challengeId) throw new Error('challengeId is required');

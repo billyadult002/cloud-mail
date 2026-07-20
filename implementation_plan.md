@@ -1,60 +1,57 @@
-# NEXORA P0 Hardening Implementation Plan
+# NEXORA Admin Actor Transition — Implementation Plan
 
-Human approval: `APPROVED_2026-07-19`
+## Scope and stop conditions
 
-1. Reproduce P0s with real D1 negative, race, replay, and failure-injection tests.
-2. Make domain claim/challenge/evidence/audit atomic and owner-immutable; harden bootstrap evidence
-   provenance, revocation fencing, replay, and audit atomicity.
-3. Derive classification scope from actor and canonical server email/account/workspace records.
-4. Add migration `0079` with immutable runs/events/evidence, integrity/linkage, atomic writer,
-   idempotency, authority snapshots, and actor-scoped BODYLESS retrieval.
-5. Add server-issued, expiring, one-time runtime acceptance correlation bound to actor, workspace,
-   account, platform, build, runtime release, message, classification, evidence, and server time.
-6. Integrate browser/macOS and physical-iPhone normal product flows with clear accessible status;
-   screenshots remain auxiliary only.
-7. Run unit/RC tests, DB concurrency/failure injection, client builds/tests, lint/check, dependency
-   audit, secret scan, Security Review, and independent Checker review.
-8. Update ADRs and P0 closure reports. Stop at `ACTIVATION_READY_PENDING_PRODUCTION_EXECUTION` only
-   if P0/P1 count is zero and every required test/review passes.
+- Target branch: `codex/nexora-admin-activation`, based on `origin/main` at `4bc382b9a93aa1677f93bac7bd5a49cb1c0371de`.
+- This mission may change, test, merge, and deploy code, then perform read-only actor/workspace capability validation.
+- It must not publish DNS, create ownership/authority/classification/evidence rows, or read browser authentication material.
+- Maximum Maker–Checker repair iterations: 5.
 
-## Workspace Authority Resolution and Correlation Configuration Completion
+## Maker work
 
-Human approval: `APPROVED_BY_MISSION_2026-07-19`
+1. Make Domain Authority bootstrap semantically idempotent and concurrency-safe.
+   - Require a non-empty idempotency key.
+   - Preserve the first verified authority identity and generation on replay.
+   - Return an explicit idempotent receipt when the same verified authority already exists.
+   - Emit bootstrap audit records only for the winning creation.
+   - Reject revoked authority and conflicting verified-evidence continuity.
+   - Add a migration only if a durable operation receipt/constraint is required by the final design.
 
-Maximum Maker–Checker iterations: 5.
+2. Make explicit Workspace selection a verified-action boundary.
+   - Persist or cryptographically validate a short-lived selection credential bound to actor session, actor-derived tenant, selected workspace, `domain:write`, request identity, deployment, and expiry.
+   - Require that credential on challenge creation, challenge verification, and bootstrap; reject omission, workspace swapping, cross-session replay, stale deployment, and expiry.
+   - Never accept tenant, role, capability, actor, or session authority from the request body.
 
-1. Add a strictly read-only, actor-scoped workspace listing/selection model. Never call the
-   mutating `ensureDefault()` resolver for discovery. Bind the explicit human selection to the
-   authenticated actor/session and require server-side `domain:write` revalidation.
-2. Establish the production NEXORA admin session through the normal Cloud Mail login UI and
-   preserve only redacted actor/tenant/workspace/role/session-reference evidence.
-3. Add `[version_metadata] binding = "CF_VERSION_METADATA"` and a shared fail-closed deployment
-   identity helper used by Domain Ownership and Runtime Correlation.
-4. Replace short fingerprints and `SHA256(secret || value)` with a dedicated, versioned,
-   domain-separated HMAC-SHA-256 helper. Remove every JWT-secret fallback from production
-   authority/correlation evidence.
-5. Close Runtime Correlation lineage gaps: bind consume/readback to the issuing auth session and
-   active Worker version; require the exact acceptance session on classification run/event;
-   verify projection, current event, current Evidence row/digest and ledger head before consume;
-   recompute receipt digests on readback; reject client-controlled request identity.
-6. Define a reviewed build manifest. Resolve iPhone project regeneration drift (`303` versus
-   actual signed Release build `357`, version `3.03`). Define Desktop identity from the immutable
-   reviewed release artifact/merge SHA. Treat label allowlisting only as a configuration gate;
-   preserve artifact/signing/installation attestation separately.
-7. Add negative, isolation, idempotency, replay, rollover, tamper, digest, allowlist revocation,
-   cross-session and attestation tests. Run Worker, SQLite, Web, Swift, simulator, audit and secret
-   scans in the Checker phase.
-8. After code/config review, provision only the dedicated correlation secret and non-secret build
-   policy. Do not deploy, migrate, activate DNS, bootstrap authority, classify, or generate
-   production evidence in this Mission.
-9. Update ADR, Security Review, Checker Review, Workspace/Admin/Correlation reports and final
-   readiness audit. Status may reach `ACTIVATION_READY_PENDING_DOMAIN_OWNERSHIP_EXECUTION` only
-   when every gate passes; otherwise retain the existing blocked verdicts.
+3. Add a product-owned Domain Activation workflow to the Web app.
+   - Use the existing axios instance so authentication remains internal to the product.
+   - Display the server-resolved actor separately from the local profile display.
+   - Discover actor-scoped workspaces; never auto-select when more than one exists.
+   - Require an explicit Workspace selection and server-side capability validation.
+   - Show tenant lineage, membership role, capability, request reference, HMAC key version, and deployment identity only in redacted form.
+   - Include later challenge/verify/bootstrap stages behind explicit confirmations, but do not execute them in this mission.
+   - Ensure responsive Apple-style hierarchy, clear destructive boundaries, keyboard access, loading/error/fail-closed states, and no credential/raw-token rendering.
 
-## Final execution record
+4. Expand server responses only with safe actor/workspace authority metadata needed for UI reconciliation; never return auth-session secrets or authorization material.
 
-Completed within three Maker–Checker iterations. Worker contracts/unit/SQLite/syntax PASS;
-reliability 16 files/170 tests PASS; dependency audit 0; diff check PASS. Independent Security and
-Checker reviews both PASS with P0 count 0. The local candidate reaches
-`ACTIVATION_READY_PENDING_PRODUCTION_INPUTS_AND_EXECUTION`; deployed and device verdicts remain
-unchanged until a separately authorized production mission supplies real activation evidence.
+## Verification
+
+- Unit/contract tests for identical replay, changed idempotency key replay, concurrent first creation, revoked authority, evidence mismatch, audit exactly once, actor-derived tenant scope, selection omission, workspace swap, cross-session replay, expiry, and deployment discontinuity.
+- Web tests for server actor mismatch, multiple-workspace no-default behavior, explicit Workspace 1 selection, capability denial, stale deployment, and credential non-rendering.
+- Worker syntax, unit, RC/reliability, Web tests, release build, audit, and diff review.
+- Independent security review and adversarial Checker review must both pass before merge.
+
+## Merge and deployment
+
+- Create a reviewed PR from the isolated branch; merge only after checks and independent approval.
+- Create a fresh post-merge deployment worktree.
+- Record read-only production baselines and verify business-row counts remain zero.
+- Apply only a tracked pending migration if the approved design adds one.
+- Deploy the exact merged SHA; verify `CF_VERSION_METADATA`, required binding presence, UI asset identity, and zero activation business writes.
+
+## Post-deployment read-only acceptance
+
+- Confirm the product UI and server both resolve `admin@fastonegroup.com`.
+- Discover workspaces through the authenticated product UI.
+- Explicitly select Workspace 1 — NEXORA Runtime Validation.
+- Invoke only workspace-selector validation; verify membership, `tenant_key=user:1`, `domain:write`, HMAC/deployment continuity, and Workspace 2 not selected.
+- Run final read-only D1 audit with `changed_db=false`; issue Activation Preconditions Report.

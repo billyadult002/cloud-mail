@@ -3,16 +3,17 @@ import result from '../model/result';
 import domainAuthorityBootstrapService from '../service/nexora-domain-authority-bootstrap-service.mjs';
 import domainOwnershipService from '../service/nexora-domain-ownership-service.mjs';
 import workspaceAuthorityService from '../service/nexora-workspace-authority-service.mjs';
+import BizError from '../error/biz-error.js';
 
 function authenticatedUser(c) {
 	const user = c.get('user');
-	if (!user?.userId) throw new Error('authenticated user context is required');
+	if (!user?.userId) throw new BizError('authenticated user context is required', 401);
 	return user;
 }
 
 function requireAdmin(c) {
 	const user = authenticatedUser(c);
-	if (user.email !== c.env.admin) throw new Error('admin domain authority is required');
+	if (user.email !== c.env.admin) throw new BizError('admin domain authority is required', 403);
 	return user;
 }
 
@@ -30,21 +31,24 @@ function scopeFromBody(body, actor) {
 app.get('/v3/domain-authorities/workspace-selector', async (c) => {
 	const actor = requireAdmin(c);
 	const data = await workspaceAuthorityService.listActorWorkspaces(c, actor);
-	return c.json(result.ok({ workspaces: data, selectionRequired: data.length !== 1 }));
+	const actorIdentity = await workspaceAuthorityService.resolveActorIdentity(c, actor);
+	return c.json(result.ok({ actor: actorIdentity, workspaces: data, selectionRequired: data.length !== 1 }));
 });
 
 app.post('/v3/domain-authorities/workspace-selector/validate', async (c) => {
 	const actor = requireAdmin(c);
 	const body = await c.req.json();
 	const scope = scopeFromBody(body, actor);
-	const data = await workspaceAuthorityService.assertWorkspaceCapability(c, actor, scope.workspaceId, 'domain:write');
+	const data = await workspaceAuthorityService.assertWorkspaceCapability(c, actor, scope.workspaceId, 'domain:write', { issueCredential: true });
 	return c.json(result.ok(data));
 });
 
 app.post('/v3/domain-authorities/bootstrap', async (c) => {
 	const actor = requireAdmin(c);
 	const body = await c.req.json();
-	const data = await domainAuthorityBootstrapService.bootstrapVerifiedDomainAuthority(c, scopeFromBody(body, actor), body, actor);
+	const scope = scopeFromBody(body, actor);
+	await workspaceAuthorityService.requireWorkspaceSelectionCredential(c, actor, scope.workspaceId, 'domain:write', body.workspaceSelectionCredential ?? body.workspace_selection_credential);
+	const data = await domainAuthorityBootstrapService.bootstrapVerifiedDomainAuthority(c, scope, body, actor);
 	return c.json(result.ok(data));
 });
 

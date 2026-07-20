@@ -8,7 +8,7 @@
     "remote": "vite --mode remote",
     "build": "vite build --mode release",
     "eo": "vite build --mode eo",
-    "test:desktop-acceptance": "node --test src/features/nexora-classification/*.test.js",
+    "test:desktop-acceptance": "node --test src/features/nexora-classification/*.test.js src/features/nexora-domain-activation/*.test.js",
     "preview": "vite preview"
   },
   "dependencies": {

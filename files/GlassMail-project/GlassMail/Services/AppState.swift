@@ -2140,11 +2140,28 @@ final class AppState: ObservableObject {
                 )
                 return
             }
-            let classification = try await backend.classificationRecord(
-                canonicalMessageId: String(target.emailId),
+            let canonicalMessageId = String(target.emailId)
+            let persisted = try await backend.persistClassification(
+                canonicalMessageId: canonicalMessageId,
                 acceptanceSessionId: acceptanceSession.id
             )
             guard serverCorrelationAttemptId == attemptId else { return }
+            let classification = try await backend.classificationRecord(
+                canonicalMessageId: canonicalMessageId,
+                acceptanceSessionId: acceptanceSession.id
+            )
+            guard serverCorrelationAttemptId == attemptId,
+                  classification.classification.id == persisted.classificationId,
+                  classification.classification.evidenceRef == persisted.evidenceRef,
+                  classification.evidence.last?.evidenceId == persisted.evidenceId else {
+                serverCorrelation = ServerCorrelationSnapshot(
+                    phase: .scopeMismatch,
+                    acceptanceSession: acceptanceSession,
+                    classification: classification,
+                    lastVerifiedAt: nil
+                )
+                return
+            }
             try await backend.consumeAcceptanceSession(
                 id: acceptanceSession.id,
                 challenge: challenge,

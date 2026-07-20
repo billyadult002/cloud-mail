@@ -133,6 +133,25 @@ actor Backend {
         )
     }
 
+    /// Persists the canonical server message classification into the exact
+    /// acceptance session. The server derives actor, workspace, account,
+    /// provider, domain, message source and Evidence authority.
+    func persistClassification(
+        canonicalMessageId: String,
+        acceptanceSessionId: String
+    ) async throws -> ClassificationPersistReceipt {
+        let body = ClassificationPersistRequest(
+            acceptanceSessionId: acceptanceSessionId,
+            canonicalMessageId: canonicalMessageId
+        )
+        return try await request(
+            "/v3/classification/persist",
+            method: "POST",
+            json: body,
+            strictPayload: true
+        )
+    }
+
     /// Reads a server-persisted classification and Evidence reference. No
     /// message content, tenant, workspace, provider, or domain is transmitted.
     func classificationRecord(

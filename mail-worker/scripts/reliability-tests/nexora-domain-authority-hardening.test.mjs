@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
-import ownership from '../../src/service/nexora-domain-ownership-service.mjs';
+import rawOwnership from '../../src/service/nexora-domain-ownership-service.mjs';
 import authority from '../../src/service/nexora-domain-authority-bootstrap-service.mjs';
+import workspaceAuthority from '../../src/service/nexora-workspace-authority-service.mjs';
 
 const actor = { userId: 7001, authSessionRef: 'session:test' };
 const scope = { tenantId: 7001, workspaceId: 7101 };
 const domain = 'example-corporate.test';
-const tables = ['nexora_domain_ownership_verification_events','nexora_domain_ownership_challenges','nexora_domain_authorities','workspace_domains','workspace_audit_events','nexora_audit_events','workspace_members','workspaces','cloudmail_domains','workspace_account_bindings','account','email'];
+const tables = ['nexora_domain_authority_bootstrap_operations','nexora_domain_ownership_verification_events','nexora_domain_ownership_challenges','nexora_domain_authorities','workspace_domains','workspace_audit_events','nexora_audit_events','workspace_members','workspaces','cloudmail_domains','workspace_account_bindings','account','email'];
 const schema = [
 	`CREATE TABLE workspaces(id INTEGER PRIMARY KEY,tenant_key TEXT,display_name TEXT,created_by_user_id INTEGER)`,
 	`CREATE TABLE workspace_members(workspace_id INTEGER,user_id INTEGER,role TEXT,PRIMARY KEY(workspace_id,user_id))`,
@@ -15,8 +16,11 @@ const schema = [
 	`CREATE TABLE nexora_domain_ownership_challenges(id TEXT PRIMARY KEY,tenant_id INTEGER,workspace_id INTEGER,normalized_domain TEXT,challenge_name TEXT,challenge_token_hash TEXT,hmac_key_version TEXT NOT NULL,verification_method TEXT DEFAULT 'DNS_TXT',verification_status TEXT,verification_evidence_ref TEXT,administrator_authority_ref TEXT,idempotency_key TEXT,attempt INTEGER DEFAULT 0,generation INTEGER DEFAULT 1,expires_at TEXT,verified_at TEXT,consumed_at TEXT,superseded_at TEXT,verification_operation_id TEXT UNIQUE,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(tenant_id,workspace_id,normalized_domain,idempotency_key))`,
 	`CREATE TABLE nexora_domain_ownership_verification_events(id TEXT PRIMARY KEY,challenge_id TEXT NOT NULL,tenant_id INTEGER,workspace_id INTEGER,normalized_domain TEXT,generation INTEGER,verification_operation_id TEXT UNIQUE,authority_id TEXT,authority_generation INTEGER,verification_evidence_ref TEXT,actor_user_id INTEGER,auth_session_ref TEXT,hmac_key_version TEXT,request_id TEXT,runtime_deployment_id TEXT,acceptance_correlation_ref TEXT,result TEXT,observed_at TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE nexora_domain_authorities(id TEXT PRIMARY KEY,tenant_id INTEGER,workspace_id INTEGER,normalized_domain TEXT,verification_status TEXT,verification_method TEXT,verification_evidence_ref TEXT,administrator_authority_ref TEXT,generation INTEGER DEFAULT 1,revoked_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(tenant_id,workspace_id,normalized_domain))`,
-	`CREATE TABLE nexora_audit_events(user_id INTEGER,domain TEXT,action TEXT,object_type TEXT,object_ref TEXT,outcome TEXT,metadata_json TEXT)`,
-	`CREATE TABLE workspace_audit_events(workspace_id INTEGER,actor_user_id INTEGER,action TEXT,object_type TEXT,object_ref TEXT,before_state_json TEXT,after_state_json TEXT,request_id TEXT)`,
+	`CREATE TABLE nexora_domain_authority_bootstrap_operations(id TEXT PRIMARY KEY,tenant_id INTEGER,workspace_id INTEGER,normalized_domain TEXT,idempotency_key TEXT,request_digest TEXT,actor_user_id INTEGER,ownership_event_id TEXT,ownership_generation INTEGER,verification_evidence_ref TEXT,authority_id TEXT,authority_generation INTEGER,result_mode TEXT,status TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,completed_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(tenant_id,workspace_id,normalized_domain,idempotency_key),UNIQUE(tenant_id,workspace_id,normalized_domain,ownership_event_id))`,
+	`CREATE TABLE nexora_audit_events(user_id INTEGER,domain TEXT,action TEXT,object_type TEXT,object_ref TEXT,outcome TEXT,metadata_json TEXT,operation_id TEXT)`,
+	`CREATE UNIQUE INDEX uq_test_nexora_bootstrap_audit ON nexora_audit_events(operation_id) WHERE operation_id IS NOT NULL AND action='NEXORA_DOMAIN_AUTHORITY_BOOTSTRAPPED'`,
+	`CREATE TABLE workspace_audit_events(workspace_id INTEGER,actor_user_id INTEGER,action TEXT,object_type TEXT,object_ref TEXT,before_state_json TEXT,after_state_json TEXT,request_id TEXT,operation_id TEXT)`,
+	`CREATE UNIQUE INDEX uq_test_workspace_bootstrap_audit ON workspace_audit_events(operation_id) WHERE operation_id IS NOT NULL AND action='NEXORA_DOMAIN_AUTHORITY_BOOTSTRAPPED'`,
 	`CREATE TABLE cloudmail_domains(id INTEGER,domain TEXT,provisioning_state TEXT,zone_status TEXT,linkage_state TEXT,created_at TEXT,updated_at TEXT)`,
 	`CREATE TABLE workspace_account_bindings(workspace_id INTEGER,account_id INTEGER)`,
 	`CREATE TABLE account(account_id INTEGER,user_id INTEGER,is_del INTEGER,domain TEXT,email TEXT,provider TEXT,sync_status TEXT,last_successful_sync_at TEXT,last_message_received_at TEXT,create_time TEXT)`,
@@ -32,9 +36,24 @@ async function reset() {
 
 const c = { env: { ...env, NEXORA_CORRELATION_HASH_SECRET: 'test-only-domain-authority-secret-32-bytes', NEXORA_CORRELATION_HMAC_KEY_VERSION: 'test-v1', CF_VERSION_METADATA: { id: 'worker-test-version' } }, req: { header: (name) => ({ authorization: 'Bearer test-token', 'cf-ray': 'ray-test' })[name.toLowerCase()] || null } };
 const dns = (token) => async () => ({ ok: true, json: async () => ({ Answer: [{ data: `"nexora-domain-verification=${token}"` }] }) });
+const ownership = {
+	async createDnsChallenge(context, selectedScope, input, selectedActor) {
+		const validated = await workspaceAuthority.assertWorkspaceCapability(context, selectedActor, selectedScope.workspaceId, 'domain:write', { issueCredential: true });
+		return rawOwnership.createDnsChallenge(context, selectedScope, { ...input, workspaceSelectionCredential: validated.workspaceSelectionCredential }, selectedActor);
+	},
+	async verifyDnsChallenge(context, selectedScope, input, selectedActor, fetchImpl) {
+		const validated = await workspaceAuthority.assertWorkspaceCapability(context, selectedActor, selectedScope.workspaceId, 'domain:write', { issueCredential: true });
+		return rawOwnership.verifyDnsChallenge(context, selectedScope, { ...input, workspaceSelectionCredential: validated.workspaceSelectionCredential }, selectedActor, fetchImpl);
+	}
+};
 
 describe('NEXORA domain ownership and authority P0 hardening', () => {
 	beforeEach(reset);
+
+	it('requires validated workspace selection credentials before DNS challenge writes', async () => {
+		await expect(rawOwnership.createDnsChallenge(c, scope, { domain, idempotencyKey: 'missing-selection' }, actor)).rejects.toThrow('credential is required');
+		expect((await env.db.prepare(`SELECT COUNT(*) n FROM nexora_domain_ownership_challenges`).first()).n).toBe(0);
+	});
 
 	it('makes challenge idempotency immutable and supersedes old pending generations', async () => {
 		const first = await ownership.createDnsChallenge(c, scope, { domain, idempotencyKey: 'create-1' }, actor);
@@ -121,11 +140,51 @@ describe('NEXORA domain ownership and authority P0 hardening', () => {
 		await expect(authority.bootstrapVerifiedDomainAuthority(c, scope, { domain, idempotencyKey: 'bootstrap', verificationEvidenceRef: 'forged' }, actor)).rejects.toThrow('derived exclusively');
 		const bootstrapped = await authority.bootstrapVerifiedDomainAuthority(c, scope, { domain, idempotencyKey: 'bootstrap' }, actor);
 		expect(bootstrapped.authority.verification_evidence_ref).not.toBe('forged');
+		const replay = await authority.bootstrapVerifiedDomainAuthority(c, scope, { domain, idempotencyKey: 'bootstrap' }, actor);
+		expect(replay.operation.idempotent).toBe(true);
+		expect(replay.operation.id).toBe(bootstrapped.operation.id);
+		expect(replay.authority.generation).toBe(1);
+		expect((await env.db.prepare(`SELECT COUNT(*) n FROM nexora_audit_events WHERE action='NEXORA_DOMAIN_AUTHORITY_BOOTSTRAPPED'`).first()).n).toBe(1);
+		expect((await env.db.prepare(`SELECT COUNT(*) n FROM workspace_audit_events WHERE action='NEXORA_DOMAIN_AUTHORITY_BOOTSTRAPPED'`).first()).n).toBe(1);
 		await expect(authority.revokeDomainAuthority(c, scope, { domain, expectedGeneration: 9, idempotencyKey: 'revoke-wrong' }, actor)).rejects.toThrow('generation conflict');
 		const revoked = await authority.revokeDomainAuthority(c, scope, { domain, expectedGeneration: 1, idempotencyKey: 'revoke-1' }, actor);
 		expect(revoked.authority.verification_status).toBe('revoked');
 		expect(revoked.authority.generation).toBe(2);
 		await expect(authority.bootstrapVerifiedDomainAuthority(c, scope, { domain, idempotencyKey: 'bootstrap-2' }, actor)).rejects.toThrow('requires explicit re-verification');
+	});
+
+	it('converges concurrent keys for one ownership event onto one authority and one audit pair', async () => {
+		await env.db.prepare(`INSERT INTO workspace_domains(workspace_id,domain,provider,authority_state,lifecycle_state,health_state) VALUES(?1,?2,'dns_txt','VERIFIED','READY','READY')`).bind(scope.workspaceId, domain).run();
+		await env.db.prepare(`INSERT INTO nexora_domain_ownership_verification_events(id,challenge_id,tenant_id,workspace_id,normalized_domain,generation,verification_operation_id,verification_evidence_ref,actor_user_id,result,observed_at) VALUES('ownership-event','challenge',?1,?2,?3,1,'verify','ownership-evidence',?1,'VERIFIED',CURRENT_TIMESTAMP)`).bind(scope.tenantId, scope.workspaceId, domain).run();
+		const outcomes = await Promise.all([
+			authority.bootstrapVerifiedDomainAuthority(c, scope, { domain, idempotencyKey: 'bootstrap-a' }, actor),
+			authority.bootstrapVerifiedDomainAuthority(c, scope, { domain, idempotencyKey: 'bootstrap-b' }, actor)
+		]);
+		expect(outcomes[0].authority.id).toBe(outcomes[1].authority.id);
+		expect(outcomes[0].authority.generation).toBe(1);
+		expect(outcomes[1].authority.generation).toBe(1);
+		expect((await env.db.prepare(`SELECT COUNT(*) n FROM nexora_domain_authority_bootstrap_operations`).first()).n).toBe(1);
+		expect((await env.db.prepare(`SELECT COUNT(*) n FROM nexora_audit_events WHERE action='NEXORA_DOMAIN_AUTHORITY_BOOTSTRAPPED'`).first()).n).toBe(1);
+		expect((await env.db.prepare(`SELECT COUNT(*) n FROM workspace_audit_events WHERE action='NEXORA_DOMAIN_AUTHORITY_BOOTSTRAPPED'`).first()).n).toBe(1);
+	});
+
+	it('rejects reuse of one key for a different verified ownership proof', async () => {
+		await env.db.prepare(`INSERT INTO workspace_domains(workspace_id,domain,provider,authority_state,lifecycle_state,health_state) VALUES(?1,?2,'dns_txt','VERIFIED','READY','READY')`).bind(scope.workspaceId, domain).run();
+		await env.db.prepare(`INSERT INTO nexora_domain_ownership_verification_events(id,challenge_id,tenant_id,workspace_id,normalized_domain,generation,verification_operation_id,verification_evidence_ref,actor_user_id,result,observed_at) VALUES('ownership-event-1','challenge',?1,?2,?3,1,'verify-1','ownership-evidence-1',?1,'VERIFIED',CURRENT_TIMESTAMP)`).bind(scope.tenantId, scope.workspaceId, domain).run();
+		await authority.bootstrapVerifiedDomainAuthority(c, scope, { domain, idempotencyKey: 'fixed-key' }, actor);
+		await env.db.prepare(`INSERT INTO nexora_domain_ownership_verification_events(id,challenge_id,tenant_id,workspace_id,normalized_domain,generation,verification_operation_id,verification_evidence_ref,actor_user_id,result,observed_at) VALUES('ownership-event-2','challenge',?1,?2,?3,2,'verify-2','ownership-evidence-2',?1,'VERIFIED',datetime('now','+1 second'))`).bind(scope.tenantId, scope.workspaceId, domain).run();
+		await expect(authority.bootstrapVerifiedDomainAuthority(c, scope, { domain, idempotencyKey: 'fixed-key' }, actor)).rejects.toThrow('idempotency conflict');
+		expect((await env.db.prepare(`SELECT generation FROM nexora_domain_authorities`).first()).generation).toBe(1);
+	});
+
+	it('rolls back receipt, authority, and audits when an audit statement fails', async () => {
+		await env.db.prepare(`INSERT INTO workspace_domains(workspace_id,domain,provider,authority_state,lifecycle_state,health_state) VALUES(?1,?2,'dns_txt','VERIFIED','READY','READY')`).bind(scope.workspaceId, domain).run();
+		await env.db.prepare(`INSERT INTO nexora_domain_ownership_verification_events(id,challenge_id,tenant_id,workspace_id,normalized_domain,generation,verification_operation_id,verification_evidence_ref,actor_user_id,result,observed_at) VALUES('ownership-event','challenge',?1,?2,?3,1,'verify','ownership-evidence',?1,'VERIFIED',CURRENT_TIMESTAMP)`).bind(scope.tenantId, scope.workspaceId, domain).run();
+		await env.db.prepare(`CREATE TRIGGER reject_bootstrap_audit BEFORE INSERT ON nexora_audit_events WHEN NEW.action='NEXORA_DOMAIN_AUTHORITY_BOOTSTRAPPED' BEGIN SELECT RAISE(ABORT,'forced bootstrap audit failure'); END`).run();
+		await expect(authority.bootstrapVerifiedDomainAuthority(c, scope, { domain, idempotencyKey: 'rollback-key' }, actor)).rejects.toThrow('forced bootstrap audit failure');
+		expect((await env.db.prepare(`SELECT COUNT(*) n FROM nexora_domain_authority_bootstrap_operations`).first()).n).toBe(0);
+		expect((await env.db.prepare(`SELECT COUNT(*) n FROM nexora_domain_authorities`).first()).n).toBe(0);
+		expect((await env.db.prepare(`SELECT COUNT(*) n FROM workspace_audit_events WHERE action='NEXORA_DOMAIN_AUTHORITY_BOOTSTRAPPED'`).first()).n).toBe(0);
 	});
 
 	it('allows only one same-generation revocation operation to write state and audits', async () => {

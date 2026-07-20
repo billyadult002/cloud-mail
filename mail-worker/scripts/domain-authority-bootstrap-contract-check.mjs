@@ -10,10 +10,15 @@ const websSource = readFileSync(new URL('../src/hono/webs.js', import.meta.url),
 
 assert.ok(websSource.includes("import '../api/nexora-domain-authority-api'"), 'domain authority API must be mounted');
 assert.ok(apiSource.includes("app.post('/v3/domain-authorities/bootstrap'"), 'bootstrap endpoint must exist');
+assert.ok(apiSource.includes("new BizError('admin domain authority is required', 403)"), 'admin authority denials must preserve the 403 business envelope');
 assert.ok(apiSource.includes("app.post('/v3/domain-ownership/dns-challenges'"), 'DNS ownership challenge endpoint must exist');
 assert.ok(apiSource.includes("app.post('/v3/domain-ownership/dns-challenges/verify'"), 'DNS ownership verify endpoint must exist');
 assert.ok(apiSource.includes("app.get('/v3/domain-authorities/workspace-selector'"), 'actor-scoped workspace selector must exist');
 assert.ok(apiSource.includes("app.post('/v3/domain-authorities/workspace-selector/validate'"), 'workspace selection validation endpoint must exist');
+assert.ok(apiSource.includes('requireWorkspaceSelectionCredential'), 'domain write endpoints must enforce the validated workspace selection credential');
+assert.ok(apiSource.includes("'domain:write', { issueCredential: true }"), 'only the selector validate boundary may explicitly issue a workspace selection credential');
+assert.ok(apiSource.includes('actor: actorIdentity'), 'workspace selector discovery must return safe server-resolved actor identity');
+assert.ok(ownershipSource.includes('requireWorkspaceSelectionCredential'), 'DNS challenge create and verify must enforce the validated workspace selection credential');
 assert.ok(apiSource.includes('requireAdmin(c);'), 'bootstrap endpoint must require admin authority');
 assert.ok(apiSource.includes("user.email !== c.env.admin"), 'bootstrap endpoint must bind admin authority to configured admin identity');
 assert.ok(apiSource.includes('tenant scope must match authenticated user'), 'request tenant scope must not override authenticated authority');

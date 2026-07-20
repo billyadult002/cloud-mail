@@ -1,6 +1,7 @@
 import { v4 as uuid } from 'uuid';
 import classificationService from './nexora-email-classification-service.mjs';
 import workspaceAuthorityService from './nexora-workspace-authority-service.mjs';
+import { sha256Hex } from './nexora-evidence-ledger-service.mjs';
 
 const READY_DOMAIN_STATES = new Set(['READY', 'PARTIAL_WITH_REAL_BLOCKER']);
 const VERIFIED_WORKSPACE_DOMAIN_AUTHORITY_STATES = new Set(['VERIFIED', 'AUTHORITY_VERIFIED', 'DOMAIN_VERIFIED']);
@@ -158,9 +159,11 @@ async function resolveEvidence(c, scope, domain) {
 	};
 }
 
-function auditBootstrapStatements(c, scope, actor, domain, authorityId, evidenceRef, evidence, action = 'NEXORA_DOMAIN_AUTHORITY_BOOTSTRAPPED') {
+function auditBootstrapStatements(c, scope, actor, domain, authorityId, evidenceRef, evidence, operationId) {
+	const action = 'NEXORA_DOMAIN_AUTHORITY_BOOTSTRAPPED';
 	const metadata = JSON.stringify({
 		authorityId,
+		bootstrapOperationId: operationId,
 		verificationEvidenceRef: evidenceRef,
 		evidenceKind: evidence.kind,
 		evidenceState: evidence.state,
@@ -168,13 +171,19 @@ function auditBootstrapStatements(c, scope, actor, domain, authorityId, evidence
 	});
 	return [
 		c.env.db.prepare(
-			`INSERT INTO nexora_audit_events(user_id,domain,action,object_type,object_ref,outcome,metadata_json)
-			 VALUES(?1,?2,?5,'nexora_domain_authority',?3,?6,?4)`
-		).bind(actor.userId, domain, authorityId, metadata, action, action.endsWith('REVOKED') ? 'REVOKED' : 'VERIFIED'),
+			`INSERT INTO nexora_audit_events(user_id,domain,action,object_type,object_ref,outcome,metadata_json,operation_id)
+			 SELECT ?1,?2,?3,'nexora_domain_authority',?4,'VERIFIED',?5,?6
+			 FROM nexora_domain_authority_bootstrap_operations o
+			 WHERE o.id=?6 AND o.status='COMPLETED' AND o.result_mode!='LEGACY_ADOPTED'
+			  AND o.authority_id=?4 AND o.verification_evidence_ref=?7`
+		).bind(actor.userId, domain, action, authorityId, metadata, operationId, evidenceRef),
 		c.env.db.prepare(
-			`INSERT INTO workspace_audit_events(workspace_id,actor_user_id,action,object_type,object_ref,before_state_json,after_state_json,request_id)
-			 VALUES(?1,?2,?6,'nexora_domain_authority',?3,'{}',?4,?5)`
-		).bind(scope.workspaceId, actor.userId, authorityId, JSON.stringify({ verificationStatus: action.endsWith('REVOKED') ? 'revoked' : 'verified', evidenceRef, evidenceKind: evidence.kind }), evidenceRef, action)
+			`INSERT INTO workspace_audit_events(workspace_id,actor_user_id,action,object_type,object_ref,before_state_json,after_state_json,request_id,operation_id)
+			 SELECT ?1,?2,?3,'nexora_domain_authority',?4,'{}',?5,?6,?6
+			 FROM nexora_domain_authority_bootstrap_operations o
+			 WHERE o.id=?6 AND o.status='COMPLETED' AND o.result_mode!='LEGACY_ADOPTED'
+			  AND o.workspace_id=?1 AND o.authority_id=?4 AND o.verification_evidence_ref=?7`
+		).bind(scope.workspaceId, actor.userId, action, authorityId, JSON.stringify({ verificationStatus: 'verified', evidenceRef, evidenceKind: evidence.kind }), operationId, evidenceRef)
 	];
 }
 
@@ -201,64 +210,56 @@ async function bootstrapVerifiedDomainAuthority(c, scopeInput, input, actor) {
 	const scope = assertScope(scopeInput);
 	const domain = assertDomain(input?.domain || input?.customerDomain);
 	await workspaceExists(c, scope, actor);
+	const idempotencyKey = String(input?.idempotencyKey || input?.idempotency_key || '').trim();
+	if (!idempotencyKey || idempotencyKey.length > 160) throw new Error('idempotencyKey is required');
 	const existing = await c.env.db.prepare(
-		`SELECT id,generation,verification_status,revoked_at FROM nexora_domain_authorities
+		`SELECT id,generation,verification_status,verification_evidence_ref,revoked_at FROM nexora_domain_authorities
 		 WHERE tenant_id=?1 AND workspace_id=?2 AND normalized_domain=?3`
 	).bind(scope.tenantId, scope.workspaceId, domain).first();
 	if (existing?.revoked_at || existing?.verification_status === 'revoked') throw new Error('revoked domain authority requires explicit re-verification');
 	const evidence = await resolveEvidence(c, scope, domain);
 	if (!evidence) throw new Error('domain bootstrap evidence is required');
-	const idempotencyKey = input?.idempotencyKey || classificationService.stableFingerprint([
-		'nexora-domain-authority-bootstrap',
-		scope.tenantId,
-		scope.workspaceId,
-		domain,
-		evidence.kind,
-		evidence.sourceId || null
-	]);
 	if (input?.verificationEvidenceRef || input?.verification_evidence_ref) throw new Error('verification evidence is derived exclusively from server authority');
 	const verificationEvidenceRef = evidence.verificationEvidenceRef;
 	const administratorAuthorityRef = authorityRef(actor);
-	const authorityId = uuid();
+	const requestDigest = await sha256Hex({ contract: 'nexora-domain-authority-bootstrap-v2', tenantId: scope.tenantId, workspaceId: scope.workspaceId, domain, actorUserId: Number(actor.userId), ownershipEventId: evidence.sourceId, ownershipGeneration: evidence.detail.ownershipGeneration, verificationEvidenceRef, idempotencyKey });
+	const replay = await c.env.db.prepare(`SELECT * FROM nexora_domain_authority_bootstrap_operations WHERE tenant_id=?1 AND workspace_id=?2 AND normalized_domain=?3 AND idempotency_key=?4`).bind(scope.tenantId, scope.workspaceId, domain, idempotencyKey).first();
+	if (replay && replay.request_digest !== requestDigest) throw new Error('domain authority bootstrap idempotency conflict');
+	if (replay) return bootstrapResult(await readBootstrapAuthority(c, replay), evidence, replay, true);
+	const operationId = uuid();
+	const authorityId = existing?.id || uuid();
+	const authorityGeneration = existing ? (existing.verification_evidence_ref === verificationEvidenceRef ? Number(existing.generation) : Number(existing.generation) + 1) : 1;
+	const resultMode = existing ? (existing.verification_evidence_ref === verificationEvidenceRef ? 'LEGACY_ADOPTED' : 'REFRESHED') : 'CREATED';
 	const statements = [c.env.db.prepare(
+		`INSERT OR IGNORE INTO nexora_domain_authority_bootstrap_operations
+		 (id,tenant_id,workspace_id,normalized_domain,idempotency_key,request_digest,actor_user_id,ownership_event_id,ownership_generation,verification_evidence_ref,authority_id,authority_generation,result_mode,status)
+		 SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'COMPLETED'
+		 WHERE ((?14 IS NULL AND NOT EXISTS (SELECT 1 FROM nexora_domain_authorities WHERE tenant_id=?2 AND workspace_id=?3 AND normalized_domain=?4))
+		  OR EXISTS (SELECT 1 FROM nexora_domain_authorities WHERE id=?14 AND tenant_id=?2 AND workspace_id=?3 AND normalized_domain=?4 AND generation=?15 AND verification_evidence_ref=?16 AND verification_status!='revoked' AND revoked_at IS NULL))`
+	).bind(operationId, scope.tenantId, scope.workspaceId, domain, idempotencyKey, requestDigest, actor.userId, evidence.sourceId, evidence.detail.ownershipGeneration, verificationEvidenceRef, authorityId, authorityGeneration, resultMode, existing?.id || null, existing?.generation || null, existing?.verification_evidence_ref || null), c.env.db.prepare(
 		`INSERT INTO nexora_domain_authorities
 		 (id,tenant_id,workspace_id,normalized_domain,verification_status,verification_method,verification_evidence_ref,administrator_authority_ref,generation)
-		 VALUES(?1,?2,?3,?4,'verified','NEXORA_BOOTSTRAP_EXISTING_AUTHORITY',?5,?6,
-		  COALESCE((SELECT generation+1 FROM nexora_domain_authorities WHERE tenant_id=?2 AND workspace_id=?3 AND normalized_domain=?4),1))
-		 ON CONFLICT(tenant_id,workspace_id,normalized_domain) DO UPDATE SET
-		  verification_status='verified',
-		  verification_method='NEXORA_BOOTSTRAP_EXISTING_AUTHORITY',
-		  verification_evidence_ref=excluded.verification_evidence_ref,
-		  administrator_authority_ref=excluded.administrator_authority_ref,
-		  generation=excluded.generation,
-		  updated_at=CURRENT_TIMESTAMP
-		 WHERE nexora_domain_authorities.revoked_at IS NULL AND nexora_domain_authorities.verification_status!='revoked'`
-	).bind(
-		authorityId,
-		scope.tenantId,
-		scope.workspaceId,
-		domain,
-		verificationEvidenceRef,
-		administratorAuthorityRef
-	)];
-	const persistedAuthorityId = existing?.id || authorityId;
-	statements.push(...auditBootstrapStatements(c, scope, actor, domain, persistedAuthorityId, verificationEvidenceRef, evidence));
+		 SELECT o.authority_id,o.tenant_id,o.workspace_id,o.normalized_domain,'verified','NEXORA_BOOTSTRAP_EXISTING_AUTHORITY',o.verification_evidence_ref,?2,o.authority_generation
+		 FROM nexora_domain_authority_bootstrap_operations o WHERE o.id=?1 AND o.result_mode!='LEGACY_ADOPTED'
+		 ON CONFLICT(tenant_id,workspace_id,normalized_domain) DO UPDATE SET verification_status='verified',verification_method='NEXORA_BOOTSTRAP_EXISTING_AUTHORITY',verification_evidence_ref=excluded.verification_evidence_ref,administrator_authority_ref=excluded.administrator_authority_ref,generation=excluded.generation,updated_at=CURRENT_TIMESTAMP
+		 WHERE nexora_domain_authorities.revoked_at IS NULL AND nexora_domain_authorities.verification_status!='revoked' AND nexora_domain_authorities.generation=?3 AND nexora_domain_authorities.verification_evidence_ref=?4`
+	).bind(operationId, administratorAuthorityRef, existing?.generation || 0, existing?.verification_evidence_ref || '')];
+	statements.push(...auditBootstrapStatements(c, scope, actor, domain, authorityId, verificationEvidenceRef, evidence, operationId));
 	await c.env.db.batch(statements);
-	const row = await c.env.db.prepare(
-		`SELECT id,tenant_id,workspace_id,normalized_domain,verification_status,verification_method,verification_evidence_ref,administrator_authority_ref,generation,revoked_at,created_at,updated_at
-		 FROM nexora_domain_authorities
-		 WHERE tenant_id=?1 AND workspace_id=?2 AND normalized_domain=?3`
-	).bind(scope.tenantId, scope.workspaceId, domain).first();
-	if (!row || row.revoked_at || row.verification_status !== 'verified') throw new Error('domain authority bootstrap was not committed');
-	return {
-		authority: row,
-		evidence: {
-			kind: evidence.kind,
-			state: evidence.state,
-			verificationEvidenceRef,
-			redactionLevel: 'BODYLESS'
-		}
-	};
+	const canonical = await c.env.db.prepare(`SELECT * FROM nexora_domain_authority_bootstrap_operations WHERE tenant_id=?1 AND workspace_id=?2 AND normalized_domain=?3 AND (idempotency_key=?4 OR ownership_event_id=?5) ORDER BY created_at LIMIT 1`).bind(scope.tenantId, scope.workspaceId, domain, idempotencyKey, evidence.sourceId).first();
+	if (!canonical) throw new Error('domain authority bootstrap concurrency conflict');
+	if (canonical.idempotency_key === idempotencyKey && canonical.request_digest !== requestDigest) throw new Error('domain authority bootstrap idempotency conflict');
+	return bootstrapResult(await readBootstrapAuthority(c, canonical), evidence, canonical, canonical.id !== operationId);
+}
+
+async function readBootstrapAuthority(c, operation) {
+	const row = await c.env.db.prepare(`SELECT id,tenant_id,workspace_id,normalized_domain,verification_status,verification_method,verification_evidence_ref,administrator_authority_ref,generation,revoked_at,created_at,updated_at FROM nexora_domain_authorities WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3`).bind(operation.authority_id, operation.tenant_id, operation.workspace_id).first();
+	if (!row || row.revoked_at || row.verification_status !== 'verified' || Number(row.generation) !== Number(operation.authority_generation) || row.verification_evidence_ref !== operation.verification_evidence_ref) throw new Error('domain authority bootstrap was not committed');
+	return row;
+}
+
+function bootstrapResult(authority, evidence, operation, idempotent) {
+	return { authority, evidence: { kind: evidence.kind, state: evidence.state, verificationEvidenceRef: operation.verification_evidence_ref, redactionLevel: 'BODYLESS' }, operation: { id: operation.id, resultMode: operation.result_mode, idempotent } };
 }
 
 async function revokeDomainAuthority(c, scopeInput, input, actor) {

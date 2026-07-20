@@ -51,6 +51,16 @@ const routes = [
                     menu: true
                 }
             },
+            {
+                path: '/domain-activation',
+                name: 'domain-activation',
+                component: () => import('@/views/domain-activation/index.vue'),
+                meta: {
+                    title: 'domainActivation',
+                    name: 'domain-activation',
+                    menu: true
+                }
+            },
         ]
 
     },

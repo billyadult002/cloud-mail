@@ -1,6 +1,34 @@
 import XCTest
 
 final class ServerCorrelationTests: XCTestCase {
+
+    func testClassificationPersistContractCarriesOnlySessionAndCanonicalMessageSelectors() throws {
+        let request = ClassificationPersistRequest(
+            acceptanceSessionId: "acceptance-1",
+            canonicalMessageId: "1001"
+        )
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: String]
+        )
+
+        XCTAssertEqual(object, [
+            "acceptanceSessionId": "acceptance-1",
+            "canonicalMessageId": "1001"
+        ])
+        XCTAssertNil(object["workspaceId"])
+        XCTAssertNil(object["tenantId"])
+        XCTAssertNil(object["provider"])
+        XCTAssertNil(object["source"])
+    }
+
+    func testClassificationPersistReceiptRequiresServerEvidenceIdentity() throws {
+        let json = #"{"classificationId":"classification-1","evidenceId":"evidence-1","evidenceRef":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","generation":1}"#
+        let receipt = try workerDecoder.decode(ClassificationPersistReceipt.self, from: Data(json.utf8))
+
+        XCTAssertEqual(receipt.classificationId, "classification-1")
+        XCTAssertEqual(receipt.evidenceId, "evidence-1")
+        XCTAssertEqual(receipt.generation, 1)
+    }
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
     func testVerifiedRequiresMatchingServerAuthorityTuple() {

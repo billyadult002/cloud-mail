@@ -45,6 +45,18 @@ struct AcceptanceSessionConsumeRequest: Encodable, Equatable {
     let classificationId: String
 }
 
+struct ClassificationPersistRequest: Encodable, Equatable {
+    let acceptanceSessionId: String
+    let canonicalMessageId: String
+}
+
+struct ClassificationPersistReceipt: Decodable, Equatable {
+    let classificationId: String
+    let evidenceId: String
+    let evidenceRef: String
+    let generation: Int
+}
+
 struct ClassificationRecordReadback: Decodable, Equatable {
     let classification: ClassificationReadbackDecision
     let provenance: ClassificationReadbackProvenance

@@ -36,7 +36,13 @@ describe('actor-scoped workspace authority selector', () => {
 		const result = await selector.assertWorkspaceCapability(c, actor, 7101, 'domain:write', { issueCredential: true });
 		expect(result.actor).toMatchObject({ userId: 7001, email: 'admin@example.test' });
 		expect(result.actor.actorRef).toMatch(/^[a-f0-9]{64}$/);
-		expect(result.workspace).toMatchObject({ id: 7101, role: 'OWNER' });
+		expect(result.workspace).toEqual({
+			id: 7101,
+			displayName: 'Primary',
+			role: 'OWNER',
+			capabilities: ['domain:read', 'domain:write'],
+			canActivateDomain: true
+		});
 		expect(result.selectionEvidence).toMatchObject({ requestId: 'test-ray', runtimeDeploymentId: 'test-worker-version', redactionLevel: 'BODYLESS' });
 		expect(result.selectionEvidence.workspaceSelectionRef).toBeTruthy();
 		expect(result.selectionEvidence.actorRef).toBe(result.actor.actorRef);

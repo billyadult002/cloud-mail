@@ -201,7 +201,8 @@ async function assertWorkspaceCapability(c, actorInput, requestedWorkspaceId, ca
 			id: Number(row.id),
 			displayName: row.display_name,
 			role: row.role,
-			capabilities: capabilities(row.role)
+			capabilities: capabilities(row.role),
+			canActivateDomain: capabilities(row.role).includes('domain:write')
 		},
 		selectionEvidence: await selectionEvidence(c, actorIdentity, row, capability)
 	};

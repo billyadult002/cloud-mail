@@ -2,6 +2,15 @@ export const CLASSIFIER_VERSION = 'nexora-option5-hybrid-classifier-v1';
 export const RULES_VERSION = 'option5-deterministic-rules-v1';
 export const MODEL_VERSION = null;
 
+import {
+	buildAtomicLedgerStatements,
+	canonicalize,
+	computeEvidenceIntegrity,
+	verifyEvidenceChain
+} from './nexora-evidence-ledger-service.mjs';
+import { deriveSessionRef } from './nexora-session-ref-service.mjs';
+import { normalizeBuild } from './nexora-runtime-correlation-service.mjs';
+
 export const SEMANTIC_CATEGORIES = Object.freeze([
 	'PERSONAL',
 	'BUSINESS',
@@ -386,6 +395,172 @@ function assertScope(scope) {
 	return { tenantId, workspaceId };
 }
 
+export function parseCanonicalMessageId(value) {
+	const canonicalMessageId = Number(value);
+	if (!Number.isInteger(canonicalMessageId) || canonicalMessageId <= 0) {
+		throw new Error('canonicalMessageId is required');
+	}
+	return canonicalMessageId;
+}
+
+export function validateLegacyPersistPayload(input = {}) {
+	for (const field of [
+		'tenantId', 'tenant_id', 'workspaceId', 'workspace_id', 'accountId', 'account_id',
+		'provider', 'providerAccountHash', 'provider_account_hash', 'customerDomain', 'domain'
+	]) {
+		if (input[field] !== undefined) throw new Error(`${field} is server-derived`);
+	}
+	if (input.message !== undefined) throw new Error('client-supplied message payload is not accepted');
+	if (!String(input.acceptanceSessionId || input.interactionId || '').trim()) throw new Error('acceptanceSessionId is required');
+	parseCanonicalMessageId(input.canonicalMessageId);
+	return input;
+}
+
+function domainFromAddress(value) {
+	const address = normalizeAddress(value);
+	const separator = address.lastIndexOf('@');
+	return separator >= 0 ? normalizeDomain(address.slice(separator + 1)) : '';
+}
+
+function platformToClientKind(platform) {
+	return String(platform || '').toUpperCase() === 'IOS_PHYSICAL' ? 'IOS_PHYSICAL' :
+		String(platform || '').toUpperCase() === 'DESKTOP' ? 'DESKTOP' : 'SERVICE';
+}
+
+function constantTimeEqual(left, right) {
+	const a = String(left || '');
+	const b = String(right || '');
+	if (a.length !== b.length) return false;
+	let mismatch = 0;
+	for (let index = 0; index < a.length; index += 1) mismatch |= a.charCodeAt(index) ^ b.charCodeAt(index);
+	return mismatch === 0;
+}
+
+async function assertAcceptanceContinuity(c, row) {
+	if (String(row.hmac_key_version || '') !== String(c.env.NEXORA_CORRELATION_HMAC_KEY_VERSION || '')) {
+		throw new Error('classification HMAC key version continuity denied');
+	}
+	const authorization = c.req?.header?.('authorization');
+	if (!authorization) throw new Error('authenticated session reference is required');
+	const currentAuthSessionRef = await deriveSessionRef(c.env, authorization);
+	if (!constantTimeEqual(row.auth_session_ref, currentAuthSessionRef)) throw new Error('classification auth session continuity denied');
+	const currentDeploymentId = String(c.env.CF_VERSION_METADATA?.id || '').trim();
+	if (!currentDeploymentId || currentDeploymentId !== String(row.runtime_deployment_id || '')) {
+		throw new Error('classification deployment continuity denied');
+	}
+	const build = normalizeBuild(c.env, {
+		platform: row.client_kind,
+		buildId: row.build_id,
+		buildVersion: row.build_version,
+		sourceCommit: row.source_commit
+	});
+	if (build.artifactDigest !== row.artifact_digest || build.sourceCommit !== row.source_commit ||
+		build.signingIdentity !== row.signing_identity || build.signingKeyVersion !== row.signing_key_version ||
+		build.policyVersion !== row.allowlist_policy_version) {
+		throw new Error('classification build authority continuity denied');
+	}
+}
+
+export async function loadCanonicalClassificationContext(c, input = {}) {
+	const actorUserId = Number(input.actor?.userId);
+	if (!Number.isInteger(actorUserId) || actorUserId <= 0) throw new Error('authenticated actor is required');
+	const interactionId = String(input.acceptanceSessionId || input.interactionId || '').trim();
+	if (!interactionId) throw new Error('acceptanceSessionId is required');
+	const canonicalMessageId = parseCanonicalMessageId(input.canonicalMessageId);
+	const row = await c.env.db.prepare(
+		`SELECT s.id AS interaction_id,s.tenant_id,s.workspace_id,s.actor_user_id,s.canonical_account_id,
+		 s.auth_session_ref,s.hmac_key_version,s.request_id,s.runtime_deployment_id,s.id AS acceptance_correlation_ref,
+		 s.platform AS client_kind,s.build_id,s.build_version,s.artifact_digest,s.source_commit,
+		 s.signing_identity,s.signing_key_version,s.allowlist_policy_version,
+		 s.status AS interaction_status,s.expires_at AS interaction_expires_at,
+		 e.email_id,e.account_id AS email_account_id,e.user_id AS email_user_id,e.send_email,e.subject,e.text,e.content,
+		 e.message_id,e.resend_email_id,e.relation,e.in_reply_to,e.unread,e.create_time AS source_created_at,
+		 a.account_id,a.user_id AS account_user_id,a.email AS account_email,a.domain AS account_domain,a.provider,a.sync_status,
+		 da.id AS domain_authority_id,da.generation AS authority_generation,da.verification_evidence_ref AS authority_evidence_ref,
+		 EXISTS(SELECT 1 FROM attachments att WHERE att.email_id=e.email_id) AS has_attachment,
+		 EXISTS(SELECT 1 FROM star st WHERE st.email_id=e.email_id AND st.user_id=s.actor_user_id) AS starred
+		 FROM nexora_runtime_acceptance_sessions s
+		 JOIN workspace_members wm ON wm.workspace_id=s.workspace_id AND wm.user_id=s.actor_user_id
+		 JOIN workspace_account_bindings wab ON wab.workspace_id=s.workspace_id AND wab.account_id=s.canonical_account_id
+		 JOIN account a ON a.account_id=s.canonical_account_id AND a.user_id=s.actor_user_id AND a.is_del=0
+		 JOIN email e ON e.email_id=?3 AND e.account_id=a.account_id AND e.user_id=s.actor_user_id AND e.is_del=0
+		 JOIN nexora_domain_authorities da ON da.tenant_id=s.tenant_id AND da.workspace_id=s.workspace_id
+		  AND da.normalized_domain=lower(COALESCE(NULLIF(a.domain,''),substr(a.email,instr(a.email,'@')+1)))
+		  AND da.verification_status='verified' AND da.revoked_at IS NULL
+		 WHERE s.id=?1 AND s.actor_user_id=?2 AND s.tenant_id=?2
+		 LIMIT 1`
+	).bind(interactionId, actorUserId, canonicalMessageId).first();
+	if (!row) throw new Error('canonical classification context is not authorized');
+	await assertAcceptanceContinuity(c, row);
+	const interactionStatus = String(row.interaction_status || '').toUpperCase();
+	const allowedStatuses = input.allowConsumed ? new Set(['ISSUED', 'CONSUMED']) : new Set(['ISSUED']);
+	if (!allowedStatuses.has(interactionStatus)) {
+		throw new Error('classification interaction is not active');
+	}
+	if (row.interaction_expires_at && Date.parse(row.interaction_expires_at) <= Date.now()) {
+		throw new Error('classification interaction expired');
+	}
+	if (Number(row.canonical_account_id) !== Number(row.email_account_id) || Number(row.account_id) !== Number(row.email_account_id)) {
+		throw new Error('interaction account does not match canonical message');
+	}
+	const customerDomain = normalizeDomain(row.account_domain) || domainFromAddress(row.account_email);
+	if (!customerDomain) throw new Error('canonical account domain is required');
+	const provider = normalizeLower(row.provider);
+	if (!provider) throw new Error('canonical account provider is required');
+	const providerAccountHash = stableFingerprint([
+		'canonical-provider-account-v1', row.workspace_id, row.account_id, provider, normalizeAddress(row.account_email)
+	]);
+	const providerMessageId = String(row.message_id || row.resend_email_id || `email:${row.email_id}`);
+	const sourceCreatedAt = String(row.source_created_at || '');
+	if (!sourceCreatedAt) throw new Error('canonical message source timestamp is required');
+	const message = {
+		provider,
+		providerAccountHash,
+		customerDomain,
+		canonicalMessageId: Number(row.email_id),
+		canonicalAccountId: Number(row.account_id),
+		messageId: providerMessageId,
+		sender: row.send_email || '',
+		subject: row.subject || '',
+		snippet: row.text || '',
+		threadId: row.relation || row.in_reply_to || providerMessageId,
+		unread: Boolean(row.unread),
+		starred: Boolean(row.starred),
+		hasAttachment: Boolean(row.has_attachment),
+		receivedAt: sourceCreatedAt
+	};
+	const messageFingerprint = buildMessageFingerprint(message);
+	const provenanceRef = stableFingerprint([
+		'nexora-canonical-email-provenance-v1', row.tenant_id, row.workspace_id, row.account_id,
+		row.email_id, providerMessageId, sourceCreatedAt, messageFingerprint
+	]);
+	return {
+		scope: { tenantId: Number(row.actor_user_id), workspaceId: Number(row.workspace_id) },
+		message: { ...message, messageFingerprint },
+		interaction: {
+			id: String(row.interaction_id),
+			authSessionRef: String(row.auth_session_ref || ''),
+			requestId: String(row.request_id || ''),
+			runtimeDeploymentId: String(row.runtime_deployment_id || ''),
+			acceptanceCorrelationRef: String(row.acceptance_correlation_ref || row.interaction_id),
+			clientKind: platformToClientKind(row.client_kind)
+		},
+		authority: {
+			id: String(row.domain_authority_id || ''),
+			generation: Number(row.authority_generation),
+			evidenceRef: String(row.authority_evidence_ref || '')
+		},
+		provenance: {
+			source: 'CANONICAL_EMAIL',
+			canonicalMessageId: Number(row.email_id),
+			canonicalAccountId: Number(row.account_id),
+			sourceCreatedAt,
+			provenanceRef,
+			bodyPersisted: false
+		}
+	};
+}
+
 function validateCorrection(correction = {}) {
 	const type = correction.correctionType || correction.correction_type;
 	if (![
@@ -472,122 +647,301 @@ export async function recordCorrection(c, scopeInput, messageInput, correctionIn
 	return { messageFingerprint, idempotencyKey, correction };
 }
 
-export async function classifyAndPersist(c, scopeInput, messageInput) {
-	const scope = assertScope(scopeInput);
-	const customerDomain = normalizeDomain(messageInput.customerDomain || messageInput.domain);
-	if (!customerDomain) throw new Error('customerDomain is required');
-	await requireVerifiedDomainAuthority(c, scope, customerDomain);
-	const messageFingerprint = messageInput.messageFingerprint || buildMessageFingerprint(messageInput);
-	const message = { ...messageInput, customerDomain, messageFingerprint };
-	const corrections = await loadCorrections(c, scope, message);
-	const decision = classifyMessage(message, corrections);
-	const idempotencyKey = messageInput.idempotencyKey || stableFingerprint([
-		scope.tenantId,
-		scope.workspaceId,
-		customerDomain,
-		message.provider,
-		message.providerAccountHash,
-		messageFingerprint,
-		decision.classifierVersion,
-		decision.rulesVersion,
-		JSON.stringify(corrections)
-	]);
-	const evidenceRef = stableFingerprint([
-		idempotencyKey,
-		decision.primaryCategory,
-		decision.vipRelationship,
-		decision.priorityLevel,
-		decision.requiresAction,
-		JSON.stringify(decision.reasonCodes)
-	]);
-	const rowId = uuid();
-	await c.env.db.prepare(
-		`INSERT INTO nexora_email_classifications
-		 (id,tenant_id,workspace_id,provider,provider_account_hash,customer_domain,message_fingerprint,thread_fingerprint,primary_category,vip_relationship,priority_level,requires_action,time_sensitive,unread,starred,has_attachment,confidence,reason_codes_json,conflicting_signals_json,classifier_version,rules_version,model_version,authority_source,vip_authority_ref,user_override_ref,administrator_override_ref,evidence_ref,idempotency_key,generation,classified_at,updated_at)
-		 VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,
-		  COALESCE((SELECT generation+1 FROM nexora_email_classifications WHERE tenant_id=?2 AND workspace_id=?3 AND customer_domain=?6 AND provider=?4 AND provider_account_hash=?5 AND message_fingerprint=?7),1),?29,?29)
-		 ON CONFLICT(tenant_id,workspace_id,customer_domain,provider,provider_account_hash,message_fingerprint) DO UPDATE SET
-		  primary_category=excluded.primary_category,
-		  vip_relationship=excluded.vip_relationship,
-		  priority_level=excluded.priority_level,
-		  requires_action=excluded.requires_action,
-		  time_sensitive=excluded.time_sensitive,
-		  unread=excluded.unread,
-		  starred=excluded.starred,
-		  has_attachment=excluded.has_attachment,
-		  confidence=excluded.confidence,
-		  reason_codes_json=excluded.reason_codes_json,
-		  conflicting_signals_json=excluded.conflicting_signals_json,
-		  classifier_version=excluded.classifier_version,
-		  rules_version=excluded.rules_version,
-		  model_version=excluded.model_version,
-		  authority_source=excluded.authority_source,
-		  vip_authority_ref=excluded.vip_authority_ref,
-		  user_override_ref=excluded.user_override_ref,
-		  administrator_override_ref=excluded.administrator_override_ref,
-		  evidence_ref=excluded.evidence_ref,
-		  idempotency_key=excluded.idempotency_key,
-		  generation=excluded.generation,
-		  classified_at=excluded.classified_at,
-		  updated_at=excluded.updated_at`
+async function loadLedgerHead(c, canonical) {
+	return c.env.db.prepare(
+		`SELECT h.latest_generation,h.latest_event_id,h.latest_entry_digest,e.classification_id
+		 FROM nexora_classification_ledger_heads h
+		 LEFT JOIN nexora_email_classification_events e ON e.id=h.latest_event_id
+		 WHERE h.tenant_id=?1 AND h.workspace_id=?2 AND h.customer_domain=?3 AND h.provider=?4
+		  AND h.canonical_account_id=?5 AND h.canonical_message_id=?6 LIMIT 1`
 	).bind(
-		rowId,
-		scope.tenantId,
-		scope.workspaceId,
-		message.provider,
-		message.providerAccountHash,
-		customerDomain,
-		messageFingerprint,
-		message.threadFingerprint || null,
-		decision.primaryCategory,
-		decision.vipRelationship ? 1 : 0,
-		decision.priorityLevel,
-		decision.requiresAction ? 1 : 0,
-		decision.timeSensitive ? 1 : 0,
-		decision.unread ? 1 : 0,
-		decision.starred ? 1 : 0,
-		decision.hasAttachment ? 1 : 0,
-		decision.confidence,
-		JSON.stringify(decision.reasonCodes),
-		JSON.stringify(decision.conflictingSignals),
-		decision.classifierVersion,
-		decision.rulesVersion,
-		decision.modelVersion,
-		decision.authoritySource,
-		decision.vipAuthorityRef,
-		decision.userOverrideRef,
-		decision.administratorOverrideRef,
-		evidenceRef,
-		idempotencyKey,
-		nowIso()
-	).run();
-	await c.env.db.prepare(
-		`INSERT INTO nexora_email_classification_evidence
-		 (id,tenant_id,workspace_id,provider,customer_domain,message_fingerprint,evidence_kind,evidence_json,redaction_level)
-		 VALUES(?1,?2,?3,?4,?5,?6,'CLASSIFICATION_DECISION',?7,'BODYLESS')`
+		canonical.scope.tenantId, canonical.scope.workspaceId, canonical.message.customerDomain,
+		canonical.message.provider, canonical.message.canonicalAccountId, String(canonical.message.canonicalMessageId)
+	).first();
+}
+
+async function loadIdempotentClassification(c, canonical, idempotencyKey) {
+	return c.env.db.prepare(
+		`SELECT r.id AS run_id,r.input_digest,e.id AS event_id,e.classification_id,e.generation,e.message_fingerprint,
+		 e.primary_category,e.vip_relationship,e.priority_level,e.requires_action,e.time_sensitive,e.unread,e.starred,
+		 e.has_attachment,e.confidence,e.reason_codes_json,e.conflicting_signals_json,e.authority_source,
+		 e.classified_at,v.id AS evidence_id,v.entry_digest
+		 FROM nexora_classification_runs r
+		 JOIN nexora_email_classification_events e ON e.run_id=r.id
+		 JOIN nexora_email_classification_evidence_v2 v ON v.event_id=e.id AND v.run_id=r.id
+		 WHERE r.tenant_id=?1 AND r.workspace_id=?2 AND r.idempotency_key=?3
+		  AND e.canonical_account_id=?4 AND e.canonical_message_id=?5 LIMIT 1`
 	).bind(
-		uuid(),
-		scope.tenantId,
-		scope.workspaceId,
-		message.provider,
-		customerDomain,
-		messageFingerprint,
-		JSON.stringify({
-			evidenceRef,
-			classifierVersion: decision.classifierVersion,
-			rulesVersion: decision.rulesVersion,
-			modelVersion: decision.modelVersion,
+		canonical.scope.tenantId, canonical.scope.workspaceId, `run:${idempotencyKey}`,
+		canonical.message.canonicalAccountId, String(canonical.message.canonicalMessageId)
+	).first();
+}
+
+function assertCorrelationAuthority(canonical) {
+	for (const [name, value] of Object.entries({
+		'domain authority': canonical.authority.id,
+		'domain authority evidence': canonical.authority.evidenceRef,
+		'auth session reference': canonical.interaction.authSessionRef,
+		'request identity': canonical.interaction.requestId,
+		'runtime deployment identity': canonical.interaction.runtimeDeploymentId,
+		'acceptance correlation reference': canonical.interaction.acceptanceCorrelationRef
+	})) {
+		if (!String(value || '').trim()) throw new Error(`${name} is required`);
+	}
+	if (!Number.isInteger(canonical.authority.generation) || canonical.authority.generation <= 0) {
+		throw new Error('domain authority generation is required');
+	}
+}
+
+export async function classifyCanonicalAndPersist(c, input = {}) {
+	validateLegacyPersistPayload(input);
+	const canonical = await loadCanonicalClassificationContext(c, input);
+	assertCorrelationAuthority(canonical);
+	const corrections = await loadCorrections(c, canonical.scope, canonical.message);
+	const decision = classifyMessage(canonical.message, corrections);
+	const head = await loadLedgerHead(c, canonical);
+	const expectedGeneration = Number(head?.latest_generation || 0);
+	const generation = expectedGeneration + 1;
+	const classifiedAt = nowIso();
+	const classificationId = String(head?.classification_id || uuid());
+	const runId = uuid();
+	const eventId = uuid();
+	const evidenceId = uuid();
+	const idempotencyKey = stableFingerprint([
+		'nexora-canonical-classification-v2', canonical.scope.tenantId, canonical.scope.workspaceId,
+		canonical.interaction.id, canonical.message.canonicalAccountId, canonical.message.canonicalMessageId,
+		CLASSIFIER_VERSION, RULES_VERSION
+	]);
+	const replay = await loadIdempotentClassification(c, canonical, idempotencyKey);
+	const payload = {
+		bodyPersisted: false,
+		redactionLevel: 'BODYLESS',
+		provenance: canonical.provenance,
+		classifierVersion: CLASSIFIER_VERSION,
+		rulesVersion: RULES_VERSION,
+		modelVersion: MODEL_VERSION,
+		primaryCategory: decision.primaryCategory,
+		vipRelationship: decision.vipRelationship,
+		priorityLevel: decision.priorityLevel,
+		requiresAction: decision.requiresAction,
+		timeSensitive: decision.timeSensitive,
+		unread: decision.unread,
+		starred: decision.starred,
+		hasAttachment: decision.hasAttachment,
+		confidence: decision.confidence,
+		reasonCodes: decision.reasonCodes,
+		conflictingSignals: decision.conflictingSignals
+	};
+	const canonicalPayloadJson = canonicalize(payload);
+	const ledgerInput = {
+		run: {
+			id: runId,
+			tenantId: canonical.scope.tenantId,
+			workspaceId: canonical.scope.workspaceId,
+			domainAuthorityId: canonical.authority.id,
+			authorityGeneration: canonical.authority.generation,
+			authorityEvidenceRef: canonical.authority.evidenceRef,
+			actorUserId: canonical.scope.tenantId,
+			authSessionRef: canonical.interaction.authSessionRef,
+			hmacKeyVersion: String(c.env.NEXORA_CORRELATION_HMAC_KEY_VERSION || ''),
+			canonicalAccountId: canonical.message.canonicalAccountId,
+			providerAccountHash: canonical.message.providerAccountHash,
+			requestId: canonical.interaction.requestId,
+			runtimeDeploymentId: canonical.interaction.runtimeDeploymentId,
+			acceptanceCorrelationRef: canonical.interaction.acceptanceCorrelationRef,
+			clientKind: canonical.interaction.clientKind,
+			classifierVersion: CLASSIFIER_VERSION,
+			rulesVersion: RULES_VERSION,
+			modelVersion: MODEL_VERSION,
+			inputDigest: null,
+			idempotencyKey: `run:${idempotencyKey}`,
+			startedAt: classifiedAt
+		},
+		event: {
+			id: eventId,
+			classificationId,
+			customerDomain: canonical.message.customerDomain,
+			provider: canonical.message.provider,
+			canonicalMessageId: String(canonical.message.canonicalMessageId),
+			messageFingerprint: canonical.message.messageFingerprint,
+			threadFingerprint: canonical.message.threadId ? stableFingerprint(['thread', canonical.message.threadId]) : null,
+			sourceCreatedAt: canonical.provenance.sourceCreatedAt,
+			provenanceRef: canonical.provenance.provenanceRef,
+			generation,
+			previousEventId: head?.latest_event_id || null,
+			previousEntryDigest: head?.latest_entry_digest || null,
 			primaryCategory: decision.primaryCategory,
 			vipRelationship: decision.vipRelationship,
 			priorityLevel: decision.priorityLevel,
 			requiresAction: decision.requiresAction,
+			timeSensitive: decision.timeSensitive,
+			unread: decision.unread,
+			starred: decision.starred,
+			hasAttachment: decision.hasAttachment,
 			confidence: decision.confidence,
-			reasonCodes: decision.reasonCodes,
-			conflictingSignals: decision.conflictingSignals,
-			bodyPersisted: false
-		})
-	).run();
-	return { messageFingerprint, evidenceRef, idempotencyKey, ...decision };
+			reasonCodesJson: JSON.stringify(decision.reasonCodes),
+			conflictingSignalsJson: JSON.stringify(decision.conflictingSignals),
+			authoritySource: decision.authoritySource,
+			vipAuthorityRef: decision.vipAuthorityRef,
+			userOverrideRef: decision.userOverrideRef,
+			administratorOverrideRef: decision.administratorOverrideRef,
+			decisionDigest: null,
+			evidenceId,
+			idempotencyKey: `event:${idempotencyKey}`,
+			classifiedAt
+		},
+		evidence: {
+			canonicalPayloadJson,
+			payloadDigest: null,
+			entryDigest: null,
+			observedAt: classifiedAt
+		},
+		head: {
+			expectedGeneration,
+			expectedEntryDigest: head?.latest_entry_digest || null
+		}
+	};
+	const integrity = await computeEvidenceIntegrity(ledgerInput);
+	Object.assign(ledgerInput.run, { inputDigest: integrity.inputDigest });
+	Object.assign(ledgerInput.event, { decisionDigest: integrity.decisionDigest });
+	Object.assign(ledgerInput.evidence, {
+		payloadDigest: integrity.payloadDigest,
+		entryDigest: integrity.entryDigest,
+		canonicalPayloadJson: integrity.canonicalPayloadJson
+	});
+	if (replay) {
+		const replayMatchesDecision = replay.input_digest === integrity.inputDigest &&
+			replay.message_fingerprint === canonical.message.messageFingerprint &&
+			replay.primary_category === decision.primaryCategory &&
+			Boolean(replay.vip_relationship) === Boolean(decision.vipRelationship) &&
+			replay.priority_level === decision.priorityLevel &&
+			Boolean(replay.requires_action) === Boolean(decision.requiresAction) &&
+			Boolean(replay.time_sensitive) === Boolean(decision.timeSensitive) &&
+			JSON.stringify(parseJsonArray(replay.reason_codes_json)) === JSON.stringify(decision.reasonCodes) &&
+			JSON.stringify(parseJsonArray(replay.conflicting_signals_json)) === JSON.stringify(decision.conflictingSignals);
+		if (!replayMatchesDecision) throw new Error('classification idempotency input conflict');
+		return {
+			classificationId: replay.classification_id, runId: replay.run_id, eventId: replay.event_id,
+			evidenceId: replay.evidence_id, generation: Number(replay.generation),
+			messageFingerprint: canonical.message.messageFingerprint, evidenceRef: replay.entry_digest,
+			idempotencyKey, classifierVersion: CLASSIFIER_VERSION, rulesVersion: RULES_VERSION,
+			modelVersion: MODEL_VERSION, primaryCategory: replay.primary_category,
+			vipRelationship: Boolean(replay.vip_relationship), priorityLevel: replay.priority_level,
+			requiresAction: Boolean(replay.requires_action), timeSensitive: Boolean(replay.time_sensitive),
+			unread: Boolean(replay.unread), starred: Boolean(replay.starred),
+			hasAttachment: Boolean(replay.has_attachment), confidence: Number(replay.confidence),
+			reasonCodes: parseJsonArray(replay.reason_codes_json),
+			conflictingSignals: parseJsonArray(replay.conflicting_signals_json),
+			authoritySource: replay.authority_source, idempotentReplay: true,
+			provenance: canonical.provenance,
+			correlation: {
+				acceptanceSessionId: canonical.interaction.id, requestId: canonical.interaction.requestId,
+				runtimeDeploymentId: canonical.interaction.runtimeDeploymentId,
+				clientKind: canonical.interaction.clientKind
+			}
+		};
+	}
+	const results = await c.env.db.batch(buildAtomicLedgerStatements(c.env.db, ledgerInput));
+	for (const index of [1, 2, 3, 4, 5]) {
+		if (Number(results?.[index]?.meta?.changes || 0) !== 1) {
+			throw new Error('classification ledger atomic commit rejected');
+		}
+	}
+	return {
+		classificationId,
+		runId,
+		eventId,
+		evidenceId,
+		generation,
+		messageFingerprint: canonical.message.messageFingerprint,
+		evidenceRef: integrity.entryDigest,
+		idempotencyKey,
+		...decision,
+		provenance: canonical.provenance,
+		correlation: {
+			acceptanceSessionId: canonical.interaction.id,
+			requestId: canonical.interaction.requestId,
+			runtimeDeploymentId: canonical.interaction.runtimeDeploymentId,
+			clientKind: canonical.interaction.clientKind
+		}
+	};
+}
+
+export async function readCanonicalClassification(c, input = {}) {
+	const canonical = await loadCanonicalClassificationContext(c, { ...input, allowConsumed: true });
+	const projection = await c.env.db.prepare(
+		`SELECT id,tenant_id,workspace_id,provider,provider_account_hash,customer_domain,message_fingerprint,
+		 primary_category,vip_relationship,priority_level,requires_action,time_sensitive,unread,starred,has_attachment,
+		 confidence,reason_codes_json,conflicting_signals_json,classifier_version,rules_version,model_version,
+		 authority_source,evidence_ref,generation,classifier_version,current_event_id,current_evidence_id,
+		 canonical_message_id,canonical_account_id,source_created_at,provenance_ref,classified_at,updated_at
+		 FROM nexora_email_classifications
+		 WHERE tenant_id=?1 AND workspace_id=?2 AND customer_domain=?3 AND provider=?4
+		  AND canonical_account_id=?5 AND canonical_message_id=?6 LIMIT 1`
+	).bind(
+		canonical.scope.tenantId, canonical.scope.workspaceId, canonical.message.customerDomain,
+		canonical.message.provider, canonical.message.canonicalAccountId, String(canonical.message.canonicalMessageId)
+	).first();
+	if (!projection) throw new Error('classification record not found');
+	const verifiedEvidence = await verifyEvidenceChain(c.env.db, {
+		tenantId: canonical.scope.tenantId,
+		workspaceId: canonical.scope.workspaceId,
+		customerDomain: canonical.message.customerDomain,
+		provider: canonical.message.provider,
+		canonicalAccountId: canonical.message.canonicalAccountId,
+		canonicalMessageId: String(canonical.message.canonicalMessageId)
+	});
+	return {
+		classification: {
+			id: projection.id,
+			messageFingerprint: projection.message_fingerprint,
+			generation: Number(projection.generation),
+			primaryCategory: projection.primary_category,
+			vipRelationship: Boolean(projection.vip_relationship),
+			priorityLevel: projection.priority_level,
+			requiresAction: Boolean(projection.requires_action),
+			timeSensitive: Boolean(projection.time_sensitive),
+			unread: Boolean(projection.unread),
+			starred: Boolean(projection.starred),
+			hasAttachment: Boolean(projection.has_attachment),
+			confidence: Number(projection.confidence),
+			reasonCodes: parseJsonArray(projection.reason_codes_json),
+			conflictingSignals: parseJsonArray(projection.conflicting_signals_json),
+			classifierVersion: projection.classifier_version,
+			rulesVersion: projection.rules_version,
+			modelVersion: projection.model_version,
+			authoritySource: projection.authority_source,
+			evidenceRef: projection.evidence_ref,
+			classifiedAt: projection.classified_at,
+			updatedAt: projection.updated_at
+		},
+		provenance: canonical.provenance,
+		evidenceIntegrity: {
+			valid: verifiedEvidence.valid,
+			generation: Number(verifiedEvidence.head.latest_generation),
+			entryDigest: verifiedEvidence.head.latest_entry_digest
+		},
+		evidence: verifiedEvidence.entries.map((row) => ({
+			eventId: row.event_id,
+			evidenceId: row.evidence_id,
+			runId: row.run_id,
+			generation: Number(row.generation),
+			previousEventId: row.previous_event_id || null,
+			previousEntryDigest: row.previous_entry_digest || null,
+			entryDigest: row.entry_digest,
+			payloadDigest: row.payload_digest,
+			redactionLevel: row.redaction_level,
+			bodyPersisted: Boolean(row.body_persisted),
+			observedAt: row.observed_at,
+			requestId: row.request_id,
+			runtimeDeploymentId: row.runtime_deployment_id,
+			acceptanceCorrelationRef: row.acceptance_correlation_ref
+		}))
+	};
+}
+
+export async function classifyAndPersist() {
+	throw new Error('canonical classification interaction is required');
 }
 
 export default {
@@ -600,6 +954,10 @@ export default {
 	normalizeAddress,
 	buildMessageFingerprint,
 	classifyMessage,
+	validateLegacyPersistPayload,
+	loadCanonicalClassificationContext,
+	classifyCanonicalAndPersist,
+	readCanonicalClassification,
 	classifyAndPersist,
 	recordCorrection
 };

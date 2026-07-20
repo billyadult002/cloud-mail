@@ -2,6 +2,7 @@ import app from '../hono/hono';
 import result from '../model/result';
 import domainAuthorityBootstrapService from '../service/nexora-domain-authority-bootstrap-service.mjs';
 import domainOwnershipService from '../service/nexora-domain-ownership-service.mjs';
+import workspaceAuthorityService from '../service/nexora-workspace-authority-service.mjs';
 
 function authenticatedUser(c) {
 	const user = c.get('user');
@@ -26,10 +27,31 @@ function scopeFromBody(body, actor) {
 	};
 }
 
+app.get('/v3/domain-authorities/workspace-selector', async (c) => {
+	const actor = requireAdmin(c);
+	const data = await workspaceAuthorityService.listActorWorkspaces(c, actor);
+	return c.json(result.ok({ workspaces: data, selectionRequired: data.length !== 1 }));
+});
+
+app.post('/v3/domain-authorities/workspace-selector/validate', async (c) => {
+	const actor = requireAdmin(c);
+	const body = await c.req.json();
+	const scope = scopeFromBody(body, actor);
+	const data = await workspaceAuthorityService.assertWorkspaceCapability(c, actor, scope.workspaceId, 'domain:write');
+	return c.json(result.ok(data));
+});
+
 app.post('/v3/domain-authorities/bootstrap', async (c) => {
 	const actor = requireAdmin(c);
 	const body = await c.req.json();
 	const data = await domainAuthorityBootstrapService.bootstrapVerifiedDomainAuthority(c, scopeFromBody(body, actor), body, actor);
+	return c.json(result.ok(data));
+});
+
+app.post('/v3/domain-authorities/revoke', async (c) => {
+	const actor = requireAdmin(c);
+	const body = await c.req.json();
+	const data = await domainAuthorityBootstrapService.revokeDomainAuthority(c, scopeFromBody(body, actor), body, actor);
 	return c.json(result.ok(data));
 });
 

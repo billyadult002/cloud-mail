@@ -304,7 +304,10 @@ private struct ClassificationUndoState: Identifiable {
 
 struct InboxView: View {
     @EnvironmentObject private var app: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var showSettings = false
+    @State private var showServerCorrelationDetails = false
     @State private var showAssistant = false
     @State private var showMailboxSwitcher = false
     @State private var showCompose = false
@@ -809,6 +812,9 @@ struct InboxView: View {
                 .frame(minWidth: 860, minHeight: 620)
                 #endif
             }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                serverCorrelationStatus
+            }
             .navigationTitle("Inbox")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -819,6 +825,9 @@ struct InboxView: View {
             #endif
             .sheet(isPresented: $showSettings) {
                 SettingsView().environmentObject(app)
+            }
+            .sheet(isPresented: $showServerCorrelationDetails) {
+                serverCorrelationDetails
             }
             .sheet(isPresented: $showAssistant) {
                 NavigationStack {
@@ -887,6 +896,174 @@ struct InboxView: View {
         }
     }
 
+    private var serverCorrelationStatus: some View {
+        Button {
+            showServerCorrelationDetails = true
+        } label: {
+            HStack(spacing: 9) {
+                if app.serverCorrelation.phase == .checking {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityHidden(true)
+                } else {
+                    Image(systemName: serverCorrelationIcon)
+                        .foregroundStyle(serverCorrelationColor)
+                        .accessibilityHidden(true)
+                }
+                Text(serverCorrelationTitle)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            .background {
+                if reduceTransparency {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.secondary.opacity(0.14))
+                } else {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(.thinMaterial)
+                }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(serverCorrelationColor.opacity(0.22), lineWidth: 1)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("server-correlation-status")
+        .accessibilityLabel(serverCorrelationAccessibilityLabel)
+        .accessibilityHint("Shows production server verification details")
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: app.serverCorrelation.phase)
+    }
+
+    private var serverCorrelationDetails: some View {
+        NavigationStack {
+            List {
+                Section("Current status") {
+                    Label(serverCorrelationTitle, systemImage: serverCorrelationIcon)
+                        .foregroundStyle(serverCorrelationColor)
+                    Text(serverCorrelationExplanation)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                if let session = app.serverCorrelation.acceptanceSession {
+                    Section("Server receipt") {
+                        correlationDetailRow("Runtime", session.runtimeDeploymentId)
+                        correlationDetailRow("Request", abbreviated(session.requestId ?? "Pending"))
+                        correlationDetailRow("Session", abbreviated(session.id))
+                        correlationDetailRow("Workspace", session.workspaceId.map(String.init) ?? "Pending")
+                        correlationDetailRow("Mailbox", session.canonicalAccountId.map { "Account \($0)" } ?? "Pending")
+                        correlationDetailRow("Server time", session.serverTimestamp ?? "Pending")
+                    }
+                }
+                if let classification = app.serverCorrelation.classification {
+                    Section("Classification evidence") {
+                        correlationDetailRow("Category", classification.classification.primaryCategory.capitalized)
+                        correlationDetailRow("Classification", abbreviated(classification.classification.id))
+                        correlationDetailRow("Evidence", abbreviated(classification.classification.evidenceRef))
+                        correlationDetailRow("Classified", classification.classification.classifiedAt)
+                    }
+                }
+                Section {
+                    Button("Check server again") {
+                        Task { await app.retryServerCorrelation() }
+                    }
+                    .disabled(app.serverCorrelation.phase == .checking)
+                    .accessibilityIdentifier("server-correlation-retry")
+                    if app.serverCorrelation.phase == .scopeMismatch {
+                        Button("Sign in again", role: .destructive) { app.signOut() }
+                            .accessibilityIdentifier("server-correlation-sign-in-again")
+                    }
+                }
+                Section {
+                    Text("This receipt contains bodyless, shortened references only. It does not include message content, addresses, tokens, cookies, or a raw device identifier.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Server Verification")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showServerCorrelationDetails = false }
+                }
+            }
+            .accessibilityIdentifier("server-correlation-details")
+        }
+    }
+
+    private func correlationDetailRow(_ title: String, _ value: String) -> some View {
+        LabeledContent(title) {
+            Text(value)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+                .textSelection(.disabled)
+        }
+    }
+
+    private func abbreviated(_ value: String) -> String {
+        guard value.count > 12 else { return value }
+        return "\(value.prefix(6))…\(value.suffix(4))"
+    }
+
+    private var serverCorrelationTitle: String {
+        switch app.serverCorrelation.phase {
+        case .checking: return "Checking production server…"
+        case .verified: return "Server verified · just now"
+        case .cached: return "Cached · verification expired"
+        case .offline: return "Offline · server not verified"
+        case .failed: return "Server verification unavailable"
+        case .scopeMismatch: return "Server scope mismatch"
+        }
+    }
+
+    private var serverCorrelationExplanation: String {
+        switch app.serverCorrelation.phase {
+        case .checking: return "NEXORA is checking the signed-in session, workspace, mailbox, classification, and Evidence record."
+        case .verified: return "The current session, workspace, mailbox, classification, and Evidence record match fresh production server state."
+        case .cached: return "Mail remains readable, but the last production receipt is too old to count as current verification."
+        case .offline: return "Mail may be cached. NEXORA has not verified this session against the production server."
+        case .failed: return "The production server did not provide a complete classification and Evidence receipt."
+        case .scopeMismatch: return "The server receipt does not match the current workspace or mailbox. NEXORA rejected it."
+        }
+    }
+
+    private var serverCorrelationAccessibilityLabel: String {
+        "Production server status. \(serverCorrelationTitle). \(serverCorrelationExplanation)"
+    }
+
+    private var serverCorrelationIcon: String {
+        switch app.serverCorrelation.phase {
+        case .checking: return "hourglass"
+        case .verified: return "checkmark.shield.fill"
+        case .cached: return "clock.badge.exclamationmark"
+        case .offline: return "wifi.slash"
+        case .failed: return "exclamationmark.triangle.fill"
+        case .scopeMismatch: return "person.crop.circle.badge.exclamationmark"
+        }
+    }
+
+    private var serverCorrelationColor: Color {
+        switch app.serverCorrelation.phase {
+        case .verified: return .green
+        case .checking, .cached: return .orange
+        case .offline: return .secondary
+        case .failed, .scopeMismatch: return .red
+        }
+    }
+
     @ViewBuilder
     private var content: some View {
         let visibleEmails = filteredEmails
@@ -937,12 +1114,15 @@ struct InboxView: View {
                     unifiedLocalLedgerSection(localLedgerItems)
                 }
                 ForEach(authoritativeProjectionsWithoutSourceAdapter) { projection in
+                    let messageCountLabel = projection.messageCount == 1
+                        ? "1 message"
+                        : "\(projection.messageCount) messages"
                     Button { selectedConversationProjection = projection } label: {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(projection.title.isEmpty ? "(no subject)" : projection.title).font(.headline).lineLimit(1)
                             Text(projection.preview).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
                             HStack {
-                                Text("\(projection.messageCount) message\(projection.messageCount == 1 ? "" : "s")")
+                                Text(messageCountLabel)
                                 if projection.actionRequired { Label("Action required", systemImage: "bolt.fill") }
                             }.font(.caption).foregroundStyle(.secondary)
                         }
@@ -989,8 +1169,8 @@ struct InboxView: View {
 #if DEBUG
                 EmailDetailView(
                     email: route.email,
-                    debugAutoAction: route.debugAutoAction,
-                    onBack: { if !navigationPath.isEmpty { navigationPath.removeLast() } }
+                    onBack: { if !navigationPath.isEmpty { navigationPath.removeLast() } },
+                    debugAutoAction: route.debugAutoAction
                 )
                 .environmentObject(app)
 #else

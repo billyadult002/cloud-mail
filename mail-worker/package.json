@@ -6,7 +6,7 @@
 		"dev": "wrangler dev --config wrangler-dev.toml",
 		"check": "find src -name '*.js' -print0 | xargs -0 -n1 node --check",
 		"test": "npm run test:unit",
-		"test:unit": "node scripts/send-contract-check.mjs && node scripts/classification-contract-check.mjs && node scripts/domain-authority-bootstrap-contract-check.mjs && npm run check && find src -name '*.mjs' -print0 | xargs -0 -n1 node --check",
+		"test:unit": "node scripts/send-contract-check.mjs && node scripts/classification-contract-check.mjs && node scripts/classification-authority-provenance-contract-check.mjs && node scripts/classification-atomic-writer-sqlite.test.mjs && node scripts/domain-authority-bootstrap-contract-check.mjs && node scripts/evidence-ledger-contract-check.mjs && node scripts/evidence-ledger-sqlite-integrity-check.mjs && npm run check && find src -name '*.mjs' -print0 | xargs -0 -n1 node --check",
 		"test:rc": "vitest run scripts/reliability-tests",
 		"deploy": "wrangler deploy",
 		"start": "wrangler dev"

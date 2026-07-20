@@ -214,8 +214,13 @@ final class AppState: ObservableObject {
     @Published var selectedAccountId: Int?
     @Published var selectedProvider: UnifiedMailProvider?
     @Published var errorMessage: String?
+    @Published private(set) var serverCorrelation: ServerCorrelationSnapshot = .idle
 
     private static let tokenKey = "cloudmail_token"
+    /// Ephemeral per-process correlation key. It is never persisted and never
+    /// participates in authentication or authorization.
+    private let clientCorrelationNonce = UUID().uuidString
+    private var serverCorrelationAttemptId = UUID()
     private static let secureDeviceReferenceKey = "cloudmail_secure_device_reference_v1"
     private static let profileKeyBase = "cloudmail_mail_client_profile_v1"
     private static let draftsKeyBase = "cloudmail_local_drafts_v1"
@@ -1780,6 +1785,7 @@ final class AppState: ObservableObject {
     }
 
     private func clearLocalSession() {
+        invalidateServerCorrelation()
         token = nil
         currentUser = nil
         clearMailboxOwnershipContext()
@@ -1997,6 +2003,7 @@ final class AppState: ObservableObject {
             let decoded = mail.map { $0.sanitizedForDisplayStorage() }
             self.emails = applyMailStateOverlay(to: decoded)
             await refreshConversationProjectionCutoverState()
+            await refreshServerCorrelation(for: self.emails)
             invalidateSmartMailCategoryCache()
             recordMailLoadTrace(apiCount: mail.count, decodedCount: decoded.count, overlayCount: self.emails.count)
             persistCachedInbox()
@@ -2060,9 +2067,13 @@ final class AppState: ObservableObject {
 
     func selectActiveWorkspace(_ workspaceId: Int) {
         guard availableWorkspaces.contains(where: { $0.id == workspaceId }) else { return }
+        invalidateServerCorrelation()
         persistedActiveWorkspaceId = workspaceId
         activeWorkspaceId = workspaceId
-        Task { await refreshConversationProjectionCutoverState() }
+        Task {
+            await refreshConversationProjectionCutoverState()
+            await refreshServerCorrelation(for: emails)
+        }
     }
 
     private func resolvedActiveWorkspaceId() async throws -> Int {
@@ -2074,6 +2085,98 @@ final class AppState: ObservableObject {
             : resolution.defaultWorkspaceId
         activeWorkspaceId = workspaceId
         return workspaceId
+    }
+
+    func retryServerCorrelation() async {
+        await refreshServerCorrelation(for: emails)
+    }
+
+    private func invalidateServerCorrelation() {
+        serverCorrelationAttemptId = UUID()
+        serverCorrelation = .idle
+    }
+
+    private func refreshServerCorrelation(for sourceEmails: [EmailMessage]) async {
+        guard phase == .ready else {
+            invalidateServerCorrelation()
+            return
+        }
+        let target: EmailMessage?
+        if let selectedAccountId {
+            target = sourceEmails.first { $0.accountId == selectedAccountId }
+        } else {
+            target = sourceEmails.first { $0.accountId != nil }
+        }
+        guard let target, let accountId = target.accountId, let workspaceId = activeWorkspaceId else {
+            serverCorrelation = ServerCorrelationSnapshot(
+                phase: .failed,
+                acceptanceSession: nil,
+                classification: nil,
+                lastVerifiedAt: nil
+            )
+            return
+        }
+
+        let attemptId = UUID()
+        serverCorrelationAttemptId = attemptId
+        serverCorrelation = ServerCorrelationSnapshot(
+            phase: .checking,
+            acceptanceSession: nil,
+            classification: nil,
+            lastVerifiedAt: nil
+        )
+        do {
+            let acceptanceSession = try await backend.createAcceptanceSession(
+                accountId: accountId,
+                idempotencyKey: clientCorrelationNonce
+            )
+            guard serverCorrelationAttemptId == attemptId else { return }
+            guard let challenge = acceptanceSession.challenge, !challenge.isEmpty else {
+                serverCorrelation = ServerCorrelationSnapshot(
+                    phase: .failed,
+                    acceptanceSession: acceptanceSession,
+                    classification: nil,
+                    lastVerifiedAt: nil
+                )
+                return
+            }
+            let classification = try await backend.classificationRecord(
+                canonicalMessageId: String(target.emailId),
+                acceptanceSessionId: acceptanceSession.id
+            )
+            guard serverCorrelationAttemptId == attemptId else { return }
+            try await backend.consumeAcceptanceSession(
+                id: acceptanceSession.id,
+                challenge: challenge,
+                classificationId: classification.classification.id
+            )
+            guard serverCorrelationAttemptId == attemptId else { return }
+            let confirmedSession = try await backend.acceptanceSession(id: acceptanceSession.id)
+            guard serverCorrelationAttemptId == attemptId else { return }
+            let phase = ServerCorrelationEvaluator.evaluate(
+                acceptanceSession: confirmedSession,
+                classification: classification,
+                expectedWorkspaceId: workspaceId,
+                expectedAccountId: accountId
+            )
+            serverCorrelation = ServerCorrelationSnapshot(
+                phase: phase,
+                acceptanceSession: confirmedSession,
+                classification: classification,
+                lastVerifiedAt: phase == .verified
+                    ? confirmedSession.serverTimestamp.flatMap(ServerCorrelationEvaluator.parseServerDate)
+                    : nil
+            )
+        } catch {
+            guard serverCorrelationAttemptId == attemptId else { return }
+            let offline = (error as? APIError)?.code == -1
+            serverCorrelation = ServerCorrelationSnapshot(
+                phase: offline ? .offline : .failed,
+                acceptanceSession: nil,
+                classification: nil,
+                lastVerifiedAt: nil
+            )
+        }
     }
 
     var isConversationProjectionAuthoritative: Bool {
@@ -4088,6 +4191,7 @@ final class AppState: ObservableObject {
             return
         }
         mailboxDefaultApplied = true
+        invalidateServerCorrelation()
         selectedAccountId = accountId
         if let accountId,
            let account = addresses.first(where: { $0.accountId == accountId }) {

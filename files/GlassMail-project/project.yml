@@ -10,7 +10,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "3.03"
-    CURRENT_PROJECT_VERSION: "303"
+    CURRENT_PROJECT_VERSION: "357"
     DEVELOPMENT_TEAM: XC7JTUHQ33
     CODE_SIGN_STYLE: Automatic
 
@@ -34,3 +34,31 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+  GlassMailTests:
+    type: bundle.unit-test
+    supportedDestinations: [iOS, macOS]
+    platform: iOS
+    sources:
+      - path: GlassMailTests
+      - path: GlassMail/Models/ServerCorrelation.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.wangbei8554.pingguo736.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  GlassMail:
+    build:
+      targets:
+        GlassMail: all
+        GlassMailTests: [test]
+    test:
+      targets:
+        - GlassMailTests
+  GlassMailCorrelationTests:
+    build:
+      targets:
+        GlassMailTests: [test]
+    test:
+      targets:
+        - GlassMailTests

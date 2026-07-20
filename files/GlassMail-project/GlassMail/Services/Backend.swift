@@ -88,6 +88,74 @@ actor Backend {
         }
     }
 
+    /// Creates a bodyless, short-lived correlation receipt. The client nonce
+    /// links requests only; authentication and scope remain server-derived.
+    func createAcceptanceSession(accountId: Int, idempotencyKey: String) async throws -> AcceptanceSessionReceipt {
+        let buildId = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        let buildVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let body = AcceptanceSessionRequest(
+            accountId: accountId,
+            buildId: buildId,
+            buildVersion: buildVersion,
+            idempotencyKey: idempotencyKey
+        )
+        return try await request(
+            "/v3/acceptance/sessions",
+            method: "POST",
+            json: body,
+            strictPayload: true
+        )
+    }
+
+    func consumeAcceptanceSession(
+        id: String,
+        challenge: String,
+        classificationId: String
+    ) async throws {
+        let safeId = try safePathComponent(id, label: "Acceptance session")
+        let body = AcceptanceSessionConsumeRequest(
+            challenge: challenge,
+            classificationId: classificationId
+        )
+        try await requestVoid(
+            "/v3/acceptance/sessions/\(safeId)/consume",
+            method: "POST",
+            json: body
+        )
+    }
+
+    func acceptanceSession(id: String) async throws -> AcceptanceSessionReceipt {
+        let safeId = try safePathComponent(id, label: "Acceptance session")
+        return try await request(
+            "/v3/acceptance/sessions/\(safeId)",
+            method: "GET",
+            strictPayload: true
+        )
+    }
+
+    /// Reads a server-persisted classification and Evidence reference. No
+    /// message content, tenant, workspace, provider, or domain is transmitted.
+    func classificationRecord(
+        canonicalMessageId: String,
+        acceptanceSessionId: String
+    ) async throws -> ClassificationRecordReadback {
+        let safeMessageId = try safePathComponent(canonicalMessageId, label: "Message reference")
+        return try await request(
+            "/v3/classification/records/\(safeMessageId)",
+            method: "GET",
+            query: [URLQueryItem(name: "acceptanceSessionId", value: acceptanceSessionId)],
+            strictPayload: true
+        )
+    }
+
+    private func safePathComponent(_ value: String, label: String) throws -> String {
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))
+        guard let safe = value.addingPercentEncoding(withAllowedCharacters: allowed), !safe.isEmpty else {
+            throw APIError(code: 400, message: "\(label) is unavailable.")
+        }
+        return safe
+    }
+
     /// Fetch a page of emails.
     /// - allReceive: when true, returns mail across all of the user's addresses.
     /// - cursor: the smallest emailId already seen (for "older" pagination). Pass nil for the first page.

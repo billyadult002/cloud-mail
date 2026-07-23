@@ -27,7 +27,7 @@ Maximum five iterations. Each Maker change must be followed by executable Checke
 2. [complete] Add a production-shaped regression fixture using the deployed claim/policy schemas and the real canonical verifier, plus deterministic evidence replay and expired partial-operation recovery.
 3. [complete] Bind each recovered internal operation attempt to the new Connection fencing token; retain an exact bounded cleanup for the single pre-repair orphan evidence row.
 4. [complete] Run focused tests, the full Worker suite, syntax/coupling guards, audits, and an independent adversarial review. Final result: 21 files / 238 tests, zero audit findings, no remaining P0/P1/P2.
-5. [in progress] Deploy only the reviewed commit with `--keep-vars --env=""`, verify the exact Worker version and seven runtime variables, perform the bounded production repair, and resume Google read-only consent.
+5. [in progress] The first reviewed repair was deployed with preserved bindings. The retry exposed an ISO-expiry Mission-rebind boundary; the final guarded correction now proves every pending prior-Mission session is parseable and expired, rejects any live sibling, and remains limited to credential-free/provider-free DISCOVERED Connections. Deploy the final reviewed commit with `--keep-vars --env=""` and resume Google read-only consent.
 
 ## Stop conditions
 

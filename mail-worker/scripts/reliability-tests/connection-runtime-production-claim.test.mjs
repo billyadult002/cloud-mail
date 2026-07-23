@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
-import { createConnectionOperation, persistConnectionEvidence } from '../../src/service/connection-runtime-service.js';
+import { assertConnectionMissionAssociation, createConnectionOperation, persistConnectionEvidence } from '../../src/service/connection-runtime-service.js';
 
 const scope = { tenantId: 71001, workspaceId: 71002 };
 const tables = [
@@ -14,6 +14,7 @@ const tables = [
 	'mission_runtime_runs',
 	'mission_runtime_missions',
 	'nexora_connection_operations',
+	'nexora_onboarding_authorization_sessions',
 ];
 const schema = [
 	`CREATE TABLE mission_runtime_missions (
@@ -84,6 +85,11 @@ const schema = [
 		attempt INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		UNIQUE(connection_id,operation_type,idempotency_key)
+	)`,
+	`CREATE TABLE nexora_onboarding_authorization_sessions (
+		id TEXT PRIMARY KEY, onboarding_mission_id TEXT NOT NULL, tenant_id INTEGER NOT NULL,
+		workspace_id INTEGER NOT NULL, provider TEXT NOT NULL, status TEXT NOT NULL,
+		expires_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`,
 ];
 
@@ -192,5 +198,26 @@ describe('Connection evidence uses the production Mission Claim contract', () =>
 		const retry = await env.db.prepare(`SELECT idempotency_key,state,lease_owner,fencing_token FROM nexora_connection_operations WHERE id=?1`).bind(operation.id).first();
 		expect(retired).toMatchObject({ state: 'FAILED', lease_owner: null, lease_expires_at: null, fencing_token: null, error_code: 'INCOMPLETE_ATTEMPT_EXPIRED' });
 		expect(retry).toMatchObject({ idempotency_key: 'authorization:session-prod:retry:10', state: 'LEASED', lease_owner: 'new-owner', fencing_token: 10 });
+	});
+
+	it('rebinds only a credential-free DISCOVERED Connection whose prior ISO session is expired', async () => {
+		await env.db.prepare(`INSERT INTO nexora_onboarding_authorization_sessions(id,onboarding_mission_id,tenant_id,workspace_id,provider,status,expires_at) VALUES('old-session','old-mission',?1,?2,'google','pending',?3)`).bind(scope.tenantId, scope.workspaceId, new Date(Date.now() - 60000).toISOString()).run();
+		const discovered = {
+			state: 'DISCOVERED',
+			onboarding_mission_id: 'old-mission',
+			provider_connection_id: null,
+			provider_connection_generation: 0,
+			credential_reference_id: null,
+			credential_generation: 0,
+		};
+		await expect(assertConnectionMissionAssociation({ env: { db: env.db } }, scope, discovered, 'new-mission', 'google')).resolves.toBe(true);
+		await env.db.prepare(`UPDATE nexora_onboarding_authorization_sessions SET expires_at=?1 WHERE id='old-session'`).bind(new Date(Date.now() + 60000).toISOString()).run();
+		await expect(assertConnectionMissionAssociation({ env: { db: env.db } }, scope, discovered, 'new-mission', 'google')).rejects.toThrow('connection_mission_association_conflict');
+		await env.db.prepare(`UPDATE nexora_onboarding_authorization_sessions SET expires_at='malformed' WHERE id='old-session'`).run();
+		await expect(assertConnectionMissionAssociation({ env: { db: env.db } }, scope, discovered, 'new-mission', 'google')).rejects.toThrow('connection_mission_association_conflict');
+		await env.db.prepare(`UPDATE nexora_onboarding_authorization_sessions SET expires_at=?1 WHERE id='old-session'`).bind(new Date(Date.now() - 60000).toISOString()).run();
+		await env.db.prepare(`INSERT INTO nexora_onboarding_authorization_sessions(id,onboarding_mission_id,tenant_id,workspace_id,provider,status,expires_at) VALUES('live-sibling','old-mission',?1,?2,'google','pending',?3)`).bind(scope.tenantId, scope.workspaceId, new Date(Date.now() + 60000).toISOString()).run();
+		await expect(assertConnectionMissionAssociation({ env: { db: env.db } }, scope, discovered, 'new-mission', 'google')).rejects.toThrow('connection_mission_association_conflict');
+		await expect(assertConnectionMissionAssociation({ env: { db: env.db } }, scope, { ...discovered, credential_reference_id: 'credential-1', credential_generation: 1, provider_connection_id: 'provider-1', provider_connection_generation: 1 }, 'new-mission', 'google')).rejects.toThrow('connection_mission_association_conflict');
 	});
 });

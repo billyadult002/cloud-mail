@@ -48,6 +48,23 @@ function assertCurrentBinding(connection, { authority, row }) {
 	) throw new Error('connection_live_authority_binding_stale');
 }
 
+export async function assertConnectionMissionAssociation(c, scope, connection, nextMissionId, provider) {
+	if (!connection.onboarding_mission_id || connection.onboarding_mission_id === nextMissionId || connection.state === 'REAUTHORIZATION_REQUIRED') return true;
+	if (connection.state !== 'DISCOVERED'
+		|| connection.provider_connection_id
+		|| Number(connection.provider_connection_generation) !== 0
+		|| connection.credential_reference_id
+		|| Number(connection.credential_generation) !== 0) throw new Error('connection_mission_association_conflict');
+	const pending = await c.env.db.prepare(
+		`SELECT expires_at FROM nexora_onboarding_authorization_sessions
+		 WHERE onboarding_mission_id=?1 AND tenant_id=?2 AND workspace_id=?3 AND provider=?4 AND status='pending'
+		 ORDER BY created_at,id`
+	).bind(connection.onboarding_mission_id, scope.tenantId, scope.workspaceId, provider).all();
+	const expiries = (pending.results || []).map((row) => Date.parse(row.expires_at));
+	if (!expiries.length || expiries.some((expiry) => !Number.isFinite(expiry) || expiry > Date.now())) throw new Error('connection_mission_association_conflict');
+	return true;
+}
+
 async function claim(c, scope, { connectionId, expectedGeneration, owner, seconds = 60 }) {
 	const changed = await c.env.db.prepare(`UPDATE nexora_connections SET lease_owner=?2,lease_expires_at=datetime('now','+'||?3||' seconds'),fencing_token=fencing_token+1,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND tenant_id=?4 AND workspace_id=?5 AND connection_generation=?6 AND state NOT IN ('REVOKED','FAILED_TERMINAL') AND (lease_expires_at IS NULL OR lease_expires_at<CURRENT_TIMESTAMP)`).bind(connectionId, owner, Math.min(300, Math.max(30, Number(seconds))), scope.tenantId, scope.workspaceId, expectedGeneration).run();
 	if (!changed.meta?.changes) throw new Error('connection_lease_conflict');
@@ -231,7 +248,7 @@ async function beginAuthorization(c, input, { authorizationSessionId }) {
 	assertCurrentBinding(connection, { authority, row });
 	const session = await c.env.db.prepare(`SELECT onboarding_mission_id FROM nexora_onboarding_authorization_sessions WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND provider=?4 AND status='pending'`).bind(authorizationSessionId, scope.tenantId, scope.workspaceId, input.provider).first();
 	if (!session) throw new Error('connection_authorization_session_denied');
-	if (connection.onboarding_mission_id && connection.onboarding_mission_id !== session.onboarding_mission_id && connection.state !== 'REAUTHORIZATION_REQUIRED') throw new Error('connection_mission_association_conflict');
+	await assertConnectionMissionAssociation(c, scope, connection, session.onboarding_mission_id, input.provider);
 	connection = await claim(c, scope, { connectionId: connection.id, expectedGeneration: connection.connection_generation, owner: `connection-authorization:${crypto.randomUUID()}` });
 	// Mission association is part of the same fenced transition as the authorization state.
 	// The claimed snapshot is used for evidence so a replacement Mission cannot be overwritten

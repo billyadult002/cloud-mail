@@ -7,10 +7,10 @@
 - Checkpoint 4 PR: merged as `cafe44eca4359911cfd773f0f262f3b4c37b9720`
 - Maker-Checker iteration cap: 5
 - Current iteration: 5
-- Current phase: production-shaped Mission Claim repair reviewed and verified; sealing for deployment
-- Reviewed implementation commit: `8f1a2a780a0dc7e4e7fdc8ce7bb91dd138349490`
+- Current phase: final expired-Mission rebind correction reviewed and verified; sealing for deployment
+- Reviewed implementation commit: `4a778f5da1297850a713c8265b3d9480bdbd6fea` plus the final reviewed rebind delta awaiting commit
 - Pull request: `https://github.com/billyadult002/cloud-mail/pull/10`
-- Production Worker version: `8b5a0914-8e91-4522-903f-6057f8f4b73c`
+- Production Worker version: `13c5416b-2a73-49ce-9612-2753e6801b73`
 - Production changes in Checkpoint 5: migration 0081, verified Domain Authority/account binding, and exact bounded runtime variables with refresh disabled
 - Provider writes: 0
 - Mailbox mutations: 0
@@ -47,7 +47,8 @@
 - New Connection contract and Provider Session suites: 39 tests, all pass.
 - Final adversarial focused matrix: 78 tests, all pass; no remaining P0/P1/P2.
 - Production-shaped Connection claim/retry regression: the real canonical verifier runs twice and reuses exactly one deterministic evidence row and verification; expired partial operations are retired and replaced under the current Connection fence.
-- Final Worker reliability suite after repair: 21 files, 238 tests, all pass; syntax/coupling guards and both audits pass; independent re-review reports no P0/P1/P2.
+- Final Worker reliability suite after claim repair: 21 files, 238 tests, all pass; syntax/coupling guards and both audits pass; independent re-review reports no P0/P1/P2.
+- Expired-Mission rebind correction: every pending prior-Mission session in the exact scope must have a finite expired timestamp; empty, malformed, live-sibling, credential-bearing, and provider-bound cases reject. Final suite: 21 files, 239 tests; independent re-review PASS with no P0/P1/P2.
 - Provider coupling guard: pass; Connection coupling guard: pass.
 - `npm audit` and production-only audit: zero vulnerabilities.
 - Migration 0081 apply twice: pass; direct HEALTHY, self-asserted Verification, illegal transition, and cross-tenant child probes rejected.
@@ -70,3 +71,5 @@
 - Second launch evidence: the reviewed Worker version is active with refresh disabled; retry created the deterministic canonical Mission run and one DISCOVERED Connection, then failed closed at `mission_runtime_scope_denied` before Google. Remote inspection shows one incomplete leased REAUTHORIZE operation, no canonical Connection claim, no provider call, and no mailbox mutation.
 - Root cause: the Connection writer's simplified Mission Claim insert omitted production-required `step_id`, `claim_type`, `subject_hash`, `assertion_hash`, and `required_evidence_json`; the approved repair and bounded cleanup are recorded in `implementation_plan.md`.
 - Repair verification: complete canonical policy/claim fields are inserted and reread fail-closed; evidence identity is deterministic and replay-safe; expired partial operations recover under a new fencing token. Deployment and bounded production cleanup remain.
+- First repaired deployment: Worker version `13c5416b-2a73-49ce-9612-2753e6801b73` received 100% traffic with all bindings preserved and refresh disabled. The append-only guard correctly rejected deletion of the pre-repair evidence row, so no production evidence was removed.
+- Third launch evidence: the prior authorization session was correctly rejected as expired; a fresh session then exposed `connection_mission_association_conflict` before Google. The final reviewed correction permits replacement only for a credential-free/provider-free DISCOVERED Connection when all pending sessions under the prior exact Mission scope are demonstrably expired.

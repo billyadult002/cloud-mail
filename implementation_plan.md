@@ -55,3 +55,16 @@
 - Explicitly select Workspace 1 — NEXORA Runtime Validation.
 - Invoke only workspace-selector validation; verify membership, `tenant_key=user:1`, `domain:write`, HMAC/deployment continuity, and Workspace 2 not selected.
 - Run final read-only D1 audit with `changed_db=false`; issue Activation Preconditions Report.
+
+---
+
+# Checkpoint 4 Implementation Plan
+
+1. Resolve deployment authority to top-level `mail-worker` and selectively adapt verified Checkpoint 3 behavior to the canonical durable runtime.
+2. Reproduce the dependency advisory from a clean install; prove graph and bundle/runtime reachability; test the smallest non-breaking resolution.
+3. Add exactly one scheduled `search_email` path with default-off and emergency-disable controls, exact tenant/workspace/capability allowlists, bounded execution, rate/circuit controls, immutable authority, Evidence, Verification, and verified-only Mission progression.
+4. Verify with real-D1 focused tests, complete Worker suite, clean install/audit, production dry-run build, coupling/secret/license/migration checks, and an independent adversarial reviewer.
+5. After all P0/P1 findings close, commit and push the exact candidate, open a PR, and record review evidence.
+6. Deploy only the reviewed immutable commit; keep global execution disabled; configure one redacted tenant/workspace scope; run one authenticated read-only production acceptance, safe negative probes, and rollback verification.
+
+Stop conditions: no deployment of an uncommitted/unreviewed candidate; no provider write, credential access, mailbox mutation, DNS mutation, destructive migration, or claim that a canonical D1 search proves live Provider API, synchronization, or account linking.

@@ -5,6 +5,7 @@ import verifyRecordService from './service/verify-record-service';
 import emailService from './service/email-service';
 import kvObjService from './service/kv-obj-service';
 import oauthService from "./service/oauth-service";
+import scheduledCapabilityRuntime from './service/scheduled-capability-runtime-service.js';
 export default {
 	 async fetch(req, env, ctx) {
 
@@ -32,5 +33,6 @@ export default {
 		await userService.resetDaySendCount({ env })
 		await emailService.completeReceiveAll({ env })
 		await oauthService.clearNoBindOathUser({ env })
+		await scheduledCapabilityRuntime.monitorScheduled({ env })
 	},
 };

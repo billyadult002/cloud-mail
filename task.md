@@ -29,3 +29,20 @@
 - Current Web and iPhone products do not expose Domain Activation controls.
 - Existing Web axios interceptor can preserve the credential boundary without exposing browser storage.
 - Production allowlist binding exists, but its internal structure still requires runtime proof or a signed redacted attestation.
+
+---
+
+# Checkpoint 4 Task State
+
+- Mission: NEXORA Checkpoint 4 dependency closure and scheduled read-only capability runtime
+- Branch: `codex/nexora-checkpoint4-production`
+- Base: `066ffb2515187b56ceb9fa2e3015c8ff594aefc1`
+- Iteration cap: 5 Maker–Checker cycles
+- Current state: `CHECKPOINT_4_LOCAL_RELEASE_CANDIDATE_PASS — PRODUCTION_ACCEPTANCE_NOT_COMPLETE`
+- Dependency gate: sharp advisory resolved by tested 0.35.3 override; clean audit is zero
+- Runtime gate: exactly one default-off `search_email` scheduled path implemented
+- Local verification: focused 9/9; complete Worker 191/191; syntax/unit PASS; dry-run build PASS
+- Pending: replay/negative hardening, provider-coupling guard, final review, immutable commit, PR, deployment, authenticated production acceptance, rollback
+- Production provider writes: 0
+- Mailbox mutations: 0
+- DNS changes: 0

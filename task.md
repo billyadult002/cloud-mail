@@ -7,7 +7,7 @@
 - Checkpoint 4 PR: merged as `cafe44eca4359911cfd773f0f262f3b4c37b9720`
 - Maker-Checker iteration cap: 5
 - Current iteration: 5
-- Current phase: final expired-Mission rebind correction reviewed and verified; sealing for deployment
+- Current phase: migration 0083 expired-Mission rebind trigger reviewed and verified; sealing for remote apply
 - Reviewed implementation commit: `4a778f5da1297850a713c8265b3d9480bdbd6fea` plus the final reviewed rebind delta awaiting commit
 - Pull request: `https://github.com/billyadult002/cloud-mail/pull/10`
 - Production Worker version: `13c5416b-2a73-49ce-9612-2753e6801b73`
@@ -73,3 +73,4 @@
 - Repair verification: complete canonical policy/claim fields are inserted and reread fail-closed; evidence identity is deterministic and replay-safe; expired partial operations recover under a new fencing token. Deployment and bounded production cleanup remain.
 - First repaired deployment: Worker version `13c5416b-2a73-49ce-9612-2753e6801b73` received 100% traffic with all bindings preserved and refresh disabled. The append-only guard correctly rejected deletion of the pre-repair evidence row, so no production evidence was removed.
 - Third launch evidence: the prior authorization session was correctly rejected as expired; a fresh session then exposed `connection_mission_association_conflict` before Google. The final reviewed correction permits replacement only for a credential-free/provider-free DISCOVERED Connection when all pending sessions under the prior exact Mission scope are demonstrably expired.
+- Fourth launch evidence: the deployed service guard passed, retired the expired partial operation, and produced one canonical verified Connection receipt with zero provider calls, but migration 0082's trigger rejected the final state transition because it allowed only a null prior Mission. Migration 0083 replaces only that trigger and binds the fresh Mission to the exact verified REAUTHORIZE operation, event, session, scope, and fence; positive, mismatched-session negative, and repeated-apply SQLite proofs pass with no reviewer P0/P1/P2.

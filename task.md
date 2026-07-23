@@ -10,7 +10,7 @@
 - Current phase: migration 0083 and the reviewed runtime are live; Google callback registration is blocked by missing access to the OAuth client's owning project
 - Reviewed implementation commits: `4a778f5da1297850a713c8265b3d9480bdbd6fea`, `45dee5c5b0d81c70b6aba89403334fac55cf29f8`, `813520ca535a7922cd6eddd221be5e998577be45`, and migration commit `72487e97d77f614849856f4520fdee7e8d05a5e9`
 - Pull request: `https://github.com/billyadult002/cloud-mail/pull/10`
-- Production Worker version: `5c5fadf3-35de-4816-abf1-1dd816594e58`
+- Production Worker version: `4fa31aae-6918-4e68-9d5e-a57d0e40a7e0`
 - Production changes in Checkpoint 5: migration 0081, verified Domain Authority/account binding, and exact bounded runtime variables with refresh disabled
 - Provider writes: 0
 - Mailbox mutations: 0
@@ -83,3 +83,5 @@
 - First post-deploy recovery correctly retired the expired prior session and advanced the Connection to `REAUTHORIZATION_REQUIRED` generation 3 with zero provider calls, but begin authorization failed closed because recovery had consumed the replacement session's unique operation binding. The follow-up correction keeps recovery evidence bound to the prior/replacement pair through its idempotency key while reserving `authorization_session_id` exclusively for the begin/callback operation.
 - Production-shaped testing with the real partial unique index and authority-immutability trigger also exposed that an expired authorization-bound partial operation cannot safely transfer its session binding. The final rule retires it without changing lineage and fails closed with `connection_authorization_operation_retry_requires_new_session`; only sessionless internal operations may retry under a new fence.
 - Final exact-once repair verification: focused production-shaped suite 6/6, full Worker reliability 21 files / 242 tests, syntax, SQLite integrity, Connection/provider coupling, and both audits pass. Independent checker verdict: PASS with no remaining P0/P1/P2.
+- Exact commit `86cac62667e6f7f68d69bc2f9084677c203d200b` is deployed as Worker version `4fa31aae-6918-4e68-9d5e-a57d0e40a7e0` at 100% traffic with all bounded Connection controls preserved and automatic refresh disabled.
+- A fresh session now reaches the Google account chooser. Production state is `AUTHORIZATION_PENDING` generation 4 with its lease released, provider/credential generations 0, provider network calls 0, and mailbox mutations 0. The chooser did not contain the canonical administrator identity; the secure browser handoff is paused at “Email or phone” for local human sign-in.

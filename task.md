@@ -7,10 +7,10 @@
 - Checkpoint 4 PR: merged as `cafe44eca4359911cfd773f0f262f3b4c37b9720`
 - Maker-Checker iteration cap: 5
 - Current iteration: 5
-- Current phase: migration 0082 applied; canonical onboarding-run correction awaiting deployment
-- Reviewed implementation commit: `e4747dc80c1265d07a8fbef017257071aa6a3347`
+- Current phase: production-shaped Mission Claim repair reviewed and verified; sealing for deployment
+- Reviewed implementation commit: `8f1a2a780a0dc7e4e7fdc8ce7bb91dd138349490`
 - Pull request: `https://github.com/billyadult002/cloud-mail/pull/10`
-- Production Worker version: `9b143fab-4c10-48c1-b694-222f40bb2333`
+- Production Worker version: `8b5a0914-8e91-4522-903f-6057f8f4b73c`
 - Production changes in Checkpoint 5: migration 0081, verified Domain Authority/account binding, and exact bounded runtime variables with refresh disabled
 - Provider writes: 0
 - Mailbox mutations: 0
@@ -33,7 +33,7 @@
 5. [complete] Runtime implementation; migration applies twice; 236/236 Worker reliability tests pass.
 6. [complete] Independent security, migration, and provider-boundary re-review; no remaining P0/P1/P2.
 7. [complete] Reviewed commits pushed; PR 10 open and mergeable; migration 0081 applied; exact reviewed Worker deployed default-off.
-8. [in progress] Verified Domain Authority, exact account selection, immutable OAuth-launch deployment, and migration 0082 are complete. The reviewed orchestrator-owned canonical run correction must deploy before human read-only Google OAuth can continue.
+8. [in progress] Verified Domain Authority, exact account selection, immutable OAuth-launch deployment, migration 0082, and the canonical run correction are complete. The production-shaped canonical Mission Claim repair now passes the real verifier and expired-attempt recovery tests and is ready for exact-source deployment.
 
 ## Local verification evidence
 
@@ -46,6 +46,8 @@
 - Canonical onboarding run: exactly one deterministic run is created and rebound only to the full Mission tuple; cancelled Mission replay is rejected.
 - New Connection contract and Provider Session suites: 39 tests, all pass.
 - Final adversarial focused matrix: 78 tests, all pass; no remaining P0/P1/P2.
+- Production-shaped Connection claim/retry regression: the real canonical verifier runs twice and reuses exactly one deterministic evidence row and verification; expired partial operations are retired and replaced under the current Connection fence.
+- Final Worker reliability suite after repair: 21 files, 238 tests, all pass; syntax/coupling guards and both audits pass; independent re-review reports no P0/P1/P2.
 - Provider coupling guard: pass; Connection coupling guard: pass.
 - `npm audit` and production-only audit: zero vulnerabilities.
 - Migration 0081 apply twice: pass; direct HEALTHY, self-asserted Verification, illegal transition, and cross-tenant child probes rejected.
@@ -65,3 +67,6 @@
 - Remaining live blocker: Google read-only consent has not completed, so consumed authorization sessions, eligible Google token authorities, authenticated health evidence, and mailbox mutations remain 0.
 - First launch evidence: one pending authorization session, zero Connection rows, and zero provider calls; migration 0081 rejected canonical owner generation zero before the Google redirect.
 - Migration 0082 remote evidence: applied once; zero Connection/operation/event rows before and after, owner/operation generation-zero constraints present, 13 Connection guard triggers, foreign-key check empty.
+- Second launch evidence: the reviewed Worker version is active with refresh disabled; retry created the deterministic canonical Mission run and one DISCOVERED Connection, then failed closed at `mission_runtime_scope_denied` before Google. Remote inspection shows one incomplete leased REAUTHORIZE operation, no canonical Connection claim, no provider call, and no mailbox mutation.
+- Root cause: the Connection writer's simplified Mission Claim insert omitted production-required `step_id`, `claim_type`, `subject_hash`, `assertion_hash`, and `required_evidence_json`; the approved repair and bounded cleanup are recorded in `implementation_plan.md`.
+- Repair verification: complete canonical policy/claim fields are inserted and reread fail-closed; evidence identity is deterministic and replay-safe; expired partial operations recover under a new fencing token. Deployment and bounded production cleanup remain.

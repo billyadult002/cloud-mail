@@ -18,7 +18,16 @@ Maximum five iterations. Each Maker change must be followed by executable Checke
 10. [in progress] Domain Authority and exact canonical account binding are verified. Seal and deploy the reviewed authenticated `mail_read` launch, then stop at any password/OTP/passkey boundary for local user entry.
 11. [pending] After the canonical callback succeeds, prove one bounded read-only Gmail health operation, negative isolation, evidence integrity, and rollback while keeping automatic refresh disabled.
 12. [complete] Apply reviewed migration 0082 to accept canonical account-owner authority generation zero and retain fenced Mission rebinding; verify exact production schema before retrying OAuth.
-13. [in progress] Deploy the reviewed orchestrator-owned canonical Mission run creation, then retry the existing pending OAuth launch.
+13. [complete] Deploy the reviewed orchestrator-owned canonical Mission run creation and retry the existing pending OAuth launch.
+14. [complete] Repair the production-shaped Mission Claim insert used by Connection evidence. The retry reached `beginAuthorization`, created no provider call, and failed closed because the canonical production `mission_runtime_claims` table requires `step_id`, `claim_type`, `subject_hash`, `assertion_hash`, and `required_evidence_json`, while the Connection writer supplied only the simplified test-schema fields.
+
+## Proposed iteration 5 repair
+
+1. [complete] Extend the Connection evidence writer to populate the complete canonical Mission Claim contract and validate every `INSERT OR IGNORE` by rereading the exact claim/policy tuple before verification.
+2. [complete] Add a production-shaped regression fixture using the deployed claim/policy schemas and the real canonical verifier, plus deterministic evidence replay and expired partial-operation recovery.
+3. [complete] Bind each recovered internal operation attempt to the new Connection fencing token; retain an exact bounded cleanup for the single pre-repair orphan evidence row.
+4. [complete] Run focused tests, the full Worker suite, syntax/coupling guards, audits, and an independent adversarial review. Final result: 21 files / 238 tests, zero audit findings, no remaining P0/P1/P2.
+5. [in progress] Deploy only the reviewed commit with `--keep-vars --env=""`, verify the exact Worker version and seven runtime variables, perform the bounded production repair, and resume Google read-only consent.
 
 ## Stop conditions
 

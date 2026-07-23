@@ -54,25 +54,76 @@ async function claim(c, scope, { connectionId, expectedGeneration, owner, second
 	return c.env.db.prepare(`SELECT * FROM nexora_connections WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3`).bind(connectionId, scope.tenantId, scope.workspaceId).first();
 }
 
-async function persistEvidence(c, scope, { connection, operation, result }) {
+export async function persistConnectionEvidence(c, scope, { connection, operation, result }) {
 	if (!connection.onboarding_mission_id) throw new Error('connection_onboarding_mission_required');
 	const lineage = await c.env.db.prepare(`SELECT m.id AS mission_id,r.id AS run_id FROM mission_runtime_missions m JOIN mission_runtime_runs r ON r.mission_id=m.id AND r.tenant_id=m.tenant_id AND r.workspace_id=m.workspace_id WHERE m.id=?1 AND m.tenant_id=?2 AND m.workspace_id=?3 ORDER BY r.created_at DESC LIMIT 1`).bind(connection.onboarding_mission_id, scope.tenantId, scope.workspaceId).first();
 	if (!lineage) throw new Error('connection_canonical_mission_lineage_missing');
 	const missionId = lineage.mission_id;
 	const runId = lineage.run_id;
 	const claimId = `connection-claim:${operation.id}`;
-	const evidenceId = crypto.randomUUID();
+	const evidenceId = `connection-evidence:${operation.id}`;
 	const evidenceType = `connection_${String(operation.type || 'operation').toLowerCase()}`;
 	const claimKey = `${evidenceType}:${operation.id}`;
 	const policyId = `${evidenceType}_v1`;
-	await c.env.db.prepare(`INSERT OR IGNORE INTO mission_runtime_verification_policies(id,version,required_evidence_json,freshness_seconds,minimum_distinct_evidence,conflict_mode,policy_hash) VALUES(?1,1,?2,300,1,'fail_closed',?3)`).bind(policyId, JSON.stringify([evidenceType]), await hash({ policyId, version: 1 })).run();
-	await c.env.db.prepare(`INSERT OR IGNORE INTO mission_runtime_claims(id,mission_id,run_id,tenant_id,workspace_id,claim_key,policy_id,policy_version,version) VALUES(?1,?2,?3,?4,?5,?6,?7,1,1)`).bind(claimId, missionId, runId, scope.tenantId, scope.workspaceId, claimKey, policyId).run();
-	const observedAt = new Date().toISOString();
+	const claimType = 'connection_operation_outcome';
+	const requiredEvidenceJson = JSON.stringify([evidenceType]);
+	const policyHash = await hash({ policyId, version: 1, claimType, requiredEvidenceJson, freshnessSeconds: 300, minimumDistinctEvidence: 1, conflictMode: 'fail_closed' });
+	const subjectHash = await hash({ connectionId: connection.id, accountId: connection.account_id });
+	const assertionHash = await hash({ operationId: operation.id, operationType: operation.type, classification: result.classification, providerHttpStatus: result.providerHttpStatus || null, providerNetworkCalled: Boolean(result.providerNetworkCalled), mailboxMutated: false });
+	await c.env.db.prepare(`INSERT OR IGNORE INTO mission_runtime_verification_policies(id,version,claim_type,required_evidence_json,freshness_seconds,minimum_distinct_evidence,conflict_mode,active,policy_hash) VALUES(?1,1,?2,?3,300,1,'fail_closed',1,?4)`).bind(policyId, claimType, requiredEvidenceJson, policyHash).run();
+	const policy = await c.env.db.prepare(`SELECT claim_type,required_evidence_json,freshness_seconds,minimum_distinct_evidence,conflict_mode,active,policy_hash FROM mission_runtime_verification_policies WHERE id=?1 AND version=1`).bind(policyId).first();
+	if (!policy
+		|| policy.claim_type !== claimType
+		|| policy.required_evidence_json !== requiredEvidenceJson
+		|| Number(policy.freshness_seconds) !== 300
+		|| Number(policy.minimum_distinct_evidence) !== 1
+		|| policy.conflict_mode !== 'fail_closed'
+		|| Number(policy.active) !== 1
+		|| policy.policy_hash !== policyHash) throw new Error('connection_canonical_policy_conflict');
+	await c.env.db.prepare(`INSERT OR IGNORE INTO mission_runtime_claims(id,mission_id,run_id,step_id,action_id,tenant_id,workspace_id,claim_key,claim_type,subject_hash,assertion_hash,required_evidence_json,policy_id,policy_version,state,version) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,1,'pending',1)`).bind(claimId, missionId, runId, evidenceType, operation.id, scope.tenantId, scope.workspaceId, claimKey, claimType, subjectHash, assertionHash, requiredEvidenceJson, policyId).run();
+	const claim = await c.env.db.prepare(`SELECT mission_id,run_id,step_id,action_id,tenant_id,workspace_id,claim_key,claim_type,subject_hash,assertion_hash,required_evidence_json,policy_id,policy_version,state,version FROM mission_runtime_claims WHERE id=?1`).bind(claimId).first();
+	if (!claim
+		|| claim.mission_id !== missionId
+		|| claim.run_id !== runId
+		|| claim.step_id !== evidenceType
+		|| claim.action_id !== operation.id
+		|| Number(claim.tenant_id) !== Number(scope.tenantId)
+		|| Number(claim.workspace_id) !== Number(scope.workspaceId)
+		|| claim.claim_key !== claimKey
+		|| claim.claim_type !== claimType
+		|| claim.subject_hash !== subjectHash
+		|| claim.assertion_hash !== assertionHash
+		|| claim.required_evidence_json !== requiredEvidenceJson
+		|| claim.policy_id !== policyId
+		|| Number(claim.policy_version) !== 1
+		|| claim.state !== 'pending'
+		|| Number(claim.version) !== 1) throw new Error('connection_canonical_claim_conflict');
+	const priorEvidence = await c.env.db.prepare(`SELECT observed_at FROM mission_runtime_evidence WHERE id=?1`).bind(evidenceId).first();
+	const observedAt = priorEvidence?.observed_at || new Date().toISOString();
 	const referenceHash = await hash({ operation: operation.id, classification: result.classification, status: result.providerHttpStatus || null });
 	const summaryJson = JSON.stringify({ operation_id: operation.id, classification: result.classification, provider_network_called: Boolean(result.providerNetworkCalled), mailbox_mutated: false, connection_generation: connection.connection_generation, credential_generation: connection.credential_generation, fencing_token: connection.fencing_token });
 	const row = { id: evidenceId, mission_id: missionId, run_id: runId, step_id: evidenceType, action_id: null, tenant_id: scope.tenantId, workspace_id: scope.workspaceId, claim_key: claimKey, evidence_type: evidenceType, source_type: 'connection_runtime', producer_type: 'controlled_system', producer_id_hash: await hash('connection-runtime-v1'), reference_hash: referenceHash, summary_json: summaryJson, observed_at: observedAt, expires_at: null };
 	const integrityHash = await hash({ id: row.id, mission_id: row.mission_id, run_id: row.run_id, step_id: row.step_id, action_id: null, tenant_id: row.tenant_id, workspace_id: row.workspace_id, claim_key: row.claim_key, evidence_type: row.evidence_type, source_type: row.source_type, producer_type: row.producer_type, producer_id_hash: row.producer_id_hash, reference_hash: row.reference_hash, summary_json: row.summary_json, observed_at: row.observed_at, expires_at: null });
-	await c.env.db.prepare(`INSERT INTO mission_runtime_evidence(id,mission_id,run_id,step_id,action_id,tenant_id,workspace_id,claim_key,evidence_type,source_type,producer_type,producer_id_hash,reference_hash,summary_json,status,integrity_hash,observed_at,expires_at,created_at) VALUES(?1,?2,?3,?4,NULL,?5,?6,?7,?8,?9,?10,?11,?12,?13,'supported',?14,?15,NULL,?15)`).bind(row.id, row.mission_id, row.run_id, row.step_id, row.tenant_id, row.workspace_id, row.claim_key, row.evidence_type, row.source_type, row.producer_type, row.producer_id_hash, row.reference_hash, row.summary_json, integrityHash, observedAt).run();
+	await c.env.db.prepare(`INSERT OR IGNORE INTO mission_runtime_evidence(id,mission_id,run_id,step_id,action_id,tenant_id,workspace_id,claim_key,evidence_type,source_type,producer_type,producer_id_hash,reference_hash,summary_json,status,integrity_hash,observed_at,expires_at,created_at) VALUES(?1,?2,?3,?4,NULL,?5,?6,?7,?8,?9,?10,?11,?12,?13,'supported',?14,?15,NULL,?15)`).bind(row.id, row.mission_id, row.run_id, row.step_id, row.tenant_id, row.workspace_id, row.claim_key, row.evidence_type, row.source_type, row.producer_type, row.producer_id_hash, row.reference_hash, row.summary_json, integrityHash, observedAt).run();
+	const evidence = await c.env.db.prepare(`SELECT mission_id,run_id,step_id,action_id,tenant_id,workspace_id,claim_key,evidence_type,source_type,producer_type,producer_id_hash,reference_hash,summary_json,status,integrity_hash,observed_at,expires_at FROM mission_runtime_evidence WHERE id=?1`).bind(evidenceId).first();
+	if (!evidence
+		|| evidence.mission_id !== row.mission_id
+		|| evidence.run_id !== row.run_id
+		|| evidence.step_id !== row.step_id
+		|| evidence.action_id !== null
+		|| Number(evidence.tenant_id) !== Number(row.tenant_id)
+		|| Number(evidence.workspace_id) !== Number(row.workspace_id)
+		|| evidence.claim_key !== row.claim_key
+		|| evidence.evidence_type !== row.evidence_type
+		|| evidence.source_type !== row.source_type
+		|| evidence.producer_type !== row.producer_type
+		|| evidence.producer_id_hash !== row.producer_id_hash
+		|| evidence.reference_hash !== row.reference_hash
+		|| evidence.summary_json !== row.summary_json
+		|| evidence.status !== 'supported'
+		|| evidence.integrity_hash !== integrityHash
+		|| evidence.observed_at !== observedAt
+		|| evidence.expires_at !== null) throw new Error('connection_canonical_evidence_conflict');
 	const verification = await durableMissionRuntime.verifyClaim(c, scope, { claimId, runId, verifier: 'canonical_connection_policy_v1' });
 	if (verification.state !== 'verified') throw new Error('connection_canonical_verification_rejected');
 	return { evidenceId, verificationId: verification.verificationId, claimId };
@@ -80,7 +131,7 @@ async function persistEvidence(c, scope, { connection, operation, result }) {
 
 async function verifiedTransition(c, scope, connection, operation, toState, result, updates = {}) {
 	assertTransition(connection.state, toState);
-	const refs = await persistEvidence(c, scope, { connection, operation, result });
+	const refs = await persistConnectionEvidence(c, scope, { connection, operation, result });
 	const responseDigest = await hash({ classification: result.classification, status: result.providerHttpStatus || null, network: Boolean(result.providerNetworkCalled), mailboxMutated: false });
 	const eventId = crypto.randomUUID();
 	const abortOnZero = () => c.env.db.prepare(`INSERT INTO nexora_connection_events(id,connection_id,operation_id,tenant_id,workspace_id,event_type,from_state,to_state,connection_generation,fencing_token,detail_json) SELECT NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL WHERE changes()=0`);
@@ -96,16 +147,31 @@ async function verifiedTransition(c, scope, connection, operation, toState, resu
 	return { connectionId: connection.id, state: toState, connectionGeneration: Number(connection.connection_generation) + 1, operationId: operation.id, ...refs, providerNetworkCalled: Boolean(result.providerNetworkCalled), mailboxMutated: false };
 }
 
-async function createOperation(c, scope, connection, { type, idempotencyKey, state = 'LEASED', authorizationSessionId = null }) {
-	const id = crypto.randomUUID();
-	const requestDigest = await hash({ connection: connection.id, type, idempotencyKey, connectionGeneration: connection.connection_generation, credentialGeneration: connection.credential_generation });
+export async function createConnectionOperation(c, scope, connection, { type, idempotencyKey, state = 'LEASED', authorizationSessionId = null }) {
+	let effectiveIdempotencyKey = idempotencyKey;
+	const requestDigestFor = (key) => hash({ connection: connection.id, type, idempotencyKey: key, connectionGeneration: connection.connection_generation, credentialGeneration: connection.credential_generation });
+	let requestDigest = await requestDigestFor(effectiveIdempotencyKey);
 	const authorityDigest = await hash({ tenant: scope.tenantId, workspace: scope.workspaceId, authorityGeneration: connection.authority_generation, connectionGeneration: connection.connection_generation, credentialGeneration: connection.credential_generation, owner: connection.lease_owner, fence: connection.fencing_token });
-	const existing = await c.env.db.prepare(`SELECT * FROM nexora_connection_operations WHERE connection_id=?1 AND operation_type=?2 AND idempotency_key=?3`).bind(connection.id, type, idempotencyKey).first();
+	let existing = await c.env.db.prepare(`SELECT *,CASE WHEN lease_expires_at IS NULL OR lease_expires_at<=CURRENT_TIMESTAMP THEN 1 ELSE 0 END AS lease_recoverable FROM nexora_connection_operations WHERE connection_id=?1 AND operation_type=?2 AND idempotency_key=?3`).bind(connection.id, type, effectiveIdempotencyKey).first();
 	if (existing) {
-		if (existing.request_digest !== requestDigest || existing.authority_tuple_digest !== authorityDigest) throw new Error('connection_operation_idempotency_conflict');
-		return { id: existing.id, type, existing };
+		if (existing.request_digest === requestDigest && existing.authority_tuple_digest === authorityDigest) return { id: existing.id, type, existing };
+		const recoverable = ['LEASED','PROVIDER_RESPONSE_OBSERVED','EVIDENCE_WRITTEN','RETRY_WAIT','FAILED'].includes(existing.state)
+			&& (existing.state === 'FAILED' || Number(existing.lease_recoverable) === 1);
+		if (!recoverable) throw new Error('connection_operation_idempotency_conflict');
+		if (existing.state !== 'FAILED') {
+			const retired = await c.env.db.prepare(`UPDATE nexora_connection_operations SET state='FAILED',lease_owner=NULL,lease_expires_at=NULL,fencing_token=NULL,error_code='INCOMPLETE_ATTEMPT_EXPIRED',updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND connection_id=?2 AND tenant_id=?3 AND workspace_id=?4 AND state IN ('LEASED','PROVIDER_RESPONSE_OBSERVED','EVIDENCE_WRITTEN','RETRY_WAIT') AND (lease_expires_at IS NULL OR lease_expires_at<=CURRENT_TIMESTAMP)`).bind(existing.id, connection.id, scope.tenantId, scope.workspaceId).run();
+			if (!retired.meta?.changes) throw new Error('connection_operation_recovery_conflict');
+		}
+		effectiveIdempotencyKey = `${idempotencyKey}:retry:${connection.fencing_token}`;
+		requestDigest = await requestDigestFor(effectiveIdempotencyKey);
+		existing = await c.env.db.prepare(`SELECT * FROM nexora_connection_operations WHERE connection_id=?1 AND operation_type=?2 AND idempotency_key=?3`).bind(connection.id, type, effectiveIdempotencyKey).first();
+		if (existing) {
+			if (existing.request_digest !== requestDigest || existing.authority_tuple_digest !== authorityDigest) throw new Error('connection_operation_retry_conflict');
+			return { id: existing.id, type, existing };
+		}
 	}
-	await c.env.db.prepare(`INSERT INTO nexora_connection_operations(id,connection_id,tenant_id,workspace_id,operation_type,idempotency_key,authorization_session_id,expected_authority_generation,expected_connection_generation,expected_credential_generation,lease_owner,lease_expires_at,fencing_token,state,request_digest,authority_tuple_digest,attempt) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,1)`).bind(id, connection.id, scope.tenantId, scope.workspaceId, type, idempotencyKey, authorizationSessionId, connection.authority_generation, connection.connection_generation, connection.credential_generation, connection.lease_owner, connection.lease_expires_at, connection.fencing_token, state, requestDigest, authorityDigest).run();
+	const id = crypto.randomUUID();
+	await c.env.db.prepare(`INSERT INTO nexora_connection_operations(id,connection_id,tenant_id,workspace_id,operation_type,idempotency_key,authorization_session_id,expected_authority_generation,expected_connection_generation,expected_credential_generation,lease_owner,lease_expires_at,fencing_token,state,request_digest,authority_tuple_digest,attempt) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,1)`).bind(id, connection.id, scope.tenantId, scope.workspaceId, type, effectiveIdempotencyKey, authorizationSessionId, connection.authority_generation, connection.connection_generation, connection.credential_generation, connection.lease_owner, connection.lease_expires_at, connection.fencing_token, state, requestDigest, authorityDigest).run();
 	return { id, type };
 }
 
@@ -123,7 +189,7 @@ async function discoverConnection(c, input) {
 	if (connection.state !== 'DISCOVERED') return connection;
 	if (!candidate) return connection;
 	connection = await claim(c, scope, { connectionId: id, expectedGeneration: connection.connection_generation, owner: `connection-discovery:${crypto.randomUUID()}` });
-	const operation = await createOperation(c, scope, connection, { type: 'DISCOVER', idempotencyKey: input.idempotency_key || `discover:${id}:${connection.connection_generation}` });
+	const operation = await createConnectionOperation(c, scope, connection, { type: 'DISCOVER', idempotencyKey: input.idempotency_key || `discover:${id}:${connection.connection_generation}` });
 	await verifiedTransition(c, scope, connection, operation, 'CONNECTED', { classification: 'DISCOVERED_VERIFIED_BINDING', providerNetworkCalled: false, mailboxMutated: false }, { onboardingMissionId: candidate.onboarding_mission_id, providerConnectionId: candidate.provider_connection_id, providerConnectionGeneration: candidate.provider_connection_generation, credentialReferenceId: candidate.credential_reference_id, credentialGeneration: candidate.rotation_generation });
 	return c.env.db.prepare(`SELECT * FROM nexora_connections WHERE id=?1`).bind(id).first();
 }
@@ -138,7 +204,7 @@ async function evaluateConnection(c, input, { fetchImpl } = {}) {
 	assertCurrentBinding(connection, { authority, row: liveBinding });
 	if (!connection.credential_reference_id) throw new Error('connection_credential_reference_missing');
 	connection = await claim(c, scope, { connectionId: connection.id, expectedGeneration: Number(input.connection_generation), owner: `connection-health:${crypto.randomUUID()}` });
-	const operation = await createOperation(c, scope, connection, { type: 'HEALTH', idempotencyKey: input.idempotency_key });
+	const operation = await createConnectionOperation(c, scope, connection, { type: 'HEALTH', idempotencyKey: input.idempotency_key });
 	let session;
 	let result;
 	try { session = await providerSession.acquireProviderSession(c, scope, { connectionId: connection.id, operationId: operation.id, leaseOwner: connection.lease_owner, purpose: 'health', expectedConnectionGeneration: connection.connection_generation, fencingToken: connection.fencing_token, fetchImpl }); result = await session.evaluateHealth({ timeoutMs: input.timeout_ms || 2500 }); } finally { session?.close(); }
@@ -153,7 +219,7 @@ async function requireReauthorization(c, input, { idempotencyKey, classification
 	if (!connection || !['CONNECTED','HEALTHY','REFRESH_PENDING','DEGRADED','RETRY_WAIT'].includes(connection.state)) throw new Error('connection_reauthorization_state_denied');
 	assertCurrentBinding(connection, { authority, row });
 	connection = await claim(c, scope, { connectionId: connection.id, expectedGeneration: Number(input.connection_generation), owner: `connection-refresh-ambiguity:${crypto.randomUUID()}` });
-	const operation = await createOperation(c, scope, connection, { type: 'REFRESH', idempotencyKey });
+	const operation = await createConnectionOperation(c, scope, connection, { type: 'REFRESH', idempotencyKey });
 	return verifiedTransition(c, scope, connection, operation, 'REAUTHORIZATION_REQUIRED', { classification, providerNetworkCalled: true, mailboxMutated: false });
 }
 
@@ -171,7 +237,7 @@ async function beginAuthorization(c, input, { authorizationSessionId }) {
 	// The claimed snapshot is used for evidence so a replacement Mission cannot be overwritten
 	// by a concurrent recovery after this owner acquires the lease.
 	const boundConnection = { ...connection, onboarding_mission_id: session.onboarding_mission_id };
-	const operation = await createOperation(c, scope, boundConnection, { type: 'REAUTHORIZE', idempotencyKey: input.idempotency_key, authorizationSessionId });
+	const operation = await createConnectionOperation(c, scope, boundConnection, { type: 'REAUTHORIZE', idempotencyKey: input.idempotency_key, authorizationSessionId });
 	return verifiedTransition(c, scope, boundConnection, operation, 'AUTHORIZATION_PENDING', { classification: 'AUTHORIZATION_SESSION_BOUND', providerNetworkCalled: false, mailboxMutated: false }, { onboardingMissionId: session.onboarding_mission_id });
 }
 
@@ -206,7 +272,7 @@ async function recoverExpiredAuthorization(c, input, { replacementAuthorizationS
 		c.env.db.prepare(`UPDATE nexora_onboarding_callback_correlations SET status='expired' WHERE authorization_session_id=?1 AND status='pending'`).bind(prior.authorization_session_id),
 	]);
 	connection = await claim(c, scope, { connectionId: connection.id, expectedGeneration: connection.connection_generation, owner: `connection-expired-authorization:${crypto.randomUUID()}` });
-	const operation = await createOperation(c, scope, connection, {
+	const operation = await createConnectionOperation(c, scope, connection, {
 		type: 'REAUTHORIZE',
 		idempotencyKey: `expired-authorization:${prior.authorization_session_id}:${replacementAuthorizationSessionId}`,
 		authorizationSessionId: replacementAuthorizationSessionId,

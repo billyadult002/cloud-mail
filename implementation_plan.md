@@ -83,5 +83,5 @@ Maximum five iterations. Each Maker change must be followed by executable Checke
 4. [complete] Implement migration 0084, encrypted callback intake/clean redirect, durable scheduled consumer, manifest gate, sealed exchange receipt, exact-once fenced recovery, and plugin isolation guards.
 5. [complete] Focused crash/tamper/browser/scope tests, real-migration repeatability, full Worker regression, audits, scans, production dry-run bundle, and coupling guards pass.
 6. [complete] Independent checker and OAuth security reviewer both report PASS with no remaining P0/P1/P2 after six adversarial rounds.
-7. [in progress] Update evidence, commit, push, and PR 10 without deployment, production migration, or live OAuth.
+7. [complete] Evidence committed and pushed to PR 10 without deployment, production migration, or live OAuth.
 8. [complete] Document the bounded one-session retry proposal and retain a separate explicit human approval gate.

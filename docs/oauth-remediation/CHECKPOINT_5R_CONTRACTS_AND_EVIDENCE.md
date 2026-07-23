@@ -158,6 +158,7 @@ Destructive table removal is not part of rollback.
   reports zero vulnerabilities.
 - Changed-diff credential signature scan: pass; no real secrets were used in fixtures.
 - Reviewed Worker source commit: `bf416af9850c45a5d756d93319aaa9f302078d78`.
+- Evidence commit: `4ee66faf3eb854b0c284d915cc12934e77ce070c` on PR #10.
 - Production dry-run bundle for that exact source: 2430.93 KiB, gzip 520.12 KiB;
   no deployment occurred.
 - Independent checker and OAuth security reviewer: PASS, no unresolved P0/P1/P2.

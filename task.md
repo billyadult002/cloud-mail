@@ -7,10 +7,10 @@
 - Checkpoint 4 PR: merged as `cafe44eca4359911cfd773f0f262f3b4c37b9720`
 - Maker-Checker iteration cap: 5
 - Current iteration: 5
-- Current phase: migration 0083 expired-Mission rebind trigger reviewed and verified; sealing for remote apply
-- Reviewed implementation commit: `4a778f5da1297850a713c8265b3d9480bdbd6fea` plus the final reviewed rebind delta awaiting commit
+- Current phase: migration 0083 and the reviewed runtime are live; Google callback registration is blocked by missing access to the OAuth client's owning project
+- Reviewed implementation commits: `4a778f5da1297850a713c8265b3d9480bdbd6fea`, `45dee5c5b0d81c70b6aba89403334fac55cf29f8`, `813520ca535a7922cd6eddd221be5e998577be45`, and migration commit `72487e97d77f614849856f4520fdee7e8d05a5e9`
 - Pull request: `https://github.com/billyadult002/cloud-mail/pull/10`
-- Production Worker version: `13c5416b-2a73-49ce-9612-2753e6801b73`
+- Production Worker version: `5c5fadf3-35de-4816-abf1-1dd816594e58`
 - Production changes in Checkpoint 5: migration 0081, verified Domain Authority/account binding, and exact bounded runtime variables with refresh disabled
 - Provider writes: 0
 - Mailbox mutations: 0
@@ -33,7 +33,7 @@
 5. [complete] Runtime implementation; migration applies twice; 236/236 Worker reliability tests pass.
 6. [complete] Independent security, migration, and provider-boundary re-review; no remaining P0/P1/P2.
 7. [complete] Reviewed commits pushed; PR 10 open and mergeable; migration 0081 applied; exact reviewed Worker deployed default-off.
-8. [in progress] Verified Domain Authority, exact account selection, immutable OAuth-launch deployment, migration 0082, and the canonical run correction are complete. The production-shaped canonical Mission Claim repair now passes the real verifier and expired-attempt recovery tests and is ready for exact-source deployment.
+8. [blocked] Verified Domain Authority, exact account selection, migrations 0082/0083, the canonical run correction, and the production-shaped Mission Claim repair are live. Google reaches the OAuth server but rejects the unregistered callback URI; none of the projects accessible to the signed-in administrator owns the exact OAuth client.
 
 ## Local verification evidence
 
@@ -74,3 +74,6 @@
 - First repaired deployment: Worker version `13c5416b-2a73-49ce-9612-2753e6801b73` received 100% traffic with all bindings preserved and refresh disabled. The append-only guard correctly rejected deletion of the pre-repair evidence row, so no production evidence was removed.
 - Third launch evidence: the prior authorization session was correctly rejected as expired; a fresh session then exposed `connection_mission_association_conflict` before Google. The final reviewed correction permits replacement only for a credential-free/provider-free DISCOVERED Connection when all pending sessions under the prior exact Mission scope are demonstrably expired.
 - Fourth launch evidence: the deployed service guard passed, retired the expired partial operation, and produced one canonical verified Connection receipt with zero provider calls, but migration 0082's trigger rejected the final state transition because it allowed only a null prior Mission. Migration 0083 replaces only that trigger and binds the fresh Mission to the exact verified REAUTHORIZE operation, event, session, scope, and fence; positive, mismatched-session negative, and repeated-apply SQLite proofs pass with no reviewer P0/P1/P2.
+- Migration 0083 applied successfully to the remote production database. The resulting Connection is `AUTHORIZATION_PENDING` at generation 2 with its lease released and bound to the fresh Mission; the verified REAUTHORIZE receipt retains zero provider calls and zero mailbox mutations.
+- Final reviewed Worker version `5c5fadf3-35de-4816-abf1-1dd816594e58` receives 100% traffic with all seven Connection bindings preserved and automatic refresh disabled.
+- Google launch now reaches Google Accounts and fails with `redirect_uri_mismatch` for the canonical CloudMail callback. The exact OAuth client was not found in any Google Cloud project accessible to the signed-in administrator, so no Google configuration was changed. Completion requires access to the owning project and registration of that single callback URI.

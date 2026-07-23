@@ -15,7 +15,7 @@ Maximum five iterations. Each Maker change must be followed by executable Checke
 7. [complete] Run Worker suites, coupling guards, syntax, clean install, audits, dependency inspection, secret scan, and dry-run bundle.
 8. [complete] Complete independent OAuth/security, migration/state, and provider-boundary re-review and resolve all P0/P1/P2.
 9. [complete] Seal/push reviewed commits, open PR 10, apply reviewed migration 0081, and deploy exact reviewed source default-off.
-10. [in progress] Domain Authority and exact canonical account binding are verified. Seal and deploy the reviewed authenticated `mail_read` launch, then stop at any password/OTP/passkey boundary for local user entry.
+10. [blocked] Domain Authority, exact canonical account binding, and the reviewed authenticated `mail_read` launch are live. Google rejects the callback as unregistered, and the exact OAuth client is not visible in any project accessible to the signed-in administrator.
 11. [pending] After the canonical callback succeeds, prove one bounded read-only Gmail health operation, negative isolation, evidence integrity, and rollback while keeping automatic refresh disabled.
 12. [complete] Apply reviewed migration 0082 to accept canonical account-owner authority generation zero and retain fenced Mission rebinding; verify exact production schema before retrying OAuth.
 13. [complete] Deploy the reviewed orchestrator-owned canonical Mission run creation and retry the existing pending OAuth launch.
@@ -27,7 +27,14 @@ Maximum five iterations. Each Maker change must be followed by executable Checke
 2. [complete] Add a production-shaped regression fixture using the deployed claim/policy schemas and the real canonical verifier, plus deterministic evidence replay and expired partial-operation recovery.
 3. [complete] Bind each recovered internal operation attempt to the new Connection fencing token; retain an exact bounded cleanup for the single pre-repair orphan evidence row.
 4. [complete] Run focused tests, the full Worker suite, syntax/coupling guards, audits, and an independent adversarial review. Final result: 21 files / 238 tests, zero audit findings, no remaining P0/P1/P2.
-5. [in progress] The reviewed service correction is deployed with preserved bindings. The retry proved the service boundary and canonical verification but exposed the older database trigger's `NULL → Mission` limitation. Migration 0083 now independently requires the exact expired prior-session set, credential/provider-free DISCOVERED state, live replacement session, and exact verified REAUTHORIZE operation/event lineage. Apply the reviewed migration and resume Google read-only consent.
+5. [complete] The reviewed service correction and migration 0083 are deployed with preserved bindings. The retry produced a generation-2 `AUTHORIZATION_PENDING` Connection bound to the fresh Mission, with a verified REAUTHORIZE receipt, zero provider calls, zero mailbox mutations, and automatic refresh still disabled.
+
+## External Google OAuth blocker
+
+- The canonical launch reaches Google Accounts and is rejected with `redirect_uri_mismatch`.
+- Register exactly `https://cloud-mail.fastonegroup.workers.dev/v3/onboarding/providers/google/callback` on the existing OAuth web client that issued the request.
+- The signed-in administrator can access multiple Google Cloud projects, but none contains that exact client. No substitute client was edited or created.
+- After access to the owning project is granted, add only that redirect URI, relaunch the existing read-only flow, verify identity plus Gmail read-only scopes, and stop for any password, passkey, OTP, or CAPTCHA.
 
 ## Stop conditions
 

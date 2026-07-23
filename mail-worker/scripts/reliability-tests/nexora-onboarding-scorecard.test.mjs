@@ -9,6 +9,7 @@ const TENANT_ID = 991001;
 const WORKSPACE_ID = 991002;
 
 const SCHEMA_STATEMENTS = [
+	`CREATE TABLE workspace_members(workspace_id INTEGER NOT NULL,user_id INTEGER NOT NULL,role TEXT NOT NULL,PRIMARY KEY(workspace_id,user_id))`,
 	`CREATE TABLE mission_runtime_missions (
 		id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, workspace_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
 		kind TEXT NOT NULL, state TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, idempotency_key TEXT NOT NULL,
@@ -73,9 +74,12 @@ const SCHEMA_STATEMENTS = [
 ];
 const TABLES = ['mission_runtime_missions', 'mission_runtime_runs', 'mission_runtime_events', 'nexora_onboarding_state', 'nexora_onboarding_callback_checkpoints', 'nexora_onboarding_callback_claims', 'nexora_onboarding_callback_correlations', 'nexora_onboarding_authorization_sessions'];
 
+TABLES.unshift('workspace_members');
+
 async function resetSchema() {
 	await env.db.batch(TABLES.map((t) => env.db.prepare(`DROP TABLE IF EXISTS ${t}`)));
 	for (const sql of SCHEMA_STATEMENTS) await env.db.prepare(sql).run();
+	await env.db.prepare(`INSERT INTO workspace_members(workspace_id,user_id,role) VALUES(?1,?2,'OWNER')`).bind(WORKSPACE_ID, TENANT_ID).run();
 }
 
 const scope = { tenantId: TENANT_ID, workspaceId: WORKSPACE_ID };
@@ -85,7 +89,7 @@ beforeEach(async () => {
 });
 
 describe('Zero-Touch scorecard — computed from a real onboarding run', () => {
-	it('reports zero ordinary-user technical fields by construction, and real timing/counters from an actual run', async () => {
+	it('reports zero technical fields and does not count an incomplete callback as provider interaction', async () => {
 		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: 'https://nexora.example/v3/onboarding/providers/google/callback' } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'scorecard-1' });
 		await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, callbackFingerprint: 'fp-sc-1' });
@@ -94,13 +98,12 @@ describe('Zero-Touch scorecard — computed from a real onboarding run', () => {
 		expect(scorecard.ordinary_user_technical_fields_required).toBe(ORDINARY_USER_TECHNICAL_FIELDS_REQUIRED);
 		expect(scorecard.ordinary_user_technical_fields_required).toBe(0);
 		expect(scorecard.manual_provider_configuration_steps).toBe(0);
-		expect(scorecard.provider_required_login_interactions).toBe(1);
-		expect(scorecard.provider_required_consent_interactions).toBe(1);
+		expect(scorecard.provider_required_login_interactions).toBe(0);
+		expect(scorecard.provider_required_consent_interactions).toBe(0);
 		expect(scorecard.administrator_bootstrap_interactions).toBe(0); // this run had a configured client_id -- no admin blocker occurred
 		expect(scorecard.failed_events).toBe(0);
 		expect(scorecard.cancelled_before_completion).toBe(false);
-		expect(typeof scorecard.time_to_authorization_seconds).toBe('number');
-		expect(scorecard.time_to_authorization_seconds).toBeGreaterThanOrEqual(0);
+		expect(scorecard.time_to_authorization_seconds).toBeNull();
 	});
 
 	it('a run blocked on a missing provider application records exactly one administrator_bootstrap_interaction', async () => {

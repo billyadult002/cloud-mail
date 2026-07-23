@@ -137,14 +137,14 @@ async function createAuthorizationSession(env, { onboardingMissionId, tenantId, 
 	const verifier = randomVerifier();
 	const challenge = await pkceChallengeFor(verifier);
 	const state = uuid();
-	const nonce = provider === 'google' ? uuid() : null; // OIDC nonce is meaningful for google's id_token; microsoft flow here uses state only
+	const nonce = uuid();
 	const id = uuid();
 	const expiresAt = new Date(Date.now() + Math.max(60, Math.min(3600, ttlSeconds)) * 1000).toISOString();
 	const row = {
 		id, onboarding_mission_id: onboardingMissionId, tenant_id: tenantId, workspace_id: workspaceId, provider, client_registration_mode: clientRegistrationMode,
 		redirect_uri_id: `nexora_${provider}_redirect_v1`, scopes_json: JSON.stringify(scopes), incremental_scopes_json: JSON.stringify(additionalScopes),
 		state_hash: await hexHash(state), nonce_hash: nonce ? await hexHash(nonce) : null, pkce_challenge: challenge, pkce_challenge_method: 'S256',
-		pkce_verifier_hash: await hexHash(verifier), tenant_hint: tenantHint, login_hint_hash: loginHint ? await hexHash(loginHint) : null, expires_at: expiresAt,
+		pkce_verifier_hash: await hexHash(verifier), tenant_hint: tenantHint, login_hint_hash: loginHint ? await hexHash(String(loginHint).trim().toLowerCase()) : null, expires_at: expiresAt,
 		redirect_uri_hash: await hexHash(redirectUri), requested_capabilities_json: JSON.stringify([...capabilities].sort()), scope_plan_reference: `scope-plan:${await hexHash(scopes.join(' '))}`,
 	};
 	return { ok: true, row, verifier, state, nonce, scopeJustification: justification, authorizationUrl: buildAuthorizationUrl(provider, { clientId, redirectUri, state, nonce, challenge, scopes, tenantHint, loginHint }) };
@@ -164,7 +164,7 @@ function buildAuthorizationUrl(provider, { clientId, redirectUri, state, nonce, 
 		access_type: provider === 'google' ? 'offline' : undefined,
 		prompt: provider === 'google' ? 'consent' : undefined,
 	});
-	if (provider === 'google' && nonce) params.set('nonce', nonce);
+	if (nonce) params.set('nonce', nonce);
 	if (loginHint) params.set('login_hint', loginHint);
 	for (const [key, value] of [...params.entries()]) if (value === undefined || value === 'undefined') params.delete(key);
 	return `${base}?${params.toString()}`;

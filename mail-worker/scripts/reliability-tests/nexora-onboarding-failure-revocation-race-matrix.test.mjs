@@ -39,17 +39,23 @@ const SCHEMA = [
 	`CREATE TABLE nexora_onboarding_reauthorization_commit_results (id TEXT PRIMARY KEY,reauthorization_work_id TEXT,idempotency_key TEXT,authority_tuple_hash TEXT,onboarding_mission_id TEXT NOT NULL,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,provider TEXT,replacement_authorization_session_id TEXT,replacement_correlation_id TEXT,expected_prior_checkpoint TEXT,expected_token_generation INTEGER,committed_token_generation INTEGER,callback_claim_id TEXT,fencing_token INTEGER,status TEXT)`,
 	`CREATE TABLE nexora_onboarding_evidence_outbox (id TEXT PRIMARY KEY,commit_result_id TEXT,onboarding_mission_id TEXT NOT NULL,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,event_type TEXT,status TEXT,attempts INTEGER NOT NULL DEFAULT 0,delivered_at TEXT)`,
 	`CREATE TABLE nexora_onboarding_provider_connections (id TEXT PRIMARY KEY,onboarding_mission_id TEXT NOT NULL,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,provider TEXT,connection_identity TEXT,generation INTEGER NOT NULL DEFAULT 1,connection_state TEXT)`,
+	`CREATE TABLE nexora_onboarding_token_connection_bindings(token_id TEXT PRIMARY KEY,connection_id TEXT NOT NULL UNIQUE,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,provider TEXT NOT NULL,token_generation INTEGER NOT NULL,connection_generation INTEGER NOT NULL)`,
 	`CREATE TABLE nexora_onboarding_state (mission_id TEXT PRIMARY KEY,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,phase TEXT NOT NULL,blocked_reason TEXT)`,
 ];
 const TABLES = ['nexora_onboarding_tokens', 'nexora_onboarding_refresh_work', 'nexora_provider_outcome_results', 'nexora_onboarding_reauthorization_work', 'nexora_onboarding_callback_checkpoints', 'nexora_onboarding_callback_correlations', 'nexora_onboarding_reauthorization_commit_results', 'nexora_onboarding_evidence_outbox', 'nexora_onboarding_provider_connections', 'nexora_onboarding_state'];
 
-const c = { env: { ...env, jwt_secret: 'matrix-test-secret-1234567890' } };
+TABLES.unshift('nexora_onboarding_token_connection_bindings');
+
+const c = { env: { ...env, jwt_secret: 'matrix-test-secret-1234567890', AI_PROVIDER_TOKEN_SECRET: 'matrix-provider-secret-1234567890' } };
 
 async function reset() {
 	await env.db.batch(TABLES.map((t) => env.db.prepare(`DROP TABLE IF EXISTS ${t}`)));
 	for (const sql of SCHEMA) await env.db.prepare(sql).run();
 	await env.db.prepare(`INSERT INTO nexora_onboarding_state VALUES(?,?,?,'connected',NULL)`).bind(mission, scope.tenantId, scope.workspaceId).run();
 	await tokenStorage.storeTokens(c, scope, { onboardingMissionId: mission, provider: 'google', providerAccountHash: 'acct-hash', refreshToken: 'refresh-secret-value', accessToken: 'access-secret-value', accessTokenExpiresAt: new Date(Date.now() - 1000).toISOString(), grantedScopes: ['openid'] });
+	const token = await env.db.prepare(`SELECT id,rotation_generation FROM nexora_onboarding_tokens WHERE onboarding_mission_id=?1`).bind(mission).first();
+	await env.db.prepare(`INSERT INTO nexora_onboarding_provider_connections(id,onboarding_mission_id,tenant_id,workspace_id,provider,connection_identity,generation,connection_state) VALUES('matrix-connection',?1,?2,?3,'google','acct-hash',1,'active')`).bind(mission, scope.tenantId, scope.workspaceId).run();
+	await env.db.prepare(`INSERT INTO nexora_onboarding_token_connection_bindings(token_id,connection_id,tenant_id,workspace_id,provider,token_generation,connection_generation) VALUES(?1,'matrix-connection',?2,?3,'google',?4,1)`).bind(token.id, scope.tenantId, scope.workspaceId, token.rotation_generation).run();
 	// storeTokens leaves rotation_generation=1 on first insert.
 	await env.db
 		.prepare(`INSERT INTO nexora_onboarding_refresh_work(id,idempotency_key,onboarding_mission_id,tenant_id,workspace_id,provider,expected_token_generation,status,lease_token,lease_owner,lease_expires_at,fence_generation,attempt_count) VALUES('work-1','refresh:work-1:seed',?,?,?,'google',1,'leased','lease-token-a','worker-a',datetime('now','+5 minutes'),3,1)`)

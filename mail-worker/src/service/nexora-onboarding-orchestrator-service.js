@@ -13,6 +13,7 @@ import callbackRecovery from './nexora-onboarding-callback-recovery-service.js';
 import reauthorization from './nexora-onboarding-reauthorization-service.js';
 import { commitEvidenceDeliveryResult } from './nexora-onboarding-evidence-outbox-service.js';
 import callbackContinuation from './nexora-callback-continuation-service.js';
+import connectionRuntime from './connection-runtime-service.js';
 
 const uuid = () => crypto.randomUUID();
 async function hash(value) {
@@ -69,23 +70,31 @@ async function advanceInitialSyncPhase(c, scope, missionId) {
 }
 
 async function establishProviderAuthority(c, scope, { missionId, provider, providerAccountHash, authorizationSessionId, correlationId, callbackClaim, tokenGeneration }) {
+	const currentClaim=await callbackRecovery.assertCurrentClaim(c,callbackClaim);
+	if(!currentClaim.ok) throw new Error(currentClaim.reason||'CALLBACK_LEASE_LOST');
+	const claimGuard=`EXISTS (SELECT 1 FROM nexora_onboarding_callback_claims WHERE id=? AND onboarding_mission_id=? AND tenant_id=? AND workspace_id=? AND provider=? AND lease_owner=? AND fencing_token=? AND lease_expires_at>CURRENT_TIMESTAMP AND claim_status IN ('CLAIMED','PROCESSING') AND recovery_mode='EXECUTION')`;
+	const claimBindings=[callbackClaim.id,missionId,scope.tenantId,scope.workspaceId,provider,callbackClaim.lease_owner,callbackClaim.fencing_token];
 	const connectionId = `provider-connection:${missionId}:${provider}:${providerAccountHash}`;
-	await c.env.db.prepare(`INSERT OR IGNORE INTO nexora_onboarding_provider_connections(id,onboarding_mission_id,tenant_id,workspace_id,provider,connection_identity,generation,connection_state) VALUES(?1,?2,?3,?4,?5,?6,1,'active')`).bind(connectionId, missionId, scope.tenantId, scope.workspaceId, provider, providerAccountHash).run();
+	await c.env.db.prepare(`INSERT OR IGNORE INTO nexora_onboarding_provider_connections(id,onboarding_mission_id,tenant_id,workspace_id,provider,connection_identity,generation,connection_state) SELECT ?,?,?,?,?,?,1,'active' WHERE ${claimGuard}`).bind(connectionId, missionId, scope.tenantId, scope.workspaceId, provider, providerAccountHash,...claimBindings).run();
 	const connection = await c.env.db.prepare(`SELECT * FROM nexora_onboarding_provider_connections WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3`).bind(connectionId, scope.tenantId, scope.workspaceId).first();
 	const token = await c.env.db.prepare(`SELECT id,rotation_generation FROM nexora_onboarding_tokens WHERE onboarding_mission_id=?1 AND tenant_id=?2 AND workspace_id=?3 AND provider=?4`).bind(missionId, scope.tenantId, scope.workspaceId, provider).first();
-	await c.env.db.prepare(`INSERT OR IGNORE INTO nexora_onboarding_token_connection_bindings(token_id,connection_id,tenant_id,workspace_id,provider,token_generation,connection_generation) VALUES(?1,?2,?3,?4,?5,?6,?7)`).bind(token.id, connection.id, scope.tenantId, scope.workspaceId, provider, tokenGeneration || token.rotation_generation, connection.generation).run();
+	await c.env.db.prepare(`INSERT INTO nexora_onboarding_token_connection_bindings(token_id,connection_id,tenant_id,workspace_id,provider,token_generation,connection_generation) SELECT ?,?,?,?,?,?,? WHERE ${claimGuard} ON CONFLICT(token_id) DO UPDATE SET token_generation=excluded.token_generation,connection_generation=excluded.connection_generation WHERE nexora_onboarding_token_connection_bindings.connection_id=excluded.connection_id AND nexora_onboarding_token_connection_bindings.tenant_id=excluded.tenant_id AND nexora_onboarding_token_connection_bindings.workspace_id=excluded.workspace_id AND nexora_onboarding_token_connection_bindings.provider=excluded.provider`).bind(token.id, connection.id, scope.tenantId, scope.workspaceId, provider, tokenGeneration || token.rotation_generation, connection.generation,...claimBindings).run();
 	const providerOutcomeId = `provider-outcome:${correlationId}`;
 	const authorityDigest = await hash({ missionId, tenantId: scope.tenantId, workspaceId: scope.workspaceId, provider, authorizationSessionId, correlationId, callbackClaimId: callbackClaim.id, leaseOwner: callbackClaim.lease_owner, fencingToken: callbackClaim.fencing_token, tokenGeneration: tokenGeneration || token.rotation_generation, providerConnectionId: connection.id, providerConnectionGeneration: connection.generation });
 	const outcomeDigest = await hash({ success: true, provider, providerAccountHash });
 	const hasOutcomeStatus = await hasColumn(c.env.db, 'nexora_provider_outcome_results', 'outcome_status');
 	const outcomeSql = hasOutcomeStatus
-		? `INSERT OR IGNORE INTO nexora_provider_outcome_results(id,outcome_kind,operation_id,idempotency_key,authority_tuple_digest,outcome_digest,tenant_id,workspace_id,provider,connection_id,mission_id,authorization_session_id,correlation_id,lease_owner,fencing_token,expected_token_generation,committed_token_generation,expected_provider_connection_generation,committed_provider_connection_generation,normalized_reason_code,retry_classification,outcome_status) VALUES(?1,'SUCCESS',?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?15,?16,?16,'SUCCESS','TERMINAL_SUCCESS','SUCCESS')`
-		: `INSERT OR IGNORE INTO nexora_provider_outcome_results(id,outcome_kind,operation_id,idempotency_key,authority_tuple_digest,outcome_digest,tenant_id,workspace_id,provider,connection_id,mission_id,authorization_session_id,correlation_id,lease_owner,fencing_token,expected_token_generation,committed_token_generation,expected_provider_connection_generation,committed_provider_connection_generation,normalized_reason_code,retry_classification) VALUES(?1,'SUCCESS',?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?15,?16,?16,'SUCCESS','TERMINAL_SUCCESS')`;
-	await c.env.db.prepare(outcomeSql).bind(providerOutcomeId, `callback:${correlationId}`, `callback:${correlationId}:provider-outcome`, authorityDigest, outcomeDigest, scope.tenantId, scope.workspaceId, provider, connection.id, missionId, authorizationSessionId, correlationId, callbackClaim.lease_owner, callbackClaim.fencing_token, tokenGeneration || token.rotation_generation, connection.generation).run();
-	return { providerOutcomeId, tokenGeneration: tokenGeneration || token.rotation_generation, providerConnectionId: connection.id, providerConnectionGeneration: connection.generation };
+		? `INSERT OR IGNORE INTO nexora_provider_outcome_results(id,outcome_kind,operation_id,idempotency_key,authority_tuple_digest,outcome_digest,tenant_id,workspace_id,provider,connection_id,mission_id,authorization_session_id,correlation_id,lease_owner,fencing_token,expected_token_generation,committed_token_generation,expected_provider_connection_generation,committed_provider_connection_generation,normalized_reason_code,retry_classification,outcome_status) SELECT ?,'SUCCESS',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, ?,?,'SUCCESS','TERMINAL_SUCCESS','SUCCESS' WHERE ${claimGuard}`
+		: `INSERT OR IGNORE INTO nexora_provider_outcome_results(id,outcome_kind,operation_id,idempotency_key,authority_tuple_digest,outcome_digest,tenant_id,workspace_id,provider,connection_id,mission_id,authorization_session_id,correlation_id,lease_owner,fencing_token,expected_token_generation,committed_token_generation,expected_provider_connection_generation,committed_provider_connection_generation,normalized_reason_code,retry_classification) SELECT ?,'SUCCESS',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, ?,?,'SUCCESS','TERMINAL_SUCCESS' WHERE ${claimGuard}`;
+	await c.env.db.prepare(outcomeSql).bind(providerOutcomeId, `callback:${correlationId}`, `callback:${correlationId}:provider-outcome`, authorityDigest, outcomeDigest, scope.tenantId, scope.workspaceId, provider, connection.id, missionId, authorizationSessionId, correlationId, callbackClaim.lease_owner, callbackClaim.fencing_token, tokenGeneration || token.rotation_generation, tokenGeneration || token.rotation_generation, connection.generation, connection.generation,...claimBindings).run();
+	const revalidated=await callbackRecovery.assertCurrentClaim(c,callbackClaim);
+	if(!revalidated.ok) throw new Error(revalidated.reason||'CALLBACK_LEASE_LOST');
+	const outcome=await c.env.db.prepare(`SELECT authority_tuple_digest,outcome_digest FROM nexora_provider_outcome_results WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3`).bind(providerOutcomeId,scope.tenantId,scope.workspaceId).first();
+	if(!outcome||outcome.authority_tuple_digest!==authorityDigest||outcome.outcome_digest!==outcomeDigest) throw new Error('callback_provider_authority_commit_rejected');
+	return { providerOutcomeId, tokenGeneration: tokenGeneration || token.rotation_generation, credentialReferenceId: token.id, providerConnectionId: connection.id, providerConnectionGeneration: connection.generation };
 }
 
-async function continueVerifiedCallback(c, scope, { missionId, provider, authorizationSessionId, correlationId, callbackClaim, resumeCheckpoint, run, providerOutcomeId, tokenGeneration, providerConnectionId, providerConnectionGeneration }) {
+async function continueVerifiedCallback(c, scope, { missionId, provider, authorizationSessionId, correlationId, callbackClaim, resumeCheckpoint, run, providerOutcomeId, tokenGeneration, providerConnectionId, providerConnectionGeneration, afterCanonicalFinalization = null }) {
 	const runId = run?.id || `onboarding-run:${missionId}`;
 	await ensureMissionContinuationCheckpoint(c, scope, missionId, resumeCheckpoint);
 	const evidence = await ensureCallbackEvidence(c, scope, { missionId, runId, callbackClaimId: callbackClaim.id, correlationId, authorizationSessionId, provider, providerOutcomeId, tokenGeneration, providerConnectionId, providerConnectionGeneration });
@@ -110,11 +119,12 @@ async function continueVerifiedCallback(c, scope, { missionId, provider, authori
 		expectedProviderConnectionGeneration: providerConnectionGeneration,
 		expectedVerificationIdempotencyKey: `verify:${callbackClaim.id}:${runId}:`,
 	});
+	const postFinalization = afterCanonicalFinalization ? await afterCanonicalFinalization() : null;
 	await c.env.db.prepare(`UPDATE nexora_onboarding_callback_correlations SET status='VERIFIED_PENDING_CONSUMPTION' WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND status='claimed'`).bind(correlationId, scope.tenantId, scope.workspaceId).run();
 	const continuationId = `mission-continuation:${missionId}`;
 	const consumption = await callbackContinuation.consumeCorrelation(c, scope, { callbackCorrelationId: correlationId, idempotencyKey: `consume:${correlationId}`, missionContinuationId: continuationId, verifiedResultId: finalization.outcomeReference, finalizationId, verifierAuthorizationId: verification.verifierAuthorizationId, verificationAttemptId: verification.verificationId, missionId, provider, authorizationSessionId, expectedTokenGeneration: tokenGeneration, expectedProviderConnectionId: providerConnectionId, expectedProviderConnectionGeneration: providerConnectionGeneration, owner: callbackClaim.lease_owner, fencingToken: callbackClaim.fencing_token, expectedCorrelationState: 'VERIFIED_PENDING_CONSUMPTION', authorityTupleDigest: lineage.authorityTupleDigest, evidenceSetDigest: verification.evidenceSetDigest, expectedVerificationPolicyId: 'policy-1', expectedVerificationGeneration: 1, expectedVerificationIdempotencyKey: `verify:${callbackClaim.id}:${runId}:` });
 	const continuation = await callbackContinuation.continueMission(c, scope, { continuationId, idempotencyKey: `continue:${missionId}:${correlationId}`, correlationConsumptionId: consumption.id, verifiedResultId: finalization.outcomeReference, finalizationId, verifierAuthorizationId: verification.verifierAuthorizationId, verificationAttemptId: verification.verificationId, missionId, provider, authorizationSessionId, callbackCorrelationId: correlationId, expectedTokenGeneration: tokenGeneration, expectedProviderConnectionId: providerConnectionId, expectedProviderConnectionGeneration: providerConnectionGeneration, owner: callbackClaim.lease_owner, fencingToken: callbackClaim.fencing_token, resumeCheckpoint, expectedMissionState: 'verification_pending', authorityTupleDigest: lineage.authorityTupleDigest, evidenceSetDigest: verification.evidenceSetDigest, expectedVerificationPolicyId: 'policy-1', expectedVerificationGeneration: 1, expectedVerificationIdempotencyKey: `verify:${callbackClaim.id}:${runId}:` });
-	return { evidence, verification, finalization, consumption, continuation };
+	return { evidence, verification, finalization, postFinalization, consumption, continuation };
 }
 
 // Starts a new Zero-Touch onboarding Mission: creates the underlying durable mission (kind=
@@ -123,6 +133,8 @@ async function continueVerifiedCallback(c, scope, { missionId, provider, authori
 // duplicate start request (e.g. a double click) reuses the same Mission rather than creating a
 // second competing onboarding flow.
 async function startOnboarding(c, scope, { provider, capabilities, idempotencyKey, tenantHint = null, loginHint = null }) {
+	const membership = await c.env.db.prepare(`SELECT role FROM workspace_members WHERE workspace_id=?1 AND user_id=?2`).bind(scope.workspaceId, scope.tenantId).first();
+	if (!membership) return { ok: false, reason: 'WORKSPACE_AUTHORITY_REQUIRED' };
 	const missionId = `onboarding:${await hash({ tenantId: scope.tenantId, workspaceId: scope.workspaceId, idempotencyKey })}`;
 	await c.env.db
 		.prepare(`INSERT OR IGNORE INTO mission_runtime_missions(id,tenant_id,workspace_id,user_id,kind,state,idempotency_key,claim_key) VALUES(?1,?2,?3,?2,'ZERO_TOUCH_ONBOARDING','runnable',?4,'zero_touch_onboarding_verified')`)
@@ -162,6 +174,7 @@ async function startOnboarding(c, scope, { provider, capabilities, idempotencyKe
 // mission_runtime_runs lease is claimed here (real, fenced, per durable-mission-runtime-service)
 // so this is restart-safe the same way every other Mission Runtime step is.
 async function handleCallback(c, scope, { state, verifier, code = null, redirectUri = null, callbackFingerprint, fetchImpl, jwksFetchImpl, loginHint = null, allowedMicrosoftTenantIds = [], expectedProvider = null }) {
+	if (!state || !verifier || !code || !redirectUri) return { ok: false, reason: 'CALLBACK_INPUT_INCOMPLETE' };
 	const consumption = await onboardingOAuth.consumeCallback(c, scope, { state, verifier, receivedCallbackFingerprint: callbackFingerprint, expectedProvider });
 	if (!consumption.ok) return { ok: false, reason: consumption.reason };
 	// Scope originates only from the server-side correlation row.  The optional scope on the
@@ -220,12 +233,21 @@ async function handleCallbackExchange(c, scope, { missionId, provider, code, ver
 	let syncDispatched = false;
 	let continuationResult = null;
 	if (code && redirectUri) {
-		if (callbackClaim) await callbackRecovery.recordCheckpoint(c, callbackClaim, { step: 'TOKEN_EXCHANGE_INTENT_RECORDED', status: 'INTENT_RECORDED', providerOperationReference: `exchange:${callbackClaim.id}:${callbackClaim.attempt}` });
+		if (callbackClaim) {
+			const renewed = await callbackRecovery.renewLease(c, callbackClaim, { leaseSeconds: 300 });
+			if (!renewed.ok) throw new Error('nexora_callback_lease_lost_before_exchange');
+			callbackClaim = renewed.claim;
+			await callbackRecovery.recordCheckpoint(c, callbackClaim, { step: 'TOKEN_EXCHANGE_INTENT_RECORDED', status: 'INTENT_RECORDED', providerOperationReference: `exchange:${callbackClaim.id}:${callbackClaim.attempt}` });
+		}
 		if (callbackClaim) await callbackRecovery.recordCheckpoint(c, callbackClaim, { step: 'TOKEN_EXCHANGE_REQUEST_STARTED', status: 'IN_PROGRESS' });
 		tokenExchangeResult = await tokenExchange.exchangeAuthorizationCode(c.env, { provider, code, verifier, redirectUri, tenantHint }, fetchImpl);
 		if (callbackClaim) await callbackRecovery.recordCheckpoint(c, callbackClaim, { step: 'TOKEN_EXCHANGE_RESPONSE_OBSERVED', status: 'EXTERNAL_RESULT_OBSERVED', lastErrorCode: tokenExchangeResult.ok ? null : tokenExchangeResult.errorCode });
 		if (tokenExchangeResult.ok) {
-			const authorizationSession = authorizationSessionId ? await c.env.db.prepare(`SELECT nonce_hash FROM nexora_onboarding_authorization_sessions WHERE id=?1 AND onboarding_mission_id=?2 AND tenant_id=?3 AND workspace_id=?4 AND provider=?5`).bind(authorizationSessionId, missionId, scope.tenantId, scope.workspaceId, provider).first() : null;
+			const authorizationSession = authorizationSessionId ? await c.env.db.prepare(`SELECT nonce_hash,login_hint_hash,tenant_hint FROM nexora_onboarding_authorization_sessions WHERE id=?1 AND onboarding_mission_id=?2 AND tenant_id=?3 AND workspace_id=?4 AND provider=?5`).bind(authorizationSessionId, missionId, scope.tenantId, scope.workspaceId, provider).first() : null;
+			if (!authorizationSession) throw new Error('nexora_callback_authorization_session_missing');
+			const renewed = callbackClaim ? await callbackRecovery.renewLease(c, callbackClaim, { leaseSeconds: 300 }) : { ok: false };
+			if (!renewed.ok) throw new Error('nexora_callback_lease_lost_after_exchange');
+			callbackClaim = renewed.claim;
 			const verifiedIdToken = await verifyIdTokenClaims(c.env, { provider, idToken: tokenExchangeResult.idToken, expectedNonceHash: authorizationSession?.nonce_hash || null, tenantHint }, jwksFetchImpl || fetch);
 			if (!verifiedIdToken.ok) {
 				const current = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first();
@@ -235,8 +257,11 @@ async function handleCallbackExchange(c, scope, { missionId, provider, code, ver
 				return { ok: true, duplicate: false, missionId, resumeCheckpoint, phase: (await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first()).phase, missionResumed: Boolean(run), tokenExchangeAttempted: true, tokenExchangeOk: true, identityValid: false, capabilityStatus: null, syncDispatched: false, idTokenVerified: false, idTokenErrorCode: verifiedIdToken.errorCode };
 			}
 			const claims = verifiedIdToken.claims;
-			const identityResult = validateIdentity({ expectedLoginHint: loginHint, providerSubject: claims?.sub, providerEmail: claims?.email });
-			const tenantResult = provider === 'microsoft' ? validateMicrosoftTenant({ allowedTenantIds: allowedMicrosoftTenantIds, observedTenantId: claims?.tid }) : { valid: true };
+			const observedLoginHash = claims?.email ? await hash(String(claims.email).trim().toLowerCase()) : null;
+			const identityResult = validateIdentity({ expectedLoginHint: null, providerSubject: claims?.sub, providerEmail: claims?.email });
+			if (identityResult.valid && authorizationSession.login_hint_hash && observedLoginHash !== authorizationSession.login_hint_hash) Object.assign(identityResult, { valid: false, reason: 'IDENTITY_CONFLICT' });
+			const tenantResult = provider === 'microsoft' ? validateMicrosoftTenant({ allowedTenantIds: authorizationSession.tenant_hint ? [authorizationSession.tenant_hint] : [], observedTenantId: claims?.tid }) : { valid: true };
+			if (provider === 'microsoft' && !authorizationSession.tenant_hint) Object.assign(tenantResult, { valid: false, reason: 'TENANT_POLICY_MISSING' });
 
 			if (!identityResult.valid || !tenantResult.valid) {
 				// A real, precise conflict -- never silently proceed with a mismatched identity
@@ -256,7 +281,7 @@ async function handleCallbackExchange(c, scope, { missionId, provider, code, ver
 				if (!replacement.committed) return { ok: false, reason: replacement.reason || 'REAUTHORIZATION_TOKEN_COMMIT_REJECTED', missionId, resumeCheckpoint };
 				tokenAuthorityResult = replacement;
 			} else {
-				tokenAuthorityResult = await tokenStorage.storeTokens(c, scope, { onboardingMissionId: missionId, provider, providerAccountHash: accountHash, refreshToken: tokenExchangeResult.refreshToken || '', accessToken: tokenExchangeResult.accessToken, accessTokenExpiresAt: tokenExchangeResult.expiresAt, grantedScopes: tokenExchangeResult.grantedScopes });
+				tokenAuthorityResult = await tokenStorage.storeTokens(c, scope, { onboardingMissionId: missionId, provider, providerAccountHash: accountHash, refreshToken: tokenExchangeResult.refreshToken || null, accessToken: tokenExchangeResult.accessToken, accessTokenExpiresAt: tokenExchangeResult.expiresAt, grantedScopes: tokenExchangeResult.grantedScopes, callbackClaim });
 			}
 			if (callbackClaim) await callbackRecovery.recordCheckpoint(c, callbackClaim, { step: 'TOKEN_AUTHORITY_PERSISTED', status: 'PERSISTED' });
 
@@ -274,8 +299,26 @@ async function handleCallbackExchange(c, scope, { missionId, provider, code, ver
 
 			if (capabilityStatus === 'SUPPORTED') {
 				if (!callbackClaim || !authorizationSessionId || !correlationId) throw new Error('nexora_real_callback_authority_missing');
+				const renewedBeforeAuthority = await callbackRecovery.renewLease(c, callbackClaim);
+				if (!renewedBeforeAuthority.ok) throw new Error(renewedBeforeAuthority.reason || 'CALLBACK_LEASE_LOST');
+				callbackClaim = renewedBeforeAuthority.claim;
 				const providerAuthority = await establishProviderAuthority(c, scope, { missionId, provider, providerAccountHash: accountHash, authorizationSessionId, correlationId, callbackClaim, tokenGeneration: tokenAuthorityResult.rotationGeneration });
-				continuationResult = await continueVerifiedCallback(c, scope, { missionId, provider, authorizationSessionId, correlationId, callbackClaim, resumeCheckpoint, run, ...providerAuthority });
+				const renewedBeforeContinuation = await callbackRecovery.renewLease(c, callbackClaim);
+				if (!renewedBeforeContinuation.ok) throw new Error(renewedBeforeContinuation.reason || 'CALLBACK_LEASE_LOST');
+				callbackClaim = renewedBeforeContinuation.claim;
+				const runtimeEnabled = String(c.env.NEXORA_CONNECTION_RUNTIME_ENABLED || 'false').toLowerCase() === 'true';
+				continuationResult = await continueVerifiedCallback(c, scope, {
+					missionId, provider, authorizationSessionId, correlationId, callbackClaim, resumeCheckpoint, run, ...providerAuthority,
+					afterCanonicalFinalization: async () => {
+						const binding = runtimeEnabled
+							? await connectionRuntime.bindVerifiedCallback(c, scope, { authorizationSessionId, callbackCorrelationId: correlationId, onboardingMissionId: missionId, providerConnectionId: providerAuthority.providerConnectionId, providerConnectionGeneration: providerAuthority.providerConnectionGeneration, credentialReferenceId: providerAuthority.credentialReferenceId, credentialGeneration: providerAuthority.tokenGeneration })
+							: { bound: false, reason: 'CONNECTION_RUNTIME_DISABLED' };
+						if (runtimeEnabled && !binding.bound) throw new Error(binding.reason || 'CONNECTION_RUNTIME_CALLBACK_BINDING_REQUIRED');
+						return binding;
+					},
+				});
+				const connectionBinding = continuationResult.postFinalization;
+				continuationResult = { ...continuationResult, connectionBinding };
 				syncDispatched = Boolean(continuationResult?.continuation?.syncJobId);
 				if (syncDispatched) await advanceInitialSyncPhase(c, scope, missionId);
 				if (callbackClaim && syncDispatched) await callbackRecovery.recordCheckpoint(c, callbackClaim, { step: 'INITIAL_SYNC_DISPATCHED', status: 'PERSISTED', syncJobReference: continuationResult.continuation.syncJobId });

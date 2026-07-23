@@ -33,7 +33,7 @@ async function reset() {
 	await env.db.prepare(`INSERT INTO nexora_onboarding_provider_connections VALUES('connection-1',?,?,?,'google','acct-hash',1,'active')`).bind(mission, scope.tenantId, scope.workspaceId).run();
 }
 
-const c = { env: { ...env, jwt_secret: 'rollback-test-secret-1234567890' } };
+const c = { env: { ...env, AI_PROVIDER_TOKEN_SECRET: 'rollback-provider-secret-1234567890', jwt_secret: 'rollback-test-secret-1234567890' } };
 
 describe('NEXORA atomic replacement rollback and acknowledgement loss', () => {
 	beforeEach(reset);

@@ -10,6 +10,7 @@ import onboardingOrchestrator from '../service/nexora-onboarding-orchestrator-se
 import { providerEnv } from '../service/nexora-onboarding-oauth-service.js';
 import providerDiscovery from '../service/nexora-onboarding-provider-discovery-service';
 import missionRuntimeStatusService from '../service/mission-runtime-status-service';
+import connectionRuntime from '../service/connection-runtime-service.js';
 
 const PROVIDER_CALLBACK_TEST_FETCH = Symbol.for('nexora.internal.providerCallbackFetch');
 const PROVIDER_CALLBACK_TEST_JWKS_FETCH = Symbol.for('nexora.internal.providerCallbackJwksFetch');
@@ -47,7 +48,23 @@ app.post('/v3/onboarding/start', async (c) => {
 	const provider = String(body.provider || '');
 	const capabilities = Array.isArray(body.capabilities) ? body.capabilities : ['mail_read'];
 	const idempotencyKey = String(body.idempotency_key || `${provider}:${capabilities.join(',')}`);
-	const data = await onboardingOrchestrator.startOnboarding(c, { tenantId, workspaceId }, { provider, capabilities, idempotencyKey, tenantHint: body.tenant_hint || null, loginHint: body.login_hint || null });
+	const connectionRuntimeEnabled = String(c.env.NEXORA_CONNECTION_RUNTIME_ENABLED || 'false').toLowerCase() === 'true';
+	if (connectionRuntimeEnabled && (!body.account_id || !body.authority_generation)) return c.json(result.fail('CONNECTION_RUNTIME_AUTHORITY_REQUIRED', 400), 400);
+	let loginHint = body.login_hint || null;
+	if (body.account_id) {
+		const canonicalAccount = await c.env.db.prepare(`SELECT a.email,lower(a.provider) AS provider FROM account a JOIN workspace_account_bindings b ON b.account_id=a.account_id AND b.workspace_id=?2 WHERE a.account_id=?3 AND a.user_id=?1 AND a.is_del=0`).bind(tenantId, workspaceId, Number(body.account_id)).first();
+		if (!canonicalAccount || !['gmail','google'].includes(canonicalAccount.provider) || provider !== 'google') return c.json(result.fail('ACCOUNT_PROVIDER_AUTHORITY_DENIED', 403), 403);
+		loginHint = canonicalAccount.email;
+	}
+	const runtimeAuthorityInput = connectionRuntimeEnabled ? { tenant_id: tenantId, workspace_id: workspaceId, actor_user_id: tenantId, account_id: Number(body.account_id), authority_generation: Number(body.authority_generation), provider } : null;
+	if (runtimeAuthorityInput) connectionRuntime.assertRollout(c.env, runtimeAuthorityInput);
+	const data = await onboardingOrchestrator.startOnboarding(c, { tenantId, workspaceId }, { provider, capabilities, idempotencyKey, tenantHint: body.tenant_hint || null, loginHint });
+	if (data.ok && connectionRuntimeEnabled) {
+		const runtimeInput = { ...runtimeAuthorityInput, onboarding_mission_id: data.missionId, idempotency_key: `connection:${idempotencyKey}` };
+		const discovered = await connectionRuntime.discoverConnection(c, runtimeInput);
+		const authorization = await connectionRuntime.beginAuthorization(c, { ...runtimeInput, connection_id: discovered.id, idempotency_key: `authorization:${data.sessionId}` }, { authorizationSessionId: data.sessionId });
+		data.connection = { id: authorization.connectionId, state: authorization.state, generation: authorization.connectionGeneration };
+	}
 	// The PKCE verifier must never be returned in a JSON response body (readable by any XSS on
 	// the page) -- it goes only into an httpOnly, Secure, short-lived cookie scoped to this
 	// onboarding session, mirroring the codebase's existing Set-Cookie pattern (login-api.js).
@@ -87,6 +104,7 @@ app.get('/v3/onboarding/providers/microsoft/callback', (c) => handleProviderCall
 // completion page that already has code_verifier in hand, per ADR-6) alongside the real
 // provider GET redirect routes above.
 app.post('/v3/onboarding/callback', async (c) => {
+	if (String(c.env.NEXORA_ENABLE_LEGACY_POST_CALLBACK || 'false').toLowerCase() !== 'true') return c.json(result.fail('LEGACY_POST_CALLBACK_DISABLED'), 404);
 	const tenantId = userContext.getUserId(c);
 	const q = c.req.query();
 	const body = await c.req.json().catch(() => ({}));

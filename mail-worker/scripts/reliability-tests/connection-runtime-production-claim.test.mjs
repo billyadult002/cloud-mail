@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
-import { assertConnectionMissionAssociation, createConnectionOperation, persistConnectionEvidence } from '../../src/service/connection-runtime-service.js';
+import {
+	assertConnectionMissionAssociation,
+	AUTHORIZATION_SESSION_EXPIRED_SQL,
+	AUTHORIZATION_SESSION_LIVE_SQL,
+	AUTHORIZATION_SESSION_QUALIFIED_EXPIRED_SQL,
+	createConnectionOperation,
+	persistConnectionEvidence,
+} from '../../src/service/connection-runtime-service.js';
 
 const scope = { tenantId: 71001, workspaceId: 71002 };
 const tables = [
@@ -219,5 +226,30 @@ describe('Connection evidence uses the production Mission Claim contract', () =>
 		await env.db.prepare(`INSERT INTO nexora_onboarding_authorization_sessions(id,onboarding_mission_id,tenant_id,workspace_id,provider,status,expires_at) VALUES('live-sibling','old-mission',?1,?2,'google','pending',?3)`).bind(scope.tenantId, scope.workspaceId, new Date(Date.now() + 60000).toISOString()).run();
 		await expect(assertConnectionMissionAssociation({ env: { db: env.db } }, scope, discovered, 'new-mission', 'google')).rejects.toThrow('connection_mission_association_session_conflict');
 		await expect(assertConnectionMissionAssociation({ env: { db: env.db } }, scope, { ...discovered, credential_reference_id: 'credential-1', credential_generation: 1, provider_connection_id: 'provider-1', provider_connection_generation: 1 }, 'new-mission', 'google')).rejects.toThrow('connection_mission_association_authority_conflict');
+	});
+
+	it('normalizes ISO authorization-session timestamps in every SQL recovery guard', async () => {
+		expect(AUTHORIZATION_SESSION_EXPIRED_SQL).toBe("julianday(expires_at)<=julianday('now')");
+		expect(AUTHORIZATION_SESSION_QUALIFIED_EXPIRED_SQL).toBe("julianday(s.expires_at)<=julianday('now')");
+		expect(AUTHORIZATION_SESSION_LIVE_SQL).toBe("julianday(expires_at)>julianday('now')");
+
+		const past = new Date(Date.now() - 60000).toISOString();
+		const future = new Date(Date.now() + 60000).toISOString();
+		const comparison = await env.db.prepare(
+			`SELECT julianday(?1)<=julianday('now') AS past_expired,
+			        julianday(?2)>julianday('now') AS future_live,
+			        julianday(?1)>julianday('now') AS expired_replacement_live,
+			        julianday('malformed')<=julianday('now') AS malformed_expired,
+			        julianday('malformed')>julianday('now') AS malformed_live,
+			        ?1<=CURRENT_TIMESTAMP AS bare_past_comparison`
+		).bind(past, future).first();
+		expect(comparison).toMatchObject({
+			past_expired: 1,
+			future_live: 1,
+			expired_replacement_live: 0,
+			malformed_expired: null,
+			malformed_live: null,
+			bare_past_comparison: 0,
+		});
 	});
 });

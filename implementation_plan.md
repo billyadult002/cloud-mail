@@ -36,6 +36,14 @@ Maximum five iterations. Each Maker change must be followed by executable Checke
 - The signed-in administrator can access multiple Google Cloud projects, but none contains that exact client. No substitute client was edited or created.
 - After access to the owning project is granted, add only that redirect URI, relaunch the existing read-only flow, verify identity plus Gmail read-only scopes, and stop for any password, passkey, OTP, or CAPTCHA.
 
+## OAuth expiry-normalization repair
+
+1. [complete] Register the exact callback once on the proven existing Web client; preserve both prior redirect URIs and make no IAM, secret, JavaScript-origin, or consent-screen change.
+2. [complete] Reproduce the bounded retry after the prior session's recorded expiry and prove that direct ISO-text versus `CURRENT_TIMESTAMP` comparison leaves the expired session falsely live.
+3. [complete] Normalize all five authorization-session binding/recovery/replay comparisons with millisecond-safe SQLite `julianday(...)`; add production-shaped semantic regressions for same-day ISO expiry, live sessions, expired replacements, and malformed timestamps.
+4. [complete] Focused regression 4/4, full Worker reliability 21 files / 240 tests, syntax, SQLite integrity, Connection/provider coupling, and both audits pass. Independent re-review reports no remaining P0/P1/P2.
+5. [in progress] Deploy the exact reviewed source with bindings preserved and refresh disabled, rotate only the expired authorization session, and resume the single read-only OAuth flow.
+
 ## Stop conditions
 
 - Any credential/token/code disclosure, cross-scope ambiguity, unreviewed production source, destructive migration, mailbox mutation, provider-write path, second callback runtime, second authority owner, or unverifiable provider outcome stops production work immediately.

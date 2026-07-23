@@ -4,6 +4,9 @@ import providerSession from './provider-session-service.js';
 import durableMissionRuntime from './durable-mission-runtime-service.js';
 
 const JOB_TYPE = 'CONNECTION_RUNTIME_EVALUATE';
+const AUTHORIZATION_SESSION_EXPIRED_SQL = "julianday(expires_at)<=julianday('now')";
+const AUTHORIZATION_SESSION_QUALIFIED_EXPIRED_SQL = "julianday(s.expires_at)<=julianday('now')";
+const AUTHORIZATION_SESSION_LIVE_SQL = "julianday(expires_at)>julianday('now')";
 const allowlist = (value) => new Set(String(value || '').split(',').map((item) => item.trim()).filter(Boolean));
 const enabled = (env) => String(env.NEXORA_CONNECTION_RUNTIME_ENABLED || 'false').toLowerCase() === 'true';
 const emergencyDisabled = (env) => String(env.NEXORA_CONNECTION_RUNTIME_EMERGENCY_DISABLED || 'true').toLowerCase() !== 'false';
@@ -246,7 +249,7 @@ async function beginAuthorization(c, input, { authorizationSessionId }) {
 	let connection = await c.env.db.prepare(`SELECT * FROM nexora_connections WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND account_id=?4 AND provider=?5`).bind(input.connection_id, scope.tenantId, scope.workspaceId, scope.accountId, input.provider).first();
 	if (!connection || !['DISCOVERED','REAUTHORIZATION_REQUIRED','DISCONNECTED'].includes(connection.state)) throw new Error('connection_authorization_state_denied');
 	assertCurrentBinding(connection, { authority, row });
-	const session = await c.env.db.prepare(`SELECT onboarding_mission_id FROM nexora_onboarding_authorization_sessions WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND provider=?4 AND status='pending'`).bind(authorizationSessionId, scope.tenantId, scope.workspaceId, input.provider).first();
+	const session = await c.env.db.prepare(`SELECT onboarding_mission_id FROM nexora_onboarding_authorization_sessions WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND provider=?4 AND status='pending' AND ${AUTHORIZATION_SESSION_LIVE_SQL}`).bind(authorizationSessionId, scope.tenantId, scope.workspaceId, input.provider).first();
 	if (!session) throw new Error('connection_authorization_session_denied');
 	await assertConnectionMissionAssociation(c, scope, connection, session.onboarding_mission_id, input.provider);
 	connection = await claim(c, scope, { connectionId: connection.id, expectedGeneration: connection.connection_generation, owner: `connection-authorization:${crypto.randomUUID()}` });
@@ -274,18 +277,18 @@ async function recoverExpiredAuthorization(c, input, { replacementAuthorizationS
 		 WHERE o.connection_id=?1 AND o.tenant_id=?2 AND o.workspace_id=?3
 		  AND o.operation_type='REAUTHORIZE' AND o.state='VERIFIED'
 		  AND s.onboarding_mission_id=?4 AND s.provider=?5
-		  AND s.expires_at<=CURRENT_TIMESTAMP
+		  AND ${AUTHORIZATION_SESSION_QUALIFIED_EXPIRED_SQL}
 		 ORDER BY o.created_at DESC LIMIT 1`
 	).bind(connection.id, scope.tenantId, scope.workspaceId, connection.onboarding_mission_id, input.provider).first();
 	if (!prior) throw new Error('connection_authorization_session_not_expired');
 	const replacement = await c.env.db.prepare(
 		`SELECT id FROM nexora_onboarding_authorization_sessions
 		 WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND provider=?4
-		  AND status='pending' AND expires_at>CURRENT_TIMESTAMP`
+		  AND status='pending' AND ${AUTHORIZATION_SESSION_LIVE_SQL}`
 	).bind(replacementAuthorizationSessionId, scope.tenantId, scope.workspaceId, input.provider).first();
 	if (!replacement) throw new Error('connection_replacement_authorization_session_denied');
 	await c.env.db.batch([
-		c.env.db.prepare(`UPDATE nexora_onboarding_authorization_sessions SET status='expired' WHERE id=?1 AND status='pending' AND expires_at<=CURRENT_TIMESTAMP`).bind(prior.authorization_session_id),
+		c.env.db.prepare(`UPDATE nexora_onboarding_authorization_sessions SET status='expired' WHERE id=?1 AND status='pending' AND ${AUTHORIZATION_SESSION_EXPIRED_SQL}`).bind(prior.authorization_session_id),
 		c.env.db.prepare(`UPDATE nexora_onboarding_callback_correlations SET status='expired' WHERE authorization_session_id=?1 AND status='pending'`).bind(prior.authorization_session_id),
 	]);
 	connection = await claim(c, scope, { connectionId: connection.id, expectedGeneration: connection.connection_generation, owner: `connection-expired-authorization:${crypto.randomUUID()}` });
@@ -319,7 +322,7 @@ async function findAuthorizationReplay(c, input, { authorizationSessionId }) {
 	const session = await c.env.db.prepare(
 		`SELECT id FROM nexora_onboarding_authorization_sessions
 		 WHERE id=?1 AND onboarding_mission_id=?2 AND tenant_id=?3 AND workspace_id=?4
-		  AND provider=?5 AND status='pending' AND expires_at>CURRENT_TIMESTAMP`
+		  AND provider=?5 AND status='pending' AND ${AUTHORIZATION_SESSION_LIVE_SQL}`
 	).bind(authorizationSessionId, connection.onboarding_mission_id, scope.tenantId, scope.workspaceId, input.provider).first();
 	if (!session) throw new Error('connection_authorization_replay_session_denied');
 	return { connectionId: connection.id, state: connection.state, connectionGeneration: Number(connection.connection_generation), operationId: operation.id, idempotentReplay: true };
@@ -372,5 +375,5 @@ async function monitorScheduled({ env }) {
 	return { disabled: false, claimed };
 }
 
-export { JOB_TYPE, assertRollout, discoverConnection, beginAuthorization, findAuthorizationReplay, replayAuthorization, recoverExpiredAuthorization, evaluateConnection, requireReauthorization, bindVerifiedCallback, monitorScheduled, claim };
+export { JOB_TYPE, AUTHORIZATION_SESSION_EXPIRED_SQL, AUTHORIZATION_SESSION_QUALIFIED_EXPIRED_SQL, AUTHORIZATION_SESSION_LIVE_SQL, assertRollout, discoverConnection, beginAuthorization, findAuthorizationReplay, replayAuthorization, recoverExpiredAuthorization, evaluateConnection, requireReauthorization, bindVerifiedCallback, monitorScheduled, claim };
 export default { JOB_TYPE, assertRollout, discoverConnection, beginAuthorization, findAuthorizationReplay, replayAuthorization, recoverExpiredAuthorization, evaluateConnection, requireReauthorization, bindVerifiedCallback, monitorScheduled, claim };

@@ -112,6 +112,20 @@ function randomVerifier() {
 	const bytes = crypto.getRandomValues(new Uint8Array(32));
 	return b64url(bytes.buffer); // 43-char base64url string, within the 43-128 char RFC bound
 }
+async function deterministicBytes(env, seed, label) {
+	const secret = String(env?.NEXORA_CORRELATION_HASH_SECRET || env?.AI_PROVIDER_TOKEN_SECRET || env?.PROVIDER_TOKEN_SECRET || env?.jwt_secret || env?.JWT_SECRET || '');
+	if (secret.length < 16) throw new Error('Onboarding session derivation secret is not configured.');
+	const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+	return new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`nexora-onboarding-session-v1\n${seed}\n${label}`)));
+}
+async function sessionMaterial(env, sessionSeed) {
+	if (!sessionSeed) return { verifier: randomVerifier(), state: uuid(), nonce: uuid(), id: uuid() };
+	const verifier = b64url((await deterministicBytes(env, sessionSeed, 'verifier')).buffer);
+	const state = b64url((await deterministicBytes(env, sessionSeed, 'state')).buffer);
+	const nonce = b64url((await deterministicBytes(env, sessionSeed, 'nonce')).buffer);
+	const id = `authorization:${b64url((await deterministicBytes(env, sessionSeed, 'id')).buffer)}`;
+	return { verifier, state, nonce, id };
+}
 async function pkceChallengeFor(verifier) {
 	const digestBytes = await sha256(verifier);
 	return b64url(digestBytes.buffer);
@@ -122,7 +136,7 @@ async function pkceChallengeFor(verifier) {
 // (e.g. placed in a short-lived signed cookie or the client's own session) and is NEVER
 // written to nexora_onboarding_authorization_sessions; only its hash is persisted, so a
 // stolen database row alone cannot complete the PKCE exchange.
-async function createAuthorizationSession(env, { onboardingMissionId, tenantId, workspaceId, provider, clientRegistrationMode = 'first_party', capabilities, existingGrantedScopes = [], tenantHint = null, loginHint = null, ttlSeconds = 600 }) {
+async function createAuthorizationSession(env, { onboardingMissionId, tenantId, workspaceId, provider, clientRegistrationMode = 'first_party', capabilities, existingGrantedScopes = [], tenantHint = null, loginHint = null, ttlSeconds = 600, sessionSeed = null }) {
 	if (!PROVIDERS[provider]) throw new Error('nexora_onboarding_unsupported_provider');
 	const clientId = providerEnv(env, provider, 'clientIdEnv');
 	const redirectUri = providerEnv(env, provider, 'redirectUriEnv');
@@ -134,11 +148,9 @@ async function createAuthorizationSession(env, { onboardingMissionId, tenantId, 
 	}
 	const { scopes, justification } = planScopes(provider, capabilities);
 	const { additionalScopes } = existingGrantedScopes.length ? planIncrementalScopes(provider, existingGrantedScopes, capabilities) : { additionalScopes: scopes };
-	const verifier = randomVerifier();
+	const material = await sessionMaterial(env, sessionSeed);
+	const { verifier, state, nonce, id } = material;
 	const challenge = await pkceChallengeFor(verifier);
-	const state = uuid();
-	const nonce = uuid();
-	const id = uuid();
 	const expiresAt = new Date(Date.now() + Math.max(60, Math.min(3600, ttlSeconds)) * 1000).toISOString();
 	const row = {
 		id, onboarding_mission_id: onboardingMissionId, tenant_id: tenantId, workspace_id: workspaceId, provider, client_registration_mode: clientRegistrationMode,
@@ -180,15 +192,58 @@ async function insertAuthorizationSession(c, row) {
 	// The correlation row is deliberately separate from the browser URL and authenticated
 	// user context.  A provider callback has only `state` as its correlation input; looking
 	// up this D1 record is therefore the only way it obtains tenant/workspace scope.
-	const correlationId = uuid();
+	const correlationId = `correlation:${await hexHash(row.id)}`;
 	const sessionStatement = c.env.db
-		.prepare(`INSERT INTO nexora_onboarding_authorization_sessions(id,onboarding_mission_id,tenant_id,workspace_id,provider,client_registration_mode,redirect_uri_id,scopes_json,incremental_scopes_json,state_hash,nonce_hash,pkce_challenge,pkce_challenge_method,pkce_verifier_hash,tenant_hint,login_hint_hash,expires_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)`)
+		.prepare(`INSERT OR IGNORE INTO nexora_onboarding_authorization_sessions(id,onboarding_mission_id,tenant_id,workspace_id,provider,client_registration_mode,redirect_uri_id,scopes_json,incremental_scopes_json,state_hash,nonce_hash,pkce_challenge,pkce_challenge_method,pkce_verifier_hash,tenant_hint,login_hint_hash,expires_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)`)
 		.bind(row.id, row.onboarding_mission_id, row.tenant_id, row.workspace_id, row.provider, row.client_registration_mode, row.redirect_uri_id, row.scopes_json, row.incremental_scopes_json, row.state_hash, row.nonce_hash, row.pkce_challenge, row.pkce_challenge_method, row.pkce_verifier_hash, row.tenant_hint, row.login_hint_hash, row.expires_at);
 	const correlationStatement = c.env.db
-		.prepare(`INSERT INTO nexora_onboarding_callback_correlations(id,state_hash,authorization_session_id,onboarding_mission_id,tenant_id,workspace_id,provider,redirect_uri_id,redirect_uri_hash,requested_scopes_json,requested_capabilities_json,scope_plan_reference,pkce_challenge,pkce_challenge_reference,expires_at,resume_checkpoint) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)`)
+		.prepare(`INSERT OR IGNORE INTO nexora_onboarding_callback_correlations(id,state_hash,authorization_session_id,onboarding_mission_id,tenant_id,workspace_id,provider,redirect_uri_id,redirect_uri_hash,requested_scopes_json,requested_capabilities_json,scope_plan_reference,pkce_challenge,pkce_challenge_reference,expires_at,resume_checkpoint) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)`)
 		.bind(correlationId, row.state_hash, row.id, row.onboarding_mission_id, row.tenant_id, row.workspace_id, row.provider, row.redirect_uri_id, row.redirect_uri_hash, row.scopes_json, row.requested_capabilities_json, row.scope_plan_reference, row.pkce_challenge, `pkce:${row.id}`, row.expires_at, `resume:${row.onboarding_mission_id}`);
 	await c.env.db.batch([sessionStatement, correlationStatement]);
-	return { correlationId };
+	const canonical = await c.env.db.prepare(
+		`SELECT onboarding_mission_id,tenant_id,workspace_id,provider,client_registration_mode,redirect_uri_id,
+		        scopes_json,incremental_scopes_json,state_hash,nonce_hash,pkce_challenge,pkce_challenge_method,
+		        pkce_verifier_hash,tenant_hint,login_hint_hash,expires_at
+		 FROM nexora_onboarding_authorization_sessions WHERE id=?1`
+	).bind(row.id).first();
+	if (!canonical
+		|| canonical.onboarding_mission_id !== row.onboarding_mission_id
+		|| Number(canonical.tenant_id) !== Number(row.tenant_id)
+		|| Number(canonical.workspace_id) !== Number(row.workspace_id)
+		|| canonical.provider !== row.provider
+		|| canonical.client_registration_mode !== row.client_registration_mode
+		|| canonical.redirect_uri_id !== row.redirect_uri_id
+		|| canonical.scopes_json !== row.scopes_json
+		|| canonical.incremental_scopes_json !== row.incremental_scopes_json
+		|| canonical.state_hash !== row.state_hash
+		|| canonical.nonce_hash !== row.nonce_hash
+		|| canonical.pkce_challenge !== row.pkce_challenge
+		|| canonical.pkce_challenge_method !== row.pkce_challenge_method
+		|| canonical.pkce_verifier_hash !== row.pkce_verifier_hash
+		|| canonical.tenant_hint !== row.tenant_hint
+		|| canonical.login_hint_hash !== row.login_hint_hash) throw new Error('nexora_onboarding_authorization_session_idempotency_conflict');
+	if (Date.parse(canonical.expires_at) <= Date.now()) throw new Error('nexora_onboarding_authorization_session_expired');
+	const canonicalCorrelation = await c.env.db.prepare(
+		`SELECT state_hash,authorization_session_id,onboarding_mission_id,tenant_id,workspace_id,provider,
+		        redirect_uri_id,redirect_uri_hash,requested_scopes_json,requested_capabilities_json,
+		        scope_plan_reference,pkce_challenge,pkce_challenge_reference
+		 FROM nexora_onboarding_callback_correlations WHERE id=?1`
+	).bind(correlationId).first();
+	if (!canonicalCorrelation
+		|| canonicalCorrelation.state_hash !== row.state_hash
+		|| canonicalCorrelation.authorization_session_id !== row.id
+		|| canonicalCorrelation.onboarding_mission_id !== row.onboarding_mission_id
+		|| Number(canonicalCorrelation.tenant_id) !== Number(row.tenant_id)
+		|| Number(canonicalCorrelation.workspace_id) !== Number(row.workspace_id)
+		|| canonicalCorrelation.provider !== row.provider
+		|| canonicalCorrelation.redirect_uri_id !== row.redirect_uri_id
+		|| canonicalCorrelation.redirect_uri_hash !== row.redirect_uri_hash
+		|| canonicalCorrelation.requested_scopes_json !== row.scopes_json
+		|| canonicalCorrelation.requested_capabilities_json !== row.requested_capabilities_json
+		|| canonicalCorrelation.scope_plan_reference !== row.scope_plan_reference
+		|| canonicalCorrelation.pkce_challenge !== row.pkce_challenge
+		|| canonicalCorrelation.pkce_challenge_reference !== `pkce:${row.id}`) throw new Error('nexora_onboarding_callback_correlation_idempotency_conflict');
+	return { correlationId, expiresAt: canonical.expires_at };
 }
 
 // Single-use, replay-safe callback consumption. A duplicate callback (same state delivered

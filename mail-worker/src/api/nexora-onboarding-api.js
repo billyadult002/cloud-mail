@@ -15,6 +15,11 @@ import connectionRuntime from '../service/connection-runtime-service.js';
 const PROVIDER_CALLBACK_TEST_FETCH = Symbol.for('nexora.internal.providerCallbackFetch');
 const PROVIDER_CALLBACK_TEST_JWKS_FETCH = Symbol.for('nexora.internal.providerCallbackJwksFetch');
 
+function hasConnectionRuntimeAuthority(body) {
+	return body.account_id !== undefined && body.account_id !== null
+		&& body.authority_generation !== undefined && body.authority_generation !== null;
+}
+
 function readCookie(c, name) {
 	const header = c.req.header('Cookie') || '';
 	for (const part of header.split(';')) {
@@ -49,7 +54,7 @@ app.post('/v3/onboarding/start', async (c) => {
 	const capabilities = Array.isArray(body.capabilities) ? body.capabilities : ['mail_read'];
 	const idempotencyKey = String(body.idempotency_key || `${provider}:${capabilities.join(',')}`);
 	const connectionRuntimeEnabled = String(c.env.NEXORA_CONNECTION_RUNTIME_ENABLED || 'false').toLowerCase() === 'true';
-	if (connectionRuntimeEnabled && (!body.account_id || !body.authority_generation)) return c.json(result.fail('CONNECTION_RUNTIME_AUTHORITY_REQUIRED', 400), 400);
+	if (connectionRuntimeEnabled && !hasConnectionRuntimeAuthority(body)) return c.json(result.fail('CONNECTION_RUNTIME_AUTHORITY_REQUIRED', 400), 400);
 	let loginHint = body.login_hint || null;
 	if (body.account_id) {
 		const canonicalAccount = await c.env.db.prepare(`SELECT a.email,lower(a.provider) AS provider FROM account a JOIN workspace_account_bindings b ON b.account_id=a.account_id AND b.workspace_id=?2 WHERE a.account_id=?3 AND a.user_id=?1 AND a.is_del=0`).bind(tenantId, workspaceId, Number(body.account_id)).first();
@@ -62,7 +67,14 @@ app.post('/v3/onboarding/start', async (c) => {
 	if (data.ok && connectionRuntimeEnabled) {
 		const runtimeInput = { ...runtimeAuthorityInput, onboarding_mission_id: data.missionId, idempotency_key: `connection:${idempotencyKey}` };
 		const discovered = await connectionRuntime.discoverConnection(c, runtimeInput);
-		const authorization = await connectionRuntime.beginAuthorization(c, { ...runtimeInput, connection_id: discovered.id, idempotency_key: `authorization:${data.sessionId}` }, { authorizationSessionId: data.sessionId });
+		const authorizationInput = { ...runtimeInput, connection_id: discovered.id, idempotency_key: `authorization:${data.sessionId}` };
+		let authorization = data.idempotentReplay && discovered.state === 'AUTHORIZATION_PENDING'
+			? await connectionRuntime.findAuthorizationReplay(c, authorizationInput, { authorizationSessionId: data.sessionId })
+			: null;
+		if (!authorization && discovered.state === 'AUTHORIZATION_PENDING') {
+			await connectionRuntime.recoverExpiredAuthorization(c, authorizationInput, { replacementAuthorizationSessionId: data.sessionId });
+		}
+		if (!authorization) authorization = await connectionRuntime.beginAuthorization(c, authorizationInput, { authorizationSessionId: data.sessionId });
 		data.connection = { id: authorization.connectionId, state: authorization.state, generation: authorization.connectionGeneration };
 	}
 	// The PKCE verifier must never be returned in a JSON response body (readable by any XSS on
@@ -137,3 +149,4 @@ app.post('/v3/onboarding/repair/:missionId', async (c) => {
 });
 
 export default app;
+export { hasConnectionRuntimeAuthority };

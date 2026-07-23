@@ -10,6 +10,7 @@ const viewSource = readFileSync(fileURLToPath(new URL('../../views/domain-activa
 test('request surface uses exact staged endpoints and bodies', () => {
   assert.match(requestSource, /http\.get\('\/v3\/domain-authorities\/workspace-selector'/)
   assert.match(requestSource, /http\.post\('\/v3\/domain-authorities\/workspace-selector\/validate', \{ workspaceId: id \}/)
+  assert.match(requestSource, /http\.get\('\/v3\/domain-authorities\/status'/)
   assert.match(requestSource, /http\.post\('\/v3\/domain-ownership\/dns-challenges'/)
   assert.match(requestSource, /http\.post\('\/v3\/domain-ownership\/dns-challenges\/verify'/)
   assert.match(requestSource, /http\.post\('\/v3\/domain-authorities\/bootstrap'/)

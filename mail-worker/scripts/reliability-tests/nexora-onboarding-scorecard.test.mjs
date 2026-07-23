@@ -90,7 +90,7 @@ beforeEach(async () => {
 
 describe('Zero-Touch scorecard — computed from a real onboarding run', () => {
 	it('reports zero technical fields and does not count an incomplete callback as provider interaction', async () => {
-		const c = { env: { ...env, NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: 'https://nexora.example/v3/onboarding/providers/google/callback' } };
+		const c = { env: { ...env, AI_PROVIDER_TOKEN_SECRET: 'test-only-provider-encryption-secret', NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: 'https://nexora.example/v3/onboarding/providers/google/callback' } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'scorecard-1' });
 		await onboardingOrchestrator.handleCallback(c, scope, { state: started.state, verifier: started.verifier, callbackFingerprint: 'fp-sc-1' });
 

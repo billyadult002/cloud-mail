@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import contract, { assertTransition, transitionAllowed, validateScope } from '../../src/service/connection-contract-service.js';
 import gmailAdapter, { HEALTH_URL, classify } from '../../src/service/gmail-connection-adapter.js';
 import { assertRollout } from '../../src/service/connection-runtime-service.js';
+import { hasConnectionRuntimeAuthority } from '../../src/api/nexora-onboarding-api.js';
 
 const rollout = (overrides = {}) => ({
 	NEXORA_CONNECTION_RUNTIME_ENABLED: 'true',
@@ -30,6 +31,12 @@ describe('Connection contract is fail-closed', () => {
 		expect(validateScope(input())).toMatchObject({ tenantId: 41, workspaceId: 42, actorUserId: 41, accountId: 43, authorityGeneration: 1 });
 		for (const field of ['tenant_id','workspace_id','actor_user_id','account_id']) expect(() => validateScope(input({ [field]: 0 }))).toThrow();
 		expect(() => validateScope(input({ authority_generation: -1 }))).toThrow();
+	});
+
+	it('accepts owner authority generation zero but rejects absent authority fields', () => {
+		expect(hasConnectionRuntimeAuthority({ account_id: 43, authority_generation: 0 })).toBe(true);
+		expect(hasConnectionRuntimeAuthority({ account_id: 43 })).toBe(false);
+		expect(hasConnectionRuntimeAuthority({ authority_generation: 0 })).toBe(false);
 	});
 
 	it.each([

@@ -152,8 +152,56 @@ describe('NEXORA onboarding orchestrator — end-to-end real D1 (Checkpoint 4/8)
 		const first = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-dup' });
 		const second = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-dup' });
 		expect(first.missionId).toBe(second.missionId);
+		expect(second).toMatchObject({
+			idempotentReplay: true,
+			sessionId: first.sessionId,
+			authorizationUrl: first.authorizationUrl,
+			verifier: first.verifier,
+		});
 		const missionCount = await env.db.prepare(`SELECT COUNT(*) n FROM mission_runtime_missions WHERE idempotency_key='start-dup'`).first();
 		expect(Number(missionCount.n)).toBe(1);
+		const sessionCount = await env.db.prepare(`SELECT COUNT(*) n FROM nexora_onboarding_authorization_sessions WHERE onboarding_mission_id=?1`).bind(first.missionId).first();
+		expect(Number(sessionCount.n)).toBe(1);
+		await expect(onboardingOrchestrator.startOnboarding(c, scope, {
+			provider: 'google', capabilities: ['mail_send'], idempotencyKey: 'start-dup',
+		})).rejects.toThrow('nexora_onboarding_idempotency_conflict');
+	});
+
+	it('concurrent same-key starts converge on one deterministic authorization session', async () => {
+		const c = { env: { ...env, AI_PROVIDER_TOKEN_SECRET: 'test-only-provider-encryption-secret', NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI } };
+		const [first, second] = await Promise.all([
+			onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-concurrent' }),
+			onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-concurrent' }),
+		]);
+		expect(first.sessionId).toBe(second.sessionId);
+		expect(first.authorizationUrl).toBe(second.authorizationUrl);
+		expect(first.verifier).toBe(second.verifier);
+		const sessionCount = await env.db.prepare(`SELECT COUNT(*) n FROM nexora_onboarding_authorization_sessions WHERE onboarding_mission_id=?1`).bind(first.missionId).first();
+		expect(Number(sessionCount.n)).toBe(1);
+	});
+
+	it('concurrent same-key starts with different scopes fail closed on the canonical authority tuple', async () => {
+		const c = { env: { ...env, AI_PROVIDER_TOKEN_SECRET: 'test-only-provider-encryption-secret', NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI } };
+		const outcomes = await Promise.allSettled([
+			onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-concurrent-conflict' }),
+			onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_send'], idempotencyKey: 'start-concurrent-conflict' }),
+		]);
+		expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+		expect(outcomes.filter((outcome) => outcome.status === 'rejected')).toHaveLength(1);
+		expect(String(outcomes.find((outcome) => outcome.status === 'rejected').reason)).toContain('idempotency_conflict');
+		const missionId = outcomes.find((outcome) => outcome.status === 'fulfilled').value.missionId;
+		const sessionCount = await env.db.prepare(`SELECT COUNT(*) n FROM nexora_onboarding_authorization_sessions WHERE onboarding_mission_id=?1`).bind(missionId).first();
+		expect(Number(sessionCount.n)).toBe(1);
+	});
+
+	it('an expired deterministic session requires a new idempotency attempt', async () => {
+		const c = { env: { ...env, AI_PROVIDER_TOKEN_SECRET: 'test-only-provider-encryption-secret', NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI } };
+		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-expired' });
+		await env.db.prepare(`UPDATE nexora_onboarding_authorization_sessions SET expires_at=datetime('now','-1 minute') WHERE id=?1`).bind(started.sessionId).run();
+		await env.kv.delete(`nexora:onboarding:authorization-replay:${started.missionId}`);
+		await expect(onboardingOrchestrator.startOnboarding(c, scope, {
+			provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-expired',
+		})).rejects.toThrow('nexora_onboarding_authorization_session_expired');
 	});
 
 	it('E23/V18: an incomplete callback cannot burn the authorization session', async () => {

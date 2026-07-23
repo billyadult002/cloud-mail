@@ -14,8 +14,9 @@ Maximum five iterations. Each Maker change must be followed by executable Checke
 6. [complete] Add focused contract and regression tests; retain existing exact-once/race matrices.
 7. [complete] Run Worker suites, coupling guards, syntax, clean install, audits, dependency inspection, secret scan, and dry-run bundle.
 8. [complete] Complete independent OAuth/security, migration/state, and provider-boundary re-review and resolve all P0/P1/P2.
-9. [pending] Seal/push reviewed commit, open PR, review exact source, then apply reviewed migration and deploy default-off.
-10. [pending] Complete human OAuth, bounded live Gmail health proof, production negatives, and rollback; otherwise retain the local-only verdict.
+9. [complete] Seal/push reviewed commits, open PR 10, apply reviewed migration 0081, and deploy exact reviewed source default-off.
+10. [in progress] Domain Authority and exact canonical account binding are verified. Seal and deploy the reviewed authenticated `mail_read` launch, then stop at any password/OTP/passkey boundary for local user entry.
+11. [pending] After the canonical callback succeeds, prove one bounded read-only Gmail health operation, negative isolation, evidence integrity, and rollback while keeping automatic refresh disabled.
 
 ## Stop conditions
 
@@ -23,3 +24,13 @@ Maximum five iterations. Each Maker change must be followed by executable Checke
 - If no live provider operation is safely possible, retain `CHECKPOINT_5_LOCAL_CONNECTION_RUNTIME_PASS — LIVE_PROVIDER_ACCEPTANCE_NOT_COMPLETE`.
 - If refresh recovery cannot be safely demonstrated, retain `CHECKPOINT_5_PROVIDER_CONNECTION_PASS — RECOVERY_ACCEPTANCE_INCOMPLETE`.
 - If callback, refresh, or credential-boundary risk remains unresolved, retain `CHECKPOINT_5_PRODUCTION_READINESS_BLOCKED`.
+# Production OAuth launch closure
+
+- Add one authenticated Domain Activation control that becomes available only after the verified Domain Authority is established.
+- Resolve the signed-in actor's exact canonical account from the existing authenticated account list; do not hardcode a mailbox identifier in the browser.
+- Start `/v3/onboarding/start` with provider `google`, capability `mail_read`, the exact Workspace/account tuple, and owner authority generation `0`.
+- Reject any authorization response that is not an HTTPS Google Accounts URL.
+- Add a request-contract test that fails if write scopes or mailbox-mutation capabilities enter the launch request.
+- Re-run frontend and Worker verification, inspect the diff adversarially, deploy the reviewed source, and continue only through visible Google consent.
+- Treat an OAuth replay envelope and a verified Connection Runtime authorization receipt as separate authorities; retry incomplete expiry recovery instead of poisoning an idempotency key.
+- Rebind replacement Missions only within the claimed/fenced verified transition.

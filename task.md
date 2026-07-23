@@ -7,9 +7,11 @@
 - Checkpoint 4 PR: merged as `cafe44eca4359911cfd773f0f262f3b4c37b9720`
 - Maker-Checker iteration cap: 5
 - Current iteration: 5
-- Current phase: local closure complete; production authorization pending
+- Current phase: Domain Authority activated; reviewed Gmail OAuth launch awaiting immutable deployment
 - Reviewed implementation commit: `e4747dc80c1265d07a8fbef017257071aa6a3347`
-- Production changes in Checkpoint 5: 0
+- Pull request: `https://github.com/billyadult002/cloud-mail/pull/10`
+- Production Worker version: `a64cc08e-65f4-49a1-88b5-0572821a691c`
+- Production changes in Checkpoint 5: migration 0081, verified Domain Authority/account binding, and exact bounded runtime variables with refresh disabled
 - Provider writes: 0
 - Mailbox mutations: 0
 - Secret disclosures: 0
@@ -28,15 +30,18 @@
 2. [complete] Comail provenance and concepts-only reuse decision.
 3. [complete] ADR-010 through ADR-014 and executable contract.
 4. [complete] Additive D1 persistence and schema-preserving rollback artifact.
-5. [complete] Runtime implementation; migration applies twice; 232/232 Worker reliability tests pass.
+5. [complete] Runtime implementation; migration applies twice; 236/236 Worker reliability tests pass.
 6. [complete] Independent security, migration, and provider-boundary re-review; no remaining P0/P1/P2.
-7. [pending] Reviewed commit, PR, migration, deployment, production acceptance, negative probes, and rollback.
+7. [complete] Reviewed commits pushed; PR 10 open and mergeable; migration 0081 applied; exact reviewed Worker deployed default-off.
+8. [in progress] Verified Domain Authority and exact account selection are complete; immutable deployment and human read-only Google OAuth remain before live health/negative/rollback evidence.
 
 ## Local verification evidence
 
 - Clean `npm ci`: pass.
 - Unit/syntax suite: pass.
-- Cloudflare/Vitest reliability: 20 files, 232 tests, all pass.
+- Cloudflare/Vitest reliability: 20 files, 236 tests, all pass.
+- Domain Activation frontend acceptance: 34 tests, all pass; Vite development build passes.
+- Focused onboarding/Connection matrix: 63 tests, all pass.
 - New Connection contract and Provider Session suites: 39 tests, all pass.
 - Final adversarial focused matrix: 78 tests, all pass; no remaining P0/P1/P2.
 - Provider coupling guard: pass; Connection coupling guard: pass.
@@ -46,3 +51,13 @@
 - Migration SHA-256: `3dbc5a0338667c296f9616bf0a5c6a5e70a66bf62446715c242711e18da85c6f`.
 - Dry-run Worker `index.js` SHA-256: `b664de0e8b6ccbdc73323946eae3bcf6273e34c132882502a49ba00d2a62141b`.
 - Changed-file credential-pattern scan: no matches.
+
+## Production evidence
+
+- Migration 0081 applied exactly once; subsequent migration listing reports no pending migrations.
+- Post-migration Connection, operation, and event rows: 0; runtime/identity guard triggers: 17.
+- Exact reviewed evidence head deployed: `7035d1908cdc67d4378c988722094e514401aee2`.
+- Worker version: `a64cc08e-65f4-49a1-88b5-0572821a691c`; it retains the reviewed code and exact production bindings.
+- Exact provider/tenant/workspace/account allowlists are active; emergency disable is false and automatic refresh remains disabled.
+- Workspace 1 was explicitly selected; DNS ownership and one Domain Authority are verified; one canonical account is selected.
+- Remaining live blocker: Google read-only consent has not completed, so consumed authorization sessions, eligible Google token authorities, authenticated health evidence, and mailbox mutations remain 0.

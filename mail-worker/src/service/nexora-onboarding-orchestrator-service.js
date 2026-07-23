@@ -14,12 +14,87 @@ import reauthorization from './nexora-onboarding-reauthorization-service.js';
 import { commitEvidenceDeliveryResult } from './nexora-onboarding-evidence-outbox-service.js';
 import callbackContinuation from './nexora-callback-continuation-service.js';
 import connectionRuntime from './connection-runtime-service.js';
+import { decryptSecret, encryptSecret } from '../utils/secret-crypto.js';
 
 const uuid = () => crypto.randomUUID();
 async function hash(value) {
 	const bytes = new TextEncoder().encode(typeof value === 'string' ? value : JSON.stringify(value));
 	const digest = await crypto.subtle.digest('SHA-256', bytes);
 	return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+const authorizationReplayKey = (missionId) => `nexora:onboarding:authorization-replay:${missionId}`;
+const authorizationReplayAad = (missionId, sessionId) => `nexora-onboarding-authorization-replay-v1:${missionId}:${sessionId}`;
+const authorizationReplayEncryptionAvailable = (env) => String(env?.AI_PROVIDER_TOKEN_SECRET || env?.PROVIDER_TOKEN_SECRET || '').length >= 16;
+const authorizationReplayRequestDigest = ({ provider, capabilities, tenantHint, loginHint }) => hash({
+	provider,
+	capabilities: [...capabilities].map(String).sort(),
+	tenantHint: tenantHint || null,
+	loginHint: loginHint ? String(loginHint).trim().toLowerCase() : null,
+});
+
+async function readAuthorizationReplay(c, missionId, request) {
+	if (!authorizationReplayEncryptionAvailable(c.env)) return null;
+	const stored = await c.env.kv.get(authorizationReplayKey(missionId), { type: 'json' });
+	if (!stored?.sessionId || !stored?.ciphertext) return null;
+	const session = await c.env.db.prepare(
+		`SELECT id,status,expires_at FROM nexora_onboarding_authorization_sessions
+		 WHERE id=?1 AND onboarding_mission_id=?2`
+	).bind(stored.sessionId, missionId).first();
+	if (!session || session.status !== 'pending' || Date.parse(session.expires_at) <= Date.now()) {
+		await c.env.kv.delete(authorizationReplayKey(missionId));
+		return null;
+	}
+	const decoded = JSON.parse(await decryptSecret(c, stored.ciphertext, {
+		purpose: 'provider-token',
+		aad: authorizationReplayAad(missionId, session.id),
+	}));
+	if (decoded.sessionId !== session.id || decoded.missionId !== missionId || decoded.expiresAt !== session.expires_at) {
+		throw new Error('nexora_onboarding_authorization_replay_integrity_denied');
+	}
+	if (decoded.requestDigest !== await authorizationReplayRequestDigest(request)) throw new Error('nexora_onboarding_idempotency_conflict');
+	const { requestDigest, ...replay } = decoded;
+	return { ...replay, idempotentReplay: true };
+}
+
+async function writeAuthorizationReplay(c, missionId, session, request) {
+	const replay = {
+		ok: true,
+		missionId,
+		authorizationUrl: session.authorizationUrl,
+		sessionId: session.row.id,
+		expiresAt: session.row.expires_at,
+		state: session.state,
+		nonce: session.nonce,
+		verifier: session.verifier,
+	};
+	if (!authorizationReplayEncryptionAvailable(c.env)) return replay;
+	const ciphertext = await encryptSecret(c, JSON.stringify({
+		...replay,
+		requestDigest: await authorizationReplayRequestDigest(request),
+	}), {
+		purpose: 'provider-token',
+		aad: authorizationReplayAad(missionId, session.row.id),
+	});
+	const ttl = Math.max(60, Math.min(600, Math.ceil((Date.parse(session.row.expires_at) - Date.now()) / 1000)));
+	await c.env.kv.put(authorizationReplayKey(missionId), JSON.stringify({ sessionId: session.row.id, ciphertext }), { expirationTtl: ttl });
+	return replay;
+}
+
+const START_PHASE_ORDER = Object.freeze(['discovering', 'provider_identified', 'authorization_path_selected', 'waiting_for_user_login']);
+async function advanceStartPhase(c, scope, missionId, target) {
+	const targetIndex = START_PHASE_ORDER.indexOf(target);
+	const current = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first();
+	const currentIndex = START_PHASE_ORDER.indexOf(current?.phase);
+	if (currentIndex >= targetIndex && targetIndex >= 0) return;
+	if (currentIndex < 0 || targetIndex !== currentIndex + 1) throw new Error('nexora_onboarding_start_phase_conflict');
+	try {
+		await onboardingStateMachine.advancePhase(c, scope, { missionId, to: target });
+	} catch (error) {
+		if (String(error?.message) !== 'nexora_onboarding_phase_conflict') throw error;
+		const raced = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first();
+		if (START_PHASE_ORDER.indexOf(raced?.phase) < targetIndex) throw error;
+	}
 }
 
 async function hasColumn(db, table, column) {
@@ -141,18 +216,18 @@ async function startOnboarding(c, scope, { provider, capabilities, idempotencyKe
 		.bind(missionId, scope.tenantId, scope.workspaceId, idempotencyKey)
 		.run();
 	await onboardingStateMachine.ensureOnboardingState(c, scope, { missionId, targetProvider: provider, targetAccountOrDomainHash: await hash(loginHint || tenantHint || provider) });
+	const replayRequest = { provider, capabilities, tenantHint, loginHint };
+	const replay = await readAuthorizationReplay(c, missionId, replayRequest);
+	if (replay) return replay;
 
-	const current = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first();
-	if (current.phase === 'discovering') {
-		await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'provider_identified' });
-		await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'authorization_path_selected' });
-	}
+	await advanceStartPhase(c, scope, missionId, 'provider_identified');
+	await advanceStartPhase(c, scope, missionId, 'authorization_path_selected');
 
 	// Credential availability is checked BEFORE declaring we're waiting on the user -- a missing
 	// first-party app is an administrator blocker, not something the user can act on by logging
 	// in, so the phase must never claim "waiting_for_user_login" when there is nothing to log
 	// into yet.
-	const session = await onboardingOAuth.createAuthorizationSession(c.env, { onboardingMissionId: missionId, tenantId: scope.tenantId, workspaceId: scope.workspaceId, provider, capabilities, tenantHint, loginHint });
+	const session = await onboardingOAuth.createAuthorizationSession(c.env, { onboardingMissionId: missionId, tenantId: scope.tenantId, workspaceId: scope.workspaceId, provider, capabilities, tenantHint, loginHint, sessionSeed: missionId });
 	if (!session.ok) {
 		const phaseNow = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first();
 		if (onboardingStateMachine.allowed(phaseNow.phase, 'blocked')) {
@@ -160,13 +235,13 @@ async function startOnboarding(c, scope, { provider, capabilities, idempotencyKe
 		}
 		return { ok: false, missionId, reason: session.reason, requiredEnv: session.requiredEnv };
 	}
-	const beforeWait = await c.env.db.prepare(`SELECT phase FROM nexora_onboarding_state WHERE mission_id=?1`).bind(missionId).first();
-	if (onboardingStateMachine.allowed(beforeWait.phase, 'waiting_for_user_login')) await onboardingStateMachine.advancePhase(c, scope, { missionId, to: 'waiting_for_user_login' });
-	await insertAuthorizationSession(c, session.row);
+	await advanceStartPhase(c, scope, missionId, 'waiting_for_user_login');
+	const insertedSession = await insertAuthorizationSession(c, session.row);
+	session.row.expires_at = insertedSession.expiresAt;
 	// verifier/state must reach the caller (never persisted server-side in cleartext, per
 	// ADR-6) so the API layer can hand them to the client -- typically the verifier via an
 	// httpOnly, short-lived cookie and state is already embedded in authorizationUrl itself.
-	return { ok: true, missionId, authorizationUrl: session.authorizationUrl, sessionId: session.row.id, expiresAt: session.row.expires_at, state: session.state, nonce: session.nonce, verifier: session.verifier };
+	return writeAuthorizationReplay(c, missionId, session, replayRequest);
 }
 
 // Consumes a real provider callback and automatically resumes the originating Mission — no

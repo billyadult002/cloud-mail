@@ -212,12 +212,12 @@ describe('Connection evidence uses the production Mission Claim contract', () =>
 		};
 		await expect(assertConnectionMissionAssociation({ env: { db: env.db } }, scope, discovered, 'new-mission', 'google')).resolves.toBe(true);
 		await env.db.prepare(`UPDATE nexora_onboarding_authorization_sessions SET expires_at=?1 WHERE id='old-session'`).bind(new Date(Date.now() + 60000).toISOString()).run();
-		await expect(assertConnectionMissionAssociation({ env: { db: env.db } }, scope, discovered, 'new-mission', 'google')).rejects.toThrow('connection_mission_association_conflict');
+		await expect(assertConnectionMissionAssociation({ env: { db: env.db } }, scope, discovered, 'new-mission', 'google')).rejects.toThrow('connection_mission_association_session_conflict');
 		await env.db.prepare(`UPDATE nexora_onboarding_authorization_sessions SET expires_at='malformed' WHERE id='old-session'`).run();
-		await expect(assertConnectionMissionAssociation({ env: { db: env.db } }, scope, discovered, 'new-mission', 'google')).rejects.toThrow('connection_mission_association_conflict');
+		await expect(assertConnectionMissionAssociation({ env: { db: env.db } }, scope, discovered, 'new-mission', 'google')).rejects.toThrow('connection_mission_association_session_conflict');
 		await env.db.prepare(`UPDATE nexora_onboarding_authorization_sessions SET expires_at=?1 WHERE id='old-session'`).bind(new Date(Date.now() - 60000).toISOString()).run();
 		await env.db.prepare(`INSERT INTO nexora_onboarding_authorization_sessions(id,onboarding_mission_id,tenant_id,workspace_id,provider,status,expires_at) VALUES('live-sibling','old-mission',?1,?2,'google','pending',?3)`).bind(scope.tenantId, scope.workspaceId, new Date(Date.now() + 60000).toISOString()).run();
-		await expect(assertConnectionMissionAssociation({ env: { db: env.db } }, scope, discovered, 'new-mission', 'google')).rejects.toThrow('connection_mission_association_conflict');
-		await expect(assertConnectionMissionAssociation({ env: { db: env.db } }, scope, { ...discovered, credential_reference_id: 'credential-1', credential_generation: 1, provider_connection_id: 'provider-1', provider_connection_generation: 1 }, 'new-mission', 'google')).rejects.toThrow('connection_mission_association_conflict');
+		await expect(assertConnectionMissionAssociation({ env: { db: env.db } }, scope, discovered, 'new-mission', 'google')).rejects.toThrow('connection_mission_association_session_conflict');
+		await expect(assertConnectionMissionAssociation({ env: { db: env.db } }, scope, { ...discovered, credential_reference_id: 'credential-1', credential_generation: 1, provider_connection_id: 'provider-1', provider_connection_generation: 1 }, 'new-mission', 'google')).rejects.toThrow('connection_mission_association_authority_conflict');
 	});
 });

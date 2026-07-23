@@ -54,14 +54,14 @@ export async function assertConnectionMissionAssociation(c, scope, connection, n
 		|| connection.provider_connection_id
 		|| Number(connection.provider_connection_generation) !== 0
 		|| connection.credential_reference_id
-		|| Number(connection.credential_generation) !== 0) throw new Error('connection_mission_association_conflict');
+		|| Number(connection.credential_generation) !== 0) throw new Error('connection_mission_association_authority_conflict');
 	const pending = await c.env.db.prepare(
 		`SELECT expires_at FROM nexora_onboarding_authorization_sessions
 		 WHERE onboarding_mission_id=?1 AND tenant_id=?2 AND workspace_id=?3 AND provider=?4 AND status='pending'
 		 ORDER BY created_at,id`
 	).bind(connection.onboarding_mission_id, scope.tenantId, scope.workspaceId, provider).all();
 	const expiries = (pending.results || []).map((row) => Date.parse(row.expires_at));
-	if (!expiries.length || expiries.some((expiry) => !Number.isFinite(expiry) || expiry > Date.now())) throw new Error('connection_mission_association_conflict');
+	if (!expiries.length || expiries.some((expiry) => !Number.isFinite(expiry) || expiry > Date.now())) throw new Error('connection_mission_association_session_conflict');
 	return true;
 }
 

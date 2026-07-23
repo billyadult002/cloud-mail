@@ -157,7 +157,9 @@ Destructive table removal is not part of rollback.
 - Clean installation was performed with the frozen lockfile; `npm audit --audit-level=low`
   reports zero vulnerabilities.
 - Changed-diff credential signature scan: pass; no real secrets were used in fixtures.
-- Production dry-run bundle: 2429.96 KiB, gzip 519.97 KiB; no deployment occurred.
+- Reviewed Worker source commit: `bf416af9850c45a5d756d93319aaa9f302078d78`.
+- Production dry-run bundle for that exact source: 2430.93 KiB, gzip 520.12 KiB;
+  no deployment occurred.
 - Independent checker and OAuth security reviewer: PASS, no unresolved P0/P1/P2.
 
 ## Future retry gate
@@ -168,6 +170,13 @@ lifetime at ten minutes or less, complete consent within the bounded window, and
 query exposure, expiry, scope drift, ambiguous exchange, possible second provider call,
 lease/fence loss, or any credential/Connection/Evidence/Verification mismatch. Previous
 sessions and callbacks remain prohibited.
+
+Current readiness inputs are source commit
+`bf416af9850c45a5d756d93319aaa9f302078d78`, migration 0084 authored and locally
+repeatable but **not applied**, and deployment **not performed**. A future approval cannot
+use this report as deployment evidence; it must first bind the exact deployed Worker
+version and applied migration status, then independently inspect the redacted scope
+summary before the one allowed consent action.
 
 The disabled deployment sequence keeps `NEXORA_OAUTH_AUTHORIZATION_CREATION_ENABLED=false`,
 `NEXORA_CONNECTION_RUNTIME_ENABLED=false`, and

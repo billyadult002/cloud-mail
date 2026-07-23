@@ -215,6 +215,31 @@ async function startOnboarding(c, scope, { provider, capabilities, idempotencyKe
 		.prepare(`INSERT OR IGNORE INTO mission_runtime_missions(id,tenant_id,workspace_id,user_id,kind,state,idempotency_key,claim_key) VALUES(?1,?2,?3,?2,'ZERO_TOUCH_ONBOARDING','runnable',?4,'zero_touch_onboarding_verified')`)
 		.bind(missionId, scope.tenantId, scope.workspaceId, idempotencyKey)
 		.run();
+	const canonicalMission = await c.env.db.prepare(
+		`SELECT tenant_id,workspace_id,user_id,kind,state,idempotency_key,claim_key
+		 FROM mission_runtime_missions WHERE id=?1`
+	).bind(missionId).first();
+	if (!canonicalMission
+		|| Number(canonicalMission.tenant_id) !== Number(scope.tenantId)
+		|| Number(canonicalMission.workspace_id) !== Number(scope.workspaceId)
+		|| Number(canonicalMission.user_id) !== Number(scope.tenantId)
+		|| canonicalMission.kind !== 'ZERO_TOUCH_ONBOARDING'
+		|| canonicalMission.idempotency_key !== idempotencyKey
+		|| canonicalMission.claim_key !== 'zero_touch_onboarding_verified') throw new Error('nexora_onboarding_mission_conflict');
+	if (canonicalMission.state !== 'runnable') throw new Error('nexora_onboarding_mission_terminal');
+	const runId = `onboarding-run:${missionId}`;
+	await c.env.db.prepare(
+		`INSERT OR IGNORE INTO mission_runtime_runs(id,mission_id,tenant_id,workspace_id,state)
+		 VALUES(?1,?2,?3,?4,'runnable')`
+	).bind(runId, missionId, scope.tenantId, scope.workspaceId).run();
+	const canonicalRun = await c.env.db.prepare(
+		`SELECT mission_id,tenant_id,workspace_id,state FROM mission_runtime_runs WHERE id=?1`
+	).bind(runId).first();
+	if (!canonicalRun
+		|| canonicalRun.mission_id !== missionId
+		|| Number(canonicalRun.tenant_id) !== Number(scope.tenantId)
+		|| Number(canonicalRun.workspace_id) !== Number(scope.workspaceId)
+		|| canonicalRun.state !== 'runnable') throw new Error('nexora_onboarding_mission_run_conflict');
 	await onboardingStateMachine.ensureOnboardingState(c, scope, { missionId, targetProvider: provider, targetAccountOrDomainHash: await hash(loginHint || tenantHint || provider) });
 	const replayRequest = { provider, capabilities, tenantHint, loginHint };
 	const replay = await readAuthorizationReplay(c, missionId, replayRequest);

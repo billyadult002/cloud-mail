@@ -17,7 +17,8 @@ Maximum five iterations. Each Maker change must be followed by executable Checke
 9. [complete] Seal/push reviewed commits, open PR 10, apply reviewed migration 0081, and deploy exact reviewed source default-off.
 10. [in progress] Domain Authority and exact canonical account binding are verified. Seal and deploy the reviewed authenticated `mail_read` launch, then stop at any password/OTP/passkey boundary for local user entry.
 11. [pending] After the canonical callback succeeds, prove one bounded read-only Gmail health operation, negative isolation, evidence integrity, and rollback while keeping automatic refresh disabled.
-12. [in progress] Apply reviewed migration 0082 to accept canonical account-owner authority generation zero and retain fenced Mission rebinding; verify exact production schema before retrying OAuth.
+12. [complete] Apply reviewed migration 0082 to accept canonical account-owner authority generation zero and retain fenced Mission rebinding; verify exact production schema before retrying OAuth.
+13. [in progress] Deploy the reviewed orchestrator-owned canonical Mission run creation, then retry the existing pending OAuth launch.
 
 ## Stop conditions
 

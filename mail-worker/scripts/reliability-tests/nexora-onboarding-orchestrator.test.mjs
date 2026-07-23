@@ -160,6 +160,8 @@ describe('NEXORA onboarding orchestrator — end-to-end real D1 (Checkpoint 4/8)
 		});
 		const missionCount = await env.db.prepare(`SELECT COUNT(*) n FROM mission_runtime_missions WHERE idempotency_key='start-dup'`).first();
 		expect(Number(missionCount.n)).toBe(1);
+		const runCount = await env.db.prepare(`SELECT COUNT(*) n FROM mission_runtime_runs WHERE mission_id=?1 AND id=?2 AND state='runnable'`).bind(first.missionId, `onboarding-run:${first.missionId}`).first();
+		expect(Number(runCount.n)).toBe(1);
 		const sessionCount = await env.db.prepare(`SELECT COUNT(*) n FROM nexora_onboarding_authorization_sessions WHERE onboarding_mission_id=?1`).bind(first.missionId).first();
 		expect(Number(sessionCount.n)).toBe(1);
 		await expect(onboardingOrchestrator.startOnboarding(c, scope, {
@@ -228,7 +230,7 @@ describe('NEXORA onboarding orchestrator — end-to-end real D1 (Checkpoint 4/8)
 		const c = { env: { ...env, AI_PROVIDER_TOKEN_SECRET: 'test-only-provider-encryption-secret', NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id', NEXORA_GOOGLE_OAUTH_REDIRECT_URI: GOOGLE_REDIRECT_URI } };
 		const started = await onboardingOrchestrator.startOnboarding(c, scope, { provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-3' });
 		await env.db.prepare(`UPDATE nexora_onboarding_state SET phase='authorization_received' WHERE mission_id=?1`).bind(started.missionId).run();
-		await env.db.prepare(`INSERT INTO mission_runtime_runs(id,mission_id,tenant_id,workspace_id,state,lease_until) VALUES(?1,?2,?3,?4,'running',datetime('now','-1 minutes'))`).bind(`onboarding-run:${started.missionId}`, started.missionId, TENANT_ID, WORKSPACE_ID).run();
+		await env.db.prepare(`UPDATE mission_runtime_runs SET state='running',lease_until=datetime('now','-1 minutes') WHERE id=?1 AND mission_id=?2 AND tenant_id=?3 AND workspace_id=?4`).bind(`onboarding-run:${started.missionId}`, started.missionId, TENANT_ID, WORKSPACE_ID).run();
 		// Simulate a crashed worker holding the run's lease.
 		const resumed = await onboardingOrchestrator.resumeOnboarding(c, scope, { missionId: started.missionId });
 		expect(resumed.ok).toBe(true);
@@ -243,6 +245,11 @@ describe('NEXORA onboarding orchestrator — end-to-end real D1 (Checkpoint 4/8)
 		const resumed = await onboardingOrchestrator.resumeOnboarding(c, scope, { missionId: started.missionId });
 		expect(resumed.resumed).toBe(false);
 		expect(resumed.reason).toBe('ALREADY_TERMINAL');
+		await expect(onboardingOrchestrator.startOnboarding(c, scope, {
+			provider: 'google', capabilities: ['mail_read'], idempotencyKey: 'start-4',
+		})).rejects.toThrow('nexora_onboarding_mission_terminal');
+		const mission = await env.db.prepare(`SELECT state FROM mission_runtime_missions WHERE id=?1`).bind(started.missionId).first();
+		expect(mission.state).toBe('cancelled');
 	});
 
 	it('cancellation before execution succeeds from a waiting phase and terminates both the phase and the underlying Mission', async () => {

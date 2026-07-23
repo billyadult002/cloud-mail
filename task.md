@@ -7,7 +7,7 @@
 - Checkpoint 4 PR: merged as `cafe44eca4359911cfd773f0f262f3b4c37b9720`
 - Maker-Checker iteration cap: 5
 - Current iteration: 5
-- Current phase: immutable OAuth launch deployed; generation-zero schema correction awaiting migration
+- Current phase: migration 0082 applied; canonical onboarding-run correction awaiting deployment
 - Reviewed implementation commit: `e4747dc80c1265d07a8fbef017257071aa6a3347`
 - Pull request: `https://github.com/billyadult002/cloud-mail/pull/10`
 - Production Worker version: `9b143fab-4c10-48c1-b694-222f40bb2333`
@@ -33,7 +33,7 @@
 5. [complete] Runtime implementation; migration applies twice; 236/236 Worker reliability tests pass.
 6. [complete] Independent security, migration, and provider-boundary re-review; no remaining P0/P1/P2.
 7. [complete] Reviewed commits pushed; PR 10 open and mergeable; migration 0081 applied; exact reviewed Worker deployed default-off.
-8. [in progress] Verified Domain Authority, exact account selection, and immutable OAuth-launch deployment are complete. Migration 0082 must correct canonical owner generation zero before human read-only Google OAuth can continue.
+8. [in progress] Verified Domain Authority, exact account selection, immutable OAuth-launch deployment, and migration 0082 are complete. The reviewed orchestrator-owned canonical run correction must deploy before human read-only Google OAuth can continue.
 
 ## Local verification evidence
 
@@ -43,6 +43,7 @@
 - Domain Activation frontend acceptance: 34 tests, all pass; Vite development build passes.
 - Focused onboarding/Connection matrix: 63 tests, all pass.
 - Migration 0082 populated rebuild: repeated apply passes; rows, foreign keys, index/trigger set, and unchanged trigger SQL are preserved; canonical owner generation zero passes only through a fenced verified transition.
+- Canonical onboarding run: exactly one deterministic run is created and rebound only to the full Mission tuple; cancelled Mission replay is rejected.
 - New Connection contract and Provider Session suites: 39 tests, all pass.
 - Final adversarial focused matrix: 78 tests, all pass; no remaining P0/P1/P2.
 - Provider coupling guard: pass; Connection coupling guard: pass.
@@ -63,3 +64,4 @@
 - Workspace 1 was explicitly selected; DNS ownership and one Domain Authority are verified; one canonical account is selected.
 - Remaining live blocker: Google read-only consent has not completed, so consumed authorization sessions, eligible Google token authorities, authenticated health evidence, and mailbox mutations remain 0.
 - First launch evidence: one pending authorization session, zero Connection rows, and zero provider calls; migration 0081 rejected canonical owner generation zero before the Google redirect.
+- Migration 0082 remote evidence: applied once; zero Connection/operation/event rows before and after, owner/operation generation-zero constraints present, 13 Connection guard triggers, foreign-key check empty.

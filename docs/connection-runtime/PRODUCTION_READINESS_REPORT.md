@@ -16,6 +16,8 @@ The bounded production activation preconditions are now partially complete. The 
 
 The first authenticated launch stopped before Google because migration 0081 rejected the canonical account-owner authority generation `0`. It created one pending authorization session but no Connection row and made no provider call. Migration 0082 corrects the schema without synthesizing an authority generation, preserves populated Connection/operation/event rows across a repeated rebuild, retains the full trigger/index set, and permits replacement-Mission rebinding only inside the verified fenced authorization transition.
 
-Production readiness is not yet granted. Migration 0082 is reviewed and locally verified but not yet applied remotely. Google OAuth consent has not completed, so there is still no consumed authorization session, eligible token authority, authenticated Gmail health request, or production Connection Evidence/Verification transition.
+Migration 0082 is now applied once remotely. Production verification confirms zero Connection/operation/event rows were lost, both generation-zero constraints are active, 13 Connection guard triggers remain, and `PRAGMA foreign_key_check` is empty. A pre-retry dependency probe also found the pending onboarding Mission had no canonical run; the orchestrator correction now creates and validates that run under the full Mission tuple and rejects terminal/cancelled replay. That correction is independently reviewed but not yet deployed.
+
+Production readiness is not yet granted. Google OAuth consent has not completed, so there is still no consumed authorization session, eligible token authority, authenticated Gmail health request, or production Connection Evidence/Verification transition.
 
 No mailbox mutation, send, draft, watch, delta, or synchronization completion is claimed.

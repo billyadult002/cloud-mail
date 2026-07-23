@@ -34,6 +34,9 @@ function maybeInjectFinalizationFailure(c, statements, point) {
 function abortFinalizationOnZeroRows(c, point) {
 	return c.env.db.prepare(`INSERT INTO nexora_callback_verified_outcome_finalizations(id,operation_id,idempotency_key,authority_tuple_digest,evidence_set_digest,verification_attempt_id,verifier_authorization_id,verified_outcome_reference,callback_checkpoint_reference,expected_token_generation,expected_provider_connection_generation,state,tenant_id,workspace_id,mission_id,callback_correlation_id) SELECT NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL WHERE changes()=0`);
 }
+function abortMissionCompletionOnZeroRows(c) {
+	return c.env.db.prepare(`INSERT INTO mission_runtime_missions(id,tenant_id,workspace_id,user_id,kind,state,idempotency_key,claim_key) SELECT NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL WHERE changes()=0`);
+}
 function assertScope(row, scope) {
 	if (!row || !same(row.tenant_id, scope.tenantId) || !same(row.workspace_id, scope.workspaceId)) throw new Error('mission_runtime_scope_denied');
 }
@@ -274,8 +277,13 @@ async function complete(c, scope, { missionId, runId, outcomeId, expectedVersion
 	const outcome = await c.env.db.prepare(`SELECT o.*,v.state AS verification_state,e.status AS evidence_status,e.expires_at AS evidence_expires_at,e.claim_key AS evidence_claim_key FROM mission_runtime_outcomes o JOIN mission_runtime_verifications v ON v.id=o.verification_id LEFT JOIN mission_runtime_evidence e ON e.id=v.evidence_id WHERE o.id=?1 AND o.mission_id=?2`).bind(outcomeId, missionId).first();
 	assertScope(outcome, scope);
 	if (outcome.state !== 'verified' || outcome.verification_state !== 'verified' || outcome.evidence_status !== 'supported' || outcome.evidence_claim_key !== mission.claim_key || (outcome.evidence_expires_at && Number.isFinite(Date.parse(outcome.evidence_expires_at)) && Date.parse(outcome.evidence_expires_at) <= Date.now())) throw new Error('mission_runtime_evidence_insufficient');
-	const result = await c.env.db.prepare(`UPDATE mission_runtime_missions SET state='completed',version=version+1,completed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND state='verification_pending' AND version=?4`).bind(missionId, scope.tenantId, scope.workspaceId, expectedVersion).run();
-	if (!result.meta?.changes) throw new Error('mission_runtime_completion_conflict');
+	const [runResult, , missionResult] = await c.env.db.batch([
+		c.env.db.prepare(`UPDATE mission_runtime_runs SET state='completed',lease_until=NULL,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND mission_id=?2 AND tenant_id=?3 AND workspace_id=?4 AND state='running' AND lease_until>CURRENT_TIMESTAMP AND fencing_token=?5 AND EXISTS (SELECT 1 FROM mission_runtime_missions WHERE id=?2 AND tenant_id=?3 AND workspace_id=?4 AND state='verification_pending' AND version=?6)`).bind(runId, missionId, scope.tenantId, scope.workspaceId, fencingToken, expectedVersion),
+		abortMissionCompletionOnZeroRows(c),
+		c.env.db.prepare(`UPDATE mission_runtime_missions SET state='completed',version=version+1,completed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND state='verification_pending' AND version=?4 AND EXISTS (SELECT 1 FROM mission_runtime_runs WHERE id=?5 AND mission_id=?1 AND tenant_id=?2 AND workspace_id=?3 AND state='completed' AND lease_until IS NULL AND fencing_token=?6)`).bind(missionId, scope.tenantId, scope.workspaceId, expectedVersion, runId, fencingToken),
+		abortMissionCompletionOnZeroRows(c),
+	]);
+	if (!runResult.meta?.changes || !missionResult.meta?.changes) throw new Error('mission_runtime_completion_conflict');
 	await audit(c, scope, { missionId, runId, type: 'MISSION_COMPLETED', from: mission.state, to: 'completed', expectedVersion, fencingToken, detail: { outcome_id: outcomeId } });
 	return true;
 }

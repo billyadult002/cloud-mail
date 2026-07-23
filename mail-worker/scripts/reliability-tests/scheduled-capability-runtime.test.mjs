@@ -14,7 +14,7 @@ const SCHEMA = [
 	`CREATE TABLE account(account_id INTEGER PRIMARY KEY,user_id INTEGER,provider TEXT,is_del INTEGER DEFAULT 0)`,
 	`CREATE TABLE email(email_id INTEGER PRIMARY KEY,external_message_id TEXT,account_id INTEGER,user_id INTEGER,subject TEXT,send_email TEXT,text TEXT,is_del INTEGER DEFAULT 0)`,
 	`CREATE TABLE workspace_authority_events(id TEXT PRIMARY KEY,tenant_key TEXT,workspace_id INTEGER,actor_user_id INTEGER,subject_user_id INTEGER,account_id INTEGER,relationship_type TEXT,relationship_id TEXT,event_type TEXT,state TEXT,scope_hash TEXT,authority_generation INTEGER,reason_code TEXT,request_id TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
-	`CREATE TABLE mission_runtime_missions(id TEXT PRIMARY KEY,tenant_id INTEGER,workspace_id INTEGER,user_id INTEGER,kind TEXT,state TEXT,version INTEGER DEFAULT 1,idempotency_key TEXT,claim_key TEXT,completed_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
+	`CREATE TABLE mission_runtime_missions(id TEXT PRIMARY KEY,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,user_id INTEGER NOT NULL,kind TEXT NOT NULL,state TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1,idempotency_key TEXT NOT NULL,claim_key TEXT NOT NULL,completed_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE mission_runtime_runs(id TEXT PRIMARY KEY,mission_id TEXT,tenant_id INTEGER,workspace_id INTEGER,state TEXT,fencing_token INTEGER DEFAULT 0,lease_until TEXT,version INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE mission_runtime_steps(id TEXT PRIMARY KEY,mission_id TEXT,run_id TEXT,tenant_id INTEGER,workspace_id INTEGER,step_key TEXT,state TEXT,version INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE mission_runtime_actions(id TEXT PRIMARY KEY,mission_id TEXT,run_id TEXT,step_id TEXT,tenant_id INTEGER,workspace_id INTEGER,capability TEXT,action_type TEXT,target_hash TEXT,params_hash TEXT,authority_generation INTEGER,authority_context_hash TEXT,state TEXT,idempotency_key TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
@@ -47,12 +47,23 @@ describe('scheduled search_email capability runtime', () => {
 		const c = { env: rollout() };
 		const result = await execute(c, { id: 'job-ok', input_json: JSON.stringify(input()) });
 		expect(result.resultCount).toBe(1);
-		const row = await env.db.prepare(`SELECT m.state,e.id AS evidence_id,v.id AS verification_id,o.id AS outcome_id FROM mission_runtime_missions m JOIN mission_runtime_evidence e ON e.mission_id=m.id JOIN mission_runtime_verifications v ON v.evidence_id=e.id AND v.state='verified' JOIN mission_runtime_outcomes o ON o.verification_id=v.id WHERE m.id=?1`).bind(result.missionId).first();
+		const row = await env.db.prepare(`SELECT m.state,r.state AS run_state,r.lease_until,e.id AS evidence_id,v.id AS verification_id,o.id AS outcome_id FROM mission_runtime_missions m JOIN mission_runtime_runs r ON r.mission_id=m.id JOIN mission_runtime_evidence e ON e.mission_id=m.id JOIN mission_runtime_verifications v ON v.evidence_id=e.id AND v.state='verified' JOIN mission_runtime_outcomes o ON o.verification_id=v.id WHERE m.id=?1`).bind(result.missionId).first();
 		expect(row.state).toBe('completed');
+		expect(row.run_state).toBe('completed');
+		expect(row.lease_until).toBeNull();
 		expect(row.evidence_id).toBe(result.evidenceId);
 		expect(row.verification_id).toBe(result.verificationId);
 		const summary = JSON.parse((await env.db.prepare(`SELECT summary_json FROM mission_runtime_evidence WHERE id=?1`).bind(result.evidenceId).first()).summary_json);
 		expect(summary).toMatchObject({ provider_network_called: false, credential_accessed: false, mailbox_mutated: false });
+	});
+
+	it('rolls back run completion when the Mission completion write affects zero rows', async () => {
+		await env.db.prepare(`CREATE TRIGGER reject_mission_completion BEFORE UPDATE OF state ON mission_runtime_missions WHEN NEW.state='completed' BEGIN SELECT RAISE(IGNORE); END`).run();
+		await expect(execute({ env: rollout() }, { id: 'job-completion-race', input_json: JSON.stringify(input()) })).rejects.toThrow();
+		const residue = await env.db.prepare(`SELECT m.state,r.state AS run_state,r.lease_until FROM mission_runtime_missions m JOIN mission_runtime_runs r ON r.mission_id=m.id WHERE m.id='scheduled-search-job-completion-race-mission'`).first();
+		expect(residue.state).toBe('verification_pending');
+		expect(residue.run_state).toBe('running');
+		expect(residue.lease_until).not.toBeNull();
 	});
 
 	it.each([

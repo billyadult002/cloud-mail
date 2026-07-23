@@ -46,3 +46,14 @@
 - Production provider writes: 0
 - Mailbox mutations: 0
 - DNS changes: 0
+
+## Production acceptance remediation loop
+
+- Exact deployed source candidate: `fa8a0aee65ed09e9048d913b41659eb0d11964af`
+- Positive acceptance job: succeeded once through the canonical cron path with read-only evidence and independent verification.
+- Production defect discovered: the Mission reached `completed`, but its run remained `running` with a live lease.
+- Current state: `REMEDIATION_REQUIRED — RUN_COMPLETION_NOT_DURABLE`
+- Bounded remediation: atomically close the fenced run when the verified Mission completes, add a regression assertion, re-run Checker verification, deploy a new exact reviewed commit, and repeat acceptance.
+- Remediation verification: focused 10/10; complete Worker 192/192; unit/syntax PASS; provider-coupling PASS; audit zero.
+- Independent Checker: no remaining P0/P1/P2 in the remediation surface.
+- Current state: `REMEDIATION_REVIEW_PASS — IMMUTABLE COMMIT AND REDEPLOYMENT PENDING`

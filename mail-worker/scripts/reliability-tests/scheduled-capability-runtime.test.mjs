@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import runtime, { assertRollout, execute } from '../../src/service/scheduled-capability-runtime-service.js';
 import { createCapabilityRegistry } from '../../src/service/capability-registry-service.js';
-import { createCapabilityEvidenceWriter, createCapabilityVerifier } from '../../src/service/capability-evidence-ledger-service.js';
-import { invokeCapability } from '../../src/service/capability-invocation-service.js';
+import { createCapabilityEvidenceWriter } from '../../src/service/capability-evidence-ledger-service.js';
+import { createCapabilityVerifier } from '../../src/service/capability-verification-service.js';
+import { invokeCapability, invokeCapabilityForTest } from '../../src/service/capability-invocation-service.js';
 import gmailAdapter from '../../src/service/gmail-communication-capability-adapter.js';
 
 const TENANT = 880041, WORKSPACE = 880042, ACCOUNT = 880043;
@@ -64,6 +65,13 @@ describe('scheduled search_email capability runtime', () => {
 		expect(residue.state).toBe('verification_pending');
 		expect(residue.run_state).toBe('running');
 		expect(residue.lease_until).not.toBeNull();
+		expect(Number((await env.db.prepare(`SELECT COUNT(*) AS count FROM mission_runtime_outcomes WHERE id='scheduled-search-job-completion-race-outcome' AND state='verified'`).first()).count)).toBe(1);
+		await env.db.prepare(`DROP TRIGGER reject_mission_completion`).run();
+		await env.db.prepare(`UPDATE mission_runtime_runs SET lease_until='2000-01-01 00:00:00' WHERE id='scheduled-search-job-completion-race-run'`).run();
+		const recovered = await execute({ env: rollout() }, { id: 'job-completion-race', input_json: JSON.stringify(input()) });
+		expect(recovered.recovered).toBe(true);
+		expect((await env.db.prepare(`SELECT state FROM mission_runtime_missions WHERE id=?1`).bind(recovered.missionId).first()).state).toBe('completed');
+		expect(Number((await env.db.prepare(`SELECT COUNT(*) AS count FROM mission_runtime_outcomes WHERE id='scheduled-search-job-completion-race-outcome'`).first()).count)).toBe(1);
 	});
 
 	it.each([
@@ -72,6 +80,21 @@ describe('scheduled search_email capability runtime', () => {
 		['capability', rollout(), input({ capability_id: 'send_email' }), 'scheduled_capability_not_allowlisted'],
 		['authority generation', rollout(), input({ authority_generation: 1 }), 'capability_authority_generation_stale'],
 	])('fails closed for invalid %s', async (_name, runtimeEnv, request, code) => {
+		await expect(execute({ env: runtimeEnv }, { id: crypto.randomUUID(), input_json: JSON.stringify(request) })).rejects.toThrow(code);
+	});
+
+	it.each([
+		['missing membership', async () => env.db.prepare(`DELETE FROM workspace_members`).run(), input(), 'workspace_membership_missing'],
+		['substituted actor', async () => {}, input({ actor_user_id: TENANT + 1 }), 'capability_tenant_actor_mismatch'],
+		['wrong workspace', async () => {}, input({ workspace_id: WORKSPACE + 1 }), 'capability_authority_denied:authority_subject_not_found'],
+		['wrong account', async () => {}, input({ account_id: ACCOUNT + 1 }), 'capability_authority_denied:authority_subject_not_found'],
+		['inactive account', async () => env.db.prepare(`UPDATE account SET is_del=1`).run(), input(), 'capability_authority_denied:authority_subject_not_found'],
+	])('enforces read Authority for %s', async (_name, setup, request, code) => {
+		await setup();
+		const runtimeEnv = rollout({
+			NEXORA_SCHEDULED_TENANT_ALLOWLIST: String(request.tenant_id),
+			NEXORA_SCHEDULED_WORKSPACE_ALLOWLIST: String(request.workspace_id),
+		});
 		await expect(execute({ env: runtimeEnv }, { id: crypto.randomUUID(), input_json: JSON.stringify(request) })).rejects.toThrow(code);
 	});
 
@@ -91,9 +114,14 @@ describe('scheduled search_email capability runtime', () => {
 		const run = await env.db.prepare(`SELECT fencing_token FROM mission_runtime_runs WHERE id=?1`).bind(completed.runId).first();
 		const context = Object.freeze({ invocation_id: completed.invocationId, capability_id: 'search_email', tenant_id: TENANT, workspace_id: WORKSPACE, actor_user_id: TENANT, account_id: ACCOUNT, authority_generation: 0, lease_generation: run.fencing_token, mission_id: completed.missionId, run_id: completed.runId, step_id: 'scheduled-search-job-replay-step', action_id: 'scheduled-search-job-replay-action', idempotency_key: 'job:job-replay:search', timestamp: new Date().toISOString() });
 		const dependencies = { registry: createCapabilityRegistry([gmailAdapter]), evidenceWriter: createCapabilityEvidenceWriter(c), verifier: createCapabilityVerifier(c) };
-		await expect(invokeCapability(c, { context, provider_id: 'gmail', request: { capability_id: 'search_email', query: 'different', page_size: 5 } }, dependencies)).rejects.toThrow('capability_replay_conflict');
+		const replay = await invokeCapabilityForTest(c, { context, provider_id: 'gmail', request: { capability_id: 'search_email', query: 'fixture', page_size: 5 } }, dependencies);
+		expect(replay.result.response.message_refs).toHaveLength(1);
+		expect(replay.replayed).toBe(true);
+		await expect(invokeCapabilityForTest(c, { context, provider_id: 'gmail', request: { capability_id: 'search_email', query: 'different', page_size: 5 } }, dependencies)).rejects.toThrow('capability_replay_conflict');
+		const substituted = Object.freeze({ ...context, account_id: ACCOUNT + 1 });
+		await expect(invokeCapabilityForTest(c, { context: substituted, provider_id: 'gmail', request: { capability_id: 'search_email', query: 'fixture', page_size: 5 } }, dependencies)).rejects.toThrow('capability_replay_scope_conflict');
 		await env.db.prepare(`DELETE FROM mission_runtime_verifications WHERE evidence_id=?1`).bind(completed.evidenceId).run();
-		await expect(invokeCapability(c, { context, provider_id: 'gmail', request: { capability_id: 'search_email', query: 'fixture', page_size: 5 } }, dependencies)).rejects.toThrow('capability_replay_unverified');
+		await expect(invokeCapabilityForTest(c, { context, provider_id: 'gmail', request: { capability_id: 'search_email', query: 'fixture', page_size: 5 } }, dependencies)).rejects.toThrow('capability_replay_unverified');
 	});
 
 	it('rejects adapter safety-flag regressions and changed-input pre-evidence retries', async () => {
@@ -103,8 +131,85 @@ describe('scheduled search_email capability runtime', () => {
 		await expect(execute(c, { id: 'job-crash', input_json: JSON.stringify(input({ authority_generation: 1, query: 'changed' })) })).rejects.toThrow('scheduled_capability_action_replay_conflict');
 
 		const unsafeContext = Object.freeze({ invocation_id: 'unsafe-invocation', capability_id: 'search_email', tenant_id: TENANT, workspace_id: WORKSPACE, actor_user_id: TENANT, account_id: ACCOUNT, authority_generation: 0, lease_generation: 1, mission_id: 'unsafe-mission', run_id: 'unsafe-run', step_id: 'unsafe-step', action_id: 'unsafe-action', idempotency_key: 'unsafe-replay', timestamp: new Date().toISOString() });
-		const unsafeAdapter = { provider_id: 'gmail', adapter_id: 'unsafe-test', adapter_version: '1', capabilities: ['search_email'], invoke: async () => ({ ok: true, response: { capability_id: 'search_email', message_refs: [], result_digest: 'unsafe', provider_network_called: true, credential_accessed: false, mailbox_mutated: false } }) };
-		await expect(invokeCapability(c, { context: unsafeContext, provider_id: 'gmail', request: { capability_id: 'search_email', query: 'unsafe', page_size: 1 } }, { registry: createCapabilityRegistry([unsafeAdapter]), evidenceWriter: createCapabilityEvidenceWriter(c), verifier: createCapabilityVerifier(c) })).rejects.toThrow('capability_result_unverified');
+		const unsafeAdapter = { provider_id: 'gmail', adapter_id: 'unsafe-test', adapter_version: '1', capabilities: ['search_email'], invoke: async () => ({ ok: true, response: { capability_id: 'search_email', message_refs: [], result_digest: 'a'.repeat(64), scope: { tenant_id: TENANT, workspace_id: WORKSPACE, account_id: ACCOUNT }, source: { type: 'canonical_synchronized_mail', provider: 'gmail', store: 'd1' }, provider_network_called: true, credential_accessed: false, mailbox_mutated: false } }) };
+		await expect(invokeCapabilityForTest(c, { context: unsafeContext, provider_id: 'gmail', request: { capability_id: 'search_email', query: 'unsafe', page_size: 1 } }, { registry: createCapabilityRegistry([unsafeAdapter]), evidenceWriter: createCapabilityEvidenceWriter(c), verifier: createCapabilityVerifier(c) })).rejects.toThrow('capability_result_unverified');
 		expect(Number((await env.db.prepare(`SELECT COUNT(*) AS count FROM mission_runtime_verifications WHERE state='verified' AND mission_id='unsafe-mission'`).first()).count)).toBe(0);
+	});
+
+	it('fails closed when Evidence is absent, malformed, rejected, or not durably inserted', async () => {
+		const context = Object.freeze({ invocation_id: 'evidence-invocation', capability_id: 'search_email', tenant_id: TENANT, workspace_id: WORKSPACE, actor_user_id: TENANT, account_id: ACCOUNT, authority_generation: 0, lease_generation: 1, mission_id: 'evidence-mission', run_id: 'evidence-run', step_id: 'evidence-step', action_id: 'evidence-action', idempotency_key: 'evidence-key', timestamp: new Date().toISOString() });
+		const invocation = { context, provider_id: 'gmail', request: { capability_id: 'search_email', query: 'fixture', page_size: 1 } };
+		const base = { registry: createCapabilityRegistry([gmailAdapter]), verifier: createCapabilityVerifier({ env: rollout() }) };
+		await expect(invokeCapabilityForTest({ env: rollout() }, invocation, { ...base, evidenceWriter: async () => { throw new Error('writer_failed'); } })).rejects.toThrow('writer_failed');
+		await expect(invokeCapabilityForTest({ env: rollout() }, invocation, { ...base, evidenceWriter: async () => ({}) })).rejects.toThrow('capability_evidence_result_invalid');
+		await env.db.prepare(`CREATE TRIGGER reject_capability_evidence BEFORE INSERT ON mission_runtime_evidence BEGIN SELECT RAISE(IGNORE); END`).run();
+		await expect(invokeCapabilityForTest({ env: rollout() }, invocation, { ...base, evidenceWriter: createCapabilityEvidenceWriter({ env: rollout() }) })).rejects.toThrow('capability_evidence_write_failed');
+		expect(Number((await env.db.prepare(`SELECT COUNT(*) AS count FROM mission_runtime_verifications WHERE mission_id='evidence-mission'`).first()).count)).toBe(0);
+	});
+
+	it('does not promote integrity failures, Evidence-only residue, or verifier failures', async () => {
+		const c = { env: rollout() };
+		const context = Object.freeze({ invocation_id: 'verification-invocation', capability_id: 'search_email', tenant_id: TENANT, workspace_id: WORKSPACE, actor_user_id: TENANT, account_id: ACCOUNT, authority_generation: 0, lease_generation: 1, mission_id: 'verification-mission', run_id: 'verification-run', step_id: 'verification-step', action_id: 'verification-action', idempotency_key: 'verification-key', timestamp: new Date().toISOString() });
+		const invocation = { context, provider_id: 'gmail', request: { capability_id: 'search_email', query: 'fixture', page_size: 1 } };
+		const writer = createCapabilityEvidenceWriter(c);
+		await expect(invokeCapabilityForTest(c, invocation, {
+			registry: createCapabilityRegistry([gmailAdapter]),
+			evidenceWriter: async value => ({ ...await writer(value), integrity_hash: '0'.repeat(64) }),
+			verifier: createCapabilityVerifier(c),
+		})).rejects.toThrow('capability_result_unverified');
+		expect(Number((await env.db.prepare(`SELECT COUNT(*) AS count FROM mission_runtime_evidence WHERE mission_id='verification-mission'`).first()).count)).toBe(1);
+		expect(Number((await env.db.prepare(`SELECT COUNT(*) AS count FROM mission_runtime_verifications WHERE mission_id='verification-mission' AND state='verified'`).first()).count)).toBe(0);
+
+		const second = { ...context, invocation_id: 'verification-invocation-2', idempotency_key: 'verification-key-2' };
+		await expect(invokeCapabilityForTest(c, { ...invocation, context: Object.freeze(second) }, {
+			registry: createCapabilityRegistry([gmailAdapter]),
+			evidenceWriter: writer,
+			verifier: async () => { throw new Error('verifier_failed'); },
+		})).rejects.toThrow('verifier_failed');
+		expect(Number((await env.db.prepare(`SELECT COUNT(*) AS count FROM mission_runtime_evidence WHERE mission_id='verification-mission'`).first()).count)).toBe(2);
+		expect(Number((await env.db.prepare(`SELECT COUNT(*) AS count FROM mission_runtime_verifications WHERE mission_id='verification-mission' AND state='verified'`).first()).count)).toBe(0);
+
+		const third = { ...context, invocation_id: 'verification-invocation-3', idempotency_key: 'verification-key-3' };
+		await expect(invokeCapabilityForTest(c, { ...invocation, context: Object.freeze(third) }, {
+			registry: createCapabilityRegistry([gmailAdapter]),
+			evidenceWriter: async value => {
+				const durable = await writer(value);
+				await env.db.prepare(`UPDATE mission_runtime_evidence SET claim_key='capability:substituted' WHERE id=?1`).bind(durable.evidence_id).run();
+				return durable;
+			},
+			verifier: createCapabilityVerifier(c),
+		})).rejects.toThrow('capability_result_unverified');
+		expect(Number((await env.db.prepare(`SELECT COUNT(*) AS count FROM mission_runtime_verifications WHERE mission_id='verification-mission' AND state='verified'`).first()).count)).toBe(0);
+	});
+
+	it('rejects malformed adapter envelopes, cross-scope rows, and production dependency overrides', async () => {
+		const c = { env: rollout() };
+		const context = Object.freeze({ invocation_id: 'adapter-invocation', capability_id: 'search_email', tenant_id: TENANT, workspace_id: WORKSPACE, actor_user_id: TENANT, account_id: ACCOUNT, authority_generation: 0, lease_generation: 1, mission_id: 'adapter-mission', run_id: 'adapter-run', step_id: 'adapter-step', action_id: 'adapter-action', idempotency_key: 'adapter-key', timestamp: new Date().toISOString() });
+		const request = { capability_id: 'search_email', query: 'fixture', page_size: 1 };
+		await expect(invokeCapability(c, { context, provider_id: 'gmail', request }, { registry: createCapabilityRegistry([]) })).rejects.toThrow('capability_production_dependency_override_forbidden');
+		await expect(invokeCapability(c, { context, provider_id: 'gmail', request }, { now: 0 })).rejects.toThrow('capability_production_dependency_override_forbidden');
+		await expect(invokeCapability(c, { context, provider_id: 'gmail', request }, { timeoutMs: 2001 })).rejects.toThrow('capability_timeout_invalid');
+		const auditsBefore = Number((await env.db.prepare(`SELECT COUNT(*) AS count FROM workspace_authority_events`).first()).count);
+		await expect(invokeCapability(c, { context, provider_id: 'gmail', request })).rejects.toThrow('capability_authority_input_required');
+		expect(Number((await env.db.prepare(`SELECT COUNT(*) AS count FROM workspace_authority_events`).first()).count)).toBe(auditsBefore);
+		const malformed = { provider_id: 'gmail', adapter_id: 'malformed', adapter_version: '1', capabilities: ['search_email'], invoke: async () => undefined };
+		await expect(invokeCapabilityForTest(c, { context, provider_id: 'gmail', request }, { registry: createCapabilityRegistry([malformed]), evidenceWriter: createCapabilityEvidenceWriter(c), verifier: createCapabilityVerifier(c) })).rejects.toThrow('capability_adapter_result_invalid');
+		await env.db.prepare(`UPDATE email SET account_id=?1 WHERE email_id=1`).bind(ACCOUNT + 1).run();
+		const direct = await gmailAdapter.invoke(c, context, request);
+		expect(direct.response.message_refs).toEqual([]);
+	});
+
+	it.each([
+		['undefined envelope', undefined, 'capability_adapter_response_invalid'],
+		['null envelope', null, 'capability_adapter_response_invalid'],
+		['unexpected results type', { results: {} }, 'capability_adapter_response_invalid'],
+		['cross-account row', { results: [{ email_id: 1, external_message_id: 'x', account_id: ACCOUNT + 1, user_id: TENANT, source_provider: 'gmail' }] }, 'capability_adapter_row_invalid'],
+		['cross-actor row', { results: [{ email_id: 1, external_message_id: 'x', account_id: ACCOUNT, user_id: TENANT + 1, source_provider: 'gmail' }] }, 'capability_adapter_row_invalid'],
+		['substituted source', { results: [{ email_id: 1, external_message_id: 'x', account_id: ACCOUNT, user_id: TENANT, source_provider: 'outlook' }] }, 'capability_adapter_row_invalid'],
+		['malformed message identity', { results: [{ email_id: 0, external_message_id: {}, account_id: ACCOUNT, user_id: TENANT, source_provider: 'gmail' }] }, 'capability_adapter_row_invalid'],
+	])('Gmail adapter rejects %s', async (_name, envelope, code) => {
+		const fake = { env: { db: { prepare: () => ({ bind: () => ({ all: async () => envelope }) }) } } };
+		const context = Object.freeze({ tenant_id: TENANT, workspace_id: WORKSPACE, actor_user_id: TENANT, account_id: ACCOUNT });
+		await expect(gmailAdapter.invoke(fake, context, { capability_id: 'search_email', query: 'fixture', page_size: 1 })).rejects.toThrow(code);
 	});
 });

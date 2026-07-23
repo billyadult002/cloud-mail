@@ -13,6 +13,7 @@
 // block logic-complete implementation and verification.
 import { decide as decideProviderAction } from './provider-capability-contract-service';
 import callbackRecovery from './nexora-onboarding-callback-recovery-service.js';
+import scopeManifest from './nexora-oauth-scope-manifest-service.js';
 
 const uuid = () => crypto.randomUUID();
 const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -112,6 +113,20 @@ function randomVerifier() {
 	const bytes = crypto.getRandomValues(new Uint8Array(32));
 	return b64url(bytes.buffer); // 43-char base64url string, within the 43-128 char RFC bound
 }
+async function deterministicBytes(env, seed, label) {
+	const secret = String(env?.NEXORA_CORRELATION_HASH_SECRET || env?.AI_PROVIDER_TOKEN_SECRET || env?.PROVIDER_TOKEN_SECRET || env?.jwt_secret || env?.JWT_SECRET || '');
+	if (secret.length < 16) throw new Error('Onboarding session derivation secret is not configured.');
+	const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+	return new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`nexora-onboarding-session-v1\n${seed}\n${label}`)));
+}
+async function sessionMaterial(env, sessionSeed) {
+	if (!sessionSeed) return { verifier: randomVerifier(), state: uuid(), nonce: uuid(), id: uuid() };
+	const verifier = b64url((await deterministicBytes(env, sessionSeed, 'verifier')).buffer);
+	const state = b64url((await deterministicBytes(env, sessionSeed, 'state')).buffer);
+	const nonce = b64url((await deterministicBytes(env, sessionSeed, 'nonce')).buffer);
+	const id = `authorization:${b64url((await deterministicBytes(env, sessionSeed, 'id')).buffer)}`;
+	return { verifier, state, nonce, id };
+}
 async function pkceChallengeFor(verifier) {
 	const digestBytes = await sha256(verifier);
 	return b64url(digestBytes.buffer);
@@ -122,7 +137,7 @@ async function pkceChallengeFor(verifier) {
 // (e.g. placed in a short-lived signed cookie or the client's own session) and is NEVER
 // written to nexora_onboarding_authorization_sessions; only its hash is persisted, so a
 // stolen database row alone cannot complete the PKCE exchange.
-async function createAuthorizationSession(env, { onboardingMissionId, tenantId, workspaceId, provider, clientRegistrationMode = 'first_party', capabilities, existingGrantedScopes = [], tenantHint = null, loginHint = null, ttlSeconds = 600 }) {
+async function createAuthorizationSession(env, { onboardingMissionId, tenantId, workspaceId, provider, clientRegistrationMode = 'first_party', capabilities, existingGrantedScopes = [], tenantHint = null, loginHint = null, ttlSeconds = 600, sessionSeed = null }) {
 	if (!PROVIDERS[provider]) throw new Error('nexora_onboarding_unsupported_provider');
 	const clientId = providerEnv(env, provider, 'clientIdEnv');
 	const redirectUri = providerEnv(env, provider, 'redirectUriEnv');
@@ -133,21 +148,23 @@ async function createAuthorizationSession(env, { onboardingMissionId, tenantId, 
 		return { ok: false, reason: 'PROVIDER_APPLICATION_MISSING', provider, requiredEnv: !clientId ? PROVIDERS[provider].clientIdEnv : PROVIDERS[provider].redirectUriEnv };
 	}
 	const { scopes, justification } = planScopes(provider, capabilities);
+	const scopeApproval = await scopeManifest.verifyRequestedScopes({ provider, capabilities, requestedScopes: scopes });
+	if (!scopeApproval.approved) return { ok: false, reason: scopeApproval.reason, scopeManifestVersion: scopeApproval.manifestVersion };
 	const { additionalScopes } = existingGrantedScopes.length ? planIncrementalScopes(provider, existingGrantedScopes, capabilities) : { additionalScopes: scopes };
-	const verifier = randomVerifier();
+	const material = await sessionMaterial(env, sessionSeed);
+	const { verifier, state, nonce, id } = material;
 	const challenge = await pkceChallengeFor(verifier);
-	const state = uuid();
-	const nonce = provider === 'google' ? uuid() : null; // OIDC nonce is meaningful for google's id_token; microsoft flow here uses state only
-	const id = uuid();
 	const expiresAt = new Date(Date.now() + Math.max(60, Math.min(3600, ttlSeconds)) * 1000).toISOString();
 	const row = {
 		id, onboarding_mission_id: onboardingMissionId, tenant_id: tenantId, workspace_id: workspaceId, provider, client_registration_mode: clientRegistrationMode,
 		redirect_uri_id: `nexora_${provider}_redirect_v1`, scopes_json: JSON.stringify(scopes), incremental_scopes_json: JSON.stringify(additionalScopes),
 		state_hash: await hexHash(state), nonce_hash: nonce ? await hexHash(nonce) : null, pkce_challenge: challenge, pkce_challenge_method: 'S256',
-		pkce_verifier_hash: await hexHash(verifier), tenant_hint: tenantHint, login_hint_hash: loginHint ? await hexHash(loginHint) : null, expires_at: expiresAt,
+		pkce_verifier_hash: await hexHash(verifier), tenant_hint: tenantHint, login_hint_hash: loginHint ? await hexHash(String(loginHint).trim().toLowerCase()) : null, expires_at: expiresAt,
 		redirect_uri_hash: await hexHash(redirectUri), requested_capabilities_json: JSON.stringify([...capabilities].sort()), scope_plan_reference: `scope-plan:${await hexHash(scopes.join(' '))}`,
+		oauth_client_fingerprint: await hexHash(clientId), scope_manifest_version: scopeApproval.manifestVersion, scope_manifest_digest: scopeApproval.manifestDigest,
+		issued_at: new Date().toISOString(),
 	};
-	return { ok: true, row, verifier, state, nonce, scopeJustification: justification, authorizationUrl: buildAuthorizationUrl(provider, { clientId, redirectUri, state, nonce, challenge, scopes, tenantHint, loginHint }) };
+	return { ok: true, row, verifier, state, nonce, scopeJustification: justification, scopeSummary: scopeApproval.summary, scopeManifestVersion: scopeApproval.manifestVersion, authorizationUrl: buildAuthorizationUrl(provider, { clientId, redirectUri, state, nonce, challenge, scopes, tenantHint, loginHint }) };
 }
 
 function buildAuthorizationUrl(provider, { clientId, redirectUri, state, nonce, challenge, scopes, tenantHint, loginHint }) {
@@ -164,7 +181,7 @@ function buildAuthorizationUrl(provider, { clientId, redirectUri, state, nonce, 
 		access_type: provider === 'google' ? 'offline' : undefined,
 		prompt: provider === 'google' ? 'consent' : undefined,
 	});
-	if (provider === 'google' && nonce) params.set('nonce', nonce);
+	if (nonce) params.set('nonce', nonce);
 	if (loginHint) params.set('login_hint', loginHint);
 	for (const [key, value] of [...params.entries()]) if (value === undefined || value === 'undefined') params.delete(key);
 	return `${base}?${params.toString()}`;
@@ -180,15 +197,82 @@ async function insertAuthorizationSession(c, row) {
 	// The correlation row is deliberately separate from the browser URL and authenticated
 	// user context.  A provider callback has only `state` as its correlation input; looking
 	// up this D1 record is therefore the only way it obtains tenant/workspace scope.
-	const correlationId = uuid();
+	const correlationId = `correlation:${await hexHash(row.id)}`;
 	const sessionStatement = c.env.db
-		.prepare(`INSERT INTO nexora_onboarding_authorization_sessions(id,onboarding_mission_id,tenant_id,workspace_id,provider,client_registration_mode,redirect_uri_id,scopes_json,incremental_scopes_json,state_hash,nonce_hash,pkce_challenge,pkce_challenge_method,pkce_verifier_hash,tenant_hint,login_hint_hash,expires_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)`)
+		.prepare(`INSERT OR IGNORE INTO nexora_onboarding_authorization_sessions(id,onboarding_mission_id,tenant_id,workspace_id,provider,client_registration_mode,redirect_uri_id,scopes_json,incremental_scopes_json,state_hash,nonce_hash,pkce_challenge,pkce_challenge_method,pkce_verifier_hash,tenant_hint,login_hint_hash,expires_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)`)
 		.bind(row.id, row.onboarding_mission_id, row.tenant_id, row.workspace_id, row.provider, row.client_registration_mode, row.redirect_uri_id, row.scopes_json, row.incremental_scopes_json, row.state_hash, row.nonce_hash, row.pkce_challenge, row.pkce_challenge_method, row.pkce_verifier_hash, row.tenant_hint, row.login_hint_hash, row.expires_at);
 	const correlationStatement = c.env.db
-		.prepare(`INSERT INTO nexora_onboarding_callback_correlations(id,state_hash,authorization_session_id,onboarding_mission_id,tenant_id,workspace_id,provider,redirect_uri_id,redirect_uri_hash,requested_scopes_json,requested_capabilities_json,scope_plan_reference,pkce_challenge,pkce_challenge_reference,expires_at,resume_checkpoint) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)`)
+		.prepare(`INSERT OR IGNORE INTO nexora_onboarding_callback_correlations(id,state_hash,authorization_session_id,onboarding_mission_id,tenant_id,workspace_id,provider,redirect_uri_id,redirect_uri_hash,requested_scopes_json,requested_capabilities_json,scope_plan_reference,pkce_challenge,pkce_challenge_reference,expires_at,resume_checkpoint) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)`)
 		.bind(correlationId, row.state_hash, row.id, row.onboarding_mission_id, row.tenant_id, row.workspace_id, row.provider, row.redirect_uri_id, row.redirect_uri_hash, row.scopes_json, row.requested_capabilities_json, row.scope_plan_reference, row.pkce_challenge, `pkce:${row.id}`, row.expires_at, `resume:${row.onboarding_mission_id}`);
 	await c.env.db.batch([sessionStatement, correlationStatement]);
-	return { correlationId };
+	const preBindingSession = await c.env.db.prepare(`SELECT created_at,expires_at FROM nexora_onboarding_authorization_sessions WHERE id=?1`).bind(row.id).first();
+	if (!preBindingSession || Date.parse(preBindingSession.expires_at) <= Date.now()) throw new Error('nexora_onboarding_authorization_session_expired');
+	const bindingTable = await c.env.db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='nexora_oauth_authorization_session_bindings'`).first().catch(() => null);
+	if (bindingTable) {
+		await c.env.db.prepare(
+			`INSERT OR IGNORE INTO nexora_oauth_authorization_session_bindings(
+			 authorization_session_id,onboarding_mission_id,tenant_id,workspace_id,provider,
+			 redirect_uri_hash,oauth_client_fingerprint,scope_manifest_version,scope_manifest_digest,
+			 issued_at,expires_at
+			) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)`
+		).bind(row.id, row.onboarding_mission_id, row.tenant_id, row.workspace_id, row.provider, row.redirect_uri_hash, row.oauth_client_fingerprint, row.scope_manifest_version, row.scope_manifest_digest, preBindingSession.created_at, preBindingSession.expires_at).run();
+		const binding = await c.env.db.prepare(`SELECT * FROM nexora_oauth_authorization_session_bindings WHERE authorization_session_id=?1`).bind(row.id).first();
+		if (!binding
+			|| binding.onboarding_mission_id !== row.onboarding_mission_id
+			|| Number(binding.tenant_id) !== Number(row.tenant_id)
+			|| Number(binding.workspace_id) !== Number(row.workspace_id)
+			|| binding.provider !== row.provider
+			|| binding.redirect_uri_hash !== row.redirect_uri_hash
+			|| binding.oauth_client_fingerprint !== row.oauth_client_fingerprint
+			|| binding.scope_manifest_version !== row.scope_manifest_version
+			|| binding.scope_manifest_digest !== row.scope_manifest_digest
+			|| binding.issued_at !== preBindingSession.created_at
+			|| binding.expires_at !== preBindingSession.expires_at) throw new Error('nexora_oauth_authorization_session_binding_conflict');
+	}
+	const canonical = await c.env.db.prepare(
+		`SELECT onboarding_mission_id,tenant_id,workspace_id,provider,client_registration_mode,redirect_uri_id,
+		        scopes_json,incremental_scopes_json,state_hash,nonce_hash,pkce_challenge,pkce_challenge_method,
+		        pkce_verifier_hash,tenant_hint,login_hint_hash,expires_at
+		 FROM nexora_onboarding_authorization_sessions WHERE id=?1`
+	).bind(row.id).first();
+	if (!canonical
+		|| canonical.onboarding_mission_id !== row.onboarding_mission_id
+		|| Number(canonical.tenant_id) !== Number(row.tenant_id)
+		|| Number(canonical.workspace_id) !== Number(row.workspace_id)
+		|| canonical.provider !== row.provider
+		|| canonical.client_registration_mode !== row.client_registration_mode
+		|| canonical.redirect_uri_id !== row.redirect_uri_id
+		|| canonical.scopes_json !== row.scopes_json
+		|| canonical.incremental_scopes_json !== row.incremental_scopes_json
+		|| canonical.state_hash !== row.state_hash
+		|| canonical.nonce_hash !== row.nonce_hash
+		|| canonical.pkce_challenge !== row.pkce_challenge
+		|| canonical.pkce_challenge_method !== row.pkce_challenge_method
+		|| canonical.pkce_verifier_hash !== row.pkce_verifier_hash
+		|| canonical.tenant_hint !== row.tenant_hint
+		|| canonical.login_hint_hash !== row.login_hint_hash) throw new Error('nexora_onboarding_authorization_session_idempotency_conflict');
+	if (Date.parse(canonical.expires_at) <= Date.now()) throw new Error('nexora_onboarding_authorization_session_expired');
+	const canonicalCorrelation = await c.env.db.prepare(
+		`SELECT state_hash,authorization_session_id,onboarding_mission_id,tenant_id,workspace_id,provider,
+		        redirect_uri_id,redirect_uri_hash,requested_scopes_json,requested_capabilities_json,
+		        scope_plan_reference,pkce_challenge,pkce_challenge_reference
+		 FROM nexora_onboarding_callback_correlations WHERE id=?1`
+	).bind(correlationId).first();
+	if (!canonicalCorrelation
+		|| canonicalCorrelation.state_hash !== row.state_hash
+		|| canonicalCorrelation.authorization_session_id !== row.id
+		|| canonicalCorrelation.onboarding_mission_id !== row.onboarding_mission_id
+		|| Number(canonicalCorrelation.tenant_id) !== Number(row.tenant_id)
+		|| Number(canonicalCorrelation.workspace_id) !== Number(row.workspace_id)
+		|| canonicalCorrelation.provider !== row.provider
+		|| canonicalCorrelation.redirect_uri_id !== row.redirect_uri_id
+		|| canonicalCorrelation.redirect_uri_hash !== row.redirect_uri_hash
+		|| canonicalCorrelation.requested_scopes_json !== row.scopes_json
+		|| canonicalCorrelation.requested_capabilities_json !== row.requested_capabilities_json
+		|| canonicalCorrelation.scope_plan_reference !== row.scope_plan_reference
+		|| canonicalCorrelation.pkce_challenge !== row.pkce_challenge
+		|| canonicalCorrelation.pkce_challenge_reference !== `pkce:${row.id}`) throw new Error('nexora_onboarding_callback_correlation_idempotency_conflict');
+	return { correlationId, expiresAt: canonical.expires_at };
 }
 
 // Single-use, replay-safe callback consumption. A duplicate callback (same state delivered

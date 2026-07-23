@@ -3,7 +3,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import refreshScheduler from '../../src/service/nexora-onboarding-refresh-scheduler-service.js';
-import tokenStorage from '../../src/service/nexora-onboarding-token-storage-service.js';
+import rawTokenStorage from '../../src/service/nexora-onboarding-token-storage-service.js';
 
 const TENANT_ID = 991101;
 const WORKSPACE_ID = 991102;
@@ -29,12 +29,16 @@ const SCHEMA = [
 		id TEXT PRIMARY KEY, idempotency_key TEXT NOT NULL UNIQUE, onboarding_mission_id TEXT NOT NULL,
 		tenant_id INTEGER NOT NULL, workspace_id INTEGER NOT NULL, provider TEXT NOT NULL, expected_token_generation INTEGER NOT NULL,
 		status TEXT NOT NULL DEFAULT 'pending', lease_token TEXT, lease_owner TEXT, lease_acquired_at TEXT, lease_expires_at TEXT, fence_generation INTEGER NOT NULL DEFAULT 0,
-		attempt_count INTEGER NOT NULL DEFAULT 0, last_error_classification TEXT, completed_at TEXT,
+		attempt_count INTEGER NOT NULL DEFAULT 0, next_retry_at TEXT, last_error_classification TEXT, completed_at TEXT,
 		created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`,
+	`CREATE TABLE nexora_connection_refresh_attempts (id TEXT PRIMARY KEY,refresh_work_id TEXT NOT NULL,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,provider TEXT NOT NULL,expected_token_generation INTEGER NOT NULL,fencing_token INTEGER NOT NULL,intent_recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,provider_request_started_at TEXT,provider_response_observed_at TEXT,terminal_classification TEXT,UNIQUE(refresh_work_id,fencing_token))`,
 	`CREATE TABLE nexora_provider_outcome_results (id TEXT PRIMARY KEY,outcome_kind TEXT NOT NULL,operation_id TEXT NOT NULL,idempotency_key TEXT NOT NULL UNIQUE,authority_tuple_digest TEXT NOT NULL,outcome_digest TEXT,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,provider TEXT NOT NULL,mission_id TEXT NOT NULL,refresh_job_id TEXT,lease_owner TEXT NOT NULL,fencing_token INTEGER NOT NULL,expected_token_generation INTEGER NOT NULL,committed_token_generation INTEGER NOT NULL,expected_provider_connection_generation INTEGER,observation_reference TEXT,normalized_reason_code TEXT NOT NULL,retry_classification TEXT NOT NULL)`,
+	`CREATE TABLE nexora_onboarding_provider_connections(id TEXT PRIMARY KEY,onboarding_mission_id TEXT NOT NULL,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,provider TEXT NOT NULL,connection_identity TEXT NOT NULL,generation INTEGER NOT NULL DEFAULT 1,connection_state TEXT NOT NULL DEFAULT 'active')`,
+	`CREATE TABLE nexora_onboarding_token_connection_bindings(token_id TEXT PRIMARY KEY,connection_id TEXT NOT NULL UNIQUE,tenant_id INTEGER NOT NULL,workspace_id INTEGER NOT NULL,provider TEXT NOT NULL,token_generation INTEGER NOT NULL,connection_generation INTEGER NOT NULL)`,
 ];
-const TABLES = ['nexora_onboarding_refresh_work', 'nexora_onboarding_tokens', 'mission_runtime_events', 'nexora_provider_outcome_results'];
+const TABLES = ['nexora_connection_refresh_attempts', 'nexora_onboarding_refresh_work', 'nexora_onboarding_tokens', 'mission_runtime_events', 'nexora_provider_outcome_results'];
+TABLES.unshift('nexora_onboarding_token_connection_bindings', 'nexora_onboarding_provider_connections');
 
 async function resetSchema() {
 	await env.db.batch(TABLES.map((t) => env.db.prepare(`DROP TABLE IF EXISTS ${t}`)));
@@ -42,7 +46,19 @@ async function resetSchema() {
 }
 
 const scope = { tenantId: TENANT_ID, workspaceId: WORKSPACE_ID };
-const c = { env: { ...env, jwt_secret: 'test-only-pool-workers-encryption-secret', NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' } };
+const c = { env: { ...env, jwt_secret: 'test-only-pool-workers-encryption-secret', AI_PROVIDER_TOKEN_SECRET: 'test-only-provider-encryption-secret', NEXORA_GOOGLE_OAUTH_CLIENT_ID: 'test-client-id' } };
+
+const tokenStorage = {
+	...rawTokenStorage,
+	async storeTokens(context, authorityScope, args) {
+		const result = await rawTokenStorage.storeTokens(context, authorityScope, args);
+		const token = await env.db.prepare(`SELECT id,rotation_generation FROM nexora_onboarding_tokens WHERE onboarding_mission_id=?1`).bind(args.onboardingMissionId).first();
+		const connectionId = `test-connection:${args.onboardingMissionId}`;
+		await env.db.prepare(`INSERT OR IGNORE INTO nexora_onboarding_provider_connections(id,onboarding_mission_id,tenant_id,workspace_id,provider,connection_identity,generation,connection_state) VALUES(?1,?2,?3,?4,?5,?6,1,'active')`).bind(connectionId, args.onboardingMissionId, authorityScope.tenantId, authorityScope.workspaceId, args.provider, args.providerAccountHash).run();
+		await env.db.prepare(`INSERT INTO nexora_onboarding_token_connection_bindings(token_id,connection_id,tenant_id,workspace_id,provider,token_generation,connection_generation) VALUES(?1,?2,?3,?4,?5,?6,1) ON CONFLICT(token_id) DO UPDATE SET token_generation=excluded.token_generation`).bind(token.id, connectionId, authorityScope.tenantId, authorityScope.workspaceId, args.provider, token.rotation_generation).run();
+		return result;
+	},
+};
 
 beforeEach(async () => {
 	await resetSchema();
@@ -144,4 +160,24 @@ describe('Scheduled token refresh — real D1, deterministic fixture exchange re
 		expect(row.connection_health).toBe('degraded');
 		expect(row.revoked_at).toBeNull();
 	});
+
+	it('does not replay a refresh after the provider-request boundary becomes ambiguous', async () => {
+		await tokenStorage.storeTokens(c, scope, { onboardingMissionId: 'ref-ambiguous', provider: 'google', providerAccountHash: 'acct-ambiguous', refreshToken: 'refresh-ambiguous', accessTokenExpiresAt: new Date(Date.now() - 1000).toISOString(), grantedScopes: ['openid'] });
+		const hook=Symbol.for('nexora.internal.connectionRefreshTestHooks');
+		c.env[hook]={throwAfterRequestStart:true};
+		const first = await refreshScheduler.runScheduledRefresh({ env: c.env }, { fetchImpl: async () => { throw new Error('network must not be reached by injected crash'); } });
+		delete c.env[hook];
+		expect(first.results[0].outcome).toBe('reauthorization_required');
+			const attempt = await env.db.prepare(`SELECT provider_request_started_at,provider_response_observed_at,terminal_classification FROM nexora_connection_refresh_attempts`).first();
+			expect(attempt.provider_request_started_at).toBeTruthy();
+			expect(attempt.provider_response_observed_at).toBeNull();
+			expect(attempt.terminal_classification).toBe('OUTCOME_AMBIGUOUS');
+			const work = await env.db.prepare(`SELECT status,last_error_classification,next_retry_at,completed_at FROM nexora_onboarding_refresh_work WHERE onboarding_mission_id='ref-ambiguous'`).first();
+			expect(work).toMatchObject({ status: 'failed', last_error_classification: 'REFRESH_OUTCOME_AMBIGUOUS_REAUTHORIZATION_REQUIRED', next_retry_at: null });
+			expect(work.completed_at).toBeTruthy();
+			let replayCalls=0;
+			const replay = await refreshScheduler.runScheduledRefresh({ env: c.env }, { fetchImpl: async () => { replayCalls+=1; throw new Error('ambiguous refresh must never replay'); } });
+			expect(replayCalls).toBe(0);
+			expect(replay.results[0].outcome).toBe('leased_elsewhere');
+		});
 });

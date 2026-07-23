@@ -23,7 +23,9 @@ const exclude = [
 
 const publicProviderCallbacks = new Set([
 	'/v3/onboarding/providers/google/callback',
-	'/v3/onboarding/providers/microsoft/callback'
+	'/v3/onboarding/providers/microsoft/callback',
+	'/v3/onboarding/providers/google/result',
+	'/v3/onboarding/providers/microsoft/result'
 ]);
 
 const requirePerms = [

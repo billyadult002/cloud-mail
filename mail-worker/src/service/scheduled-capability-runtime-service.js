@@ -1,9 +1,5 @@
 import durableMissionRuntime from './durable-mission-runtime-service.js';
-import { createCapabilityRegistry } from './capability-registry-service.js';
-import { mintCapabilityAuthorityContext } from './capability-authority-context-service.js';
-import { createCapabilityEvidenceWriter, createCapabilityVerifier } from './capability-evidence-ledger-service.js';
 import { invokeCapability } from './capability-invocation-service.js';
-import gmailAdapter from './gmail-communication-capability-adapter.js';
 import { hash } from './durable-mission-runtime-service.js';
 
 const JOB_TYPE = 'MISSION_RUNTIME_CAPABILITY_SEARCH_EMAIL';
@@ -54,18 +50,36 @@ async function execute(c, job) {
 	await c.env.db.prepare(`INSERT OR IGNORE INTO mission_runtime_actions(id,mission_id,run_id,step_id,tenant_id,workspace_id,capability,action_type,target_hash,params_hash,authority_generation,authority_context_hash,state,idempotency_key) VALUES(?1,?2,?3,?4,?5,?6,'search_email','READ_ONLY_CANONICAL_MAIL',?7,?8,?9,?10,'dispatch_pending',?11)`).bind(actionId, missionId, runId, stepId, scope.tenantId, scope.workspaceId, targetHash, paramsHash, Number(input.authority_generation), 'minted-after-lease-claim', `job:${job.id}:action`).run();
 	const persistedAction = await c.env.db.prepare(`SELECT target_hash,params_hash,authority_generation FROM mission_runtime_actions WHERE id=?1 AND mission_id=?2 AND tenant_id=?3 AND workspace_id=?4`).bind(actionId, missionId, scope.tenantId, scope.workspaceId).first();
 	if (!persistedAction || persistedAction.target_hash !== targetHash || persistedAction.params_hash !== paramsHash || Number(persistedAction.authority_generation) !== Number(input.authority_generation)) throw new Error('scheduled_capability_action_replay_conflict');
-	const context = await mintCapabilityAuthorityContext(c, { invocation_id: crypto.randomUUID(), capability_id: CAPABILITY, tenant_id: scope.tenantId, workspace_id: scope.workspaceId, actor_user_id: Number(input.actor_user_id), account_id: Number(input.account_id), authority_generation: Number(input.authority_generation), lease_generation: run.fencing_token, mission_id: missionId, run_id: runId, step_id: stepId, action_id: actionId, idempotency_key: `job:${job.id}:search`, timestamp: new Date().toISOString() });
-	const registry = createCapabilityRegistry([gmailAdapter]);
-	const output = await invokeCapability(c, { context, provider_id: 'gmail', request }, { registry, evidenceWriter: createCapabilityEvidenceWriter(c), verifier: createCapabilityVerifier(c), timeoutMs: Math.min(2000, Math.max(250, Number(input.timeout_ms || 1500))) });
-	await c.env.db.prepare(`UPDATE mission_runtime_actions SET state='completed',updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND state='dispatch_pending'`).bind(actionId, scope.tenantId, scope.workspaceId).run();
-	await c.env.db.prepare(`UPDATE mission_runtime_steps SET state='completed',version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND run_id=?2 AND state='running'`).bind(stepId, runId).run();
-	await c.env.db.prepare(`UPDATE mission_runtime_missions SET state='verification_pending',version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND state='running'`).bind(missionId).run();
-	const pending = await c.env.db.prepare(`SELECT version FROM mission_runtime_missions WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3`).bind(missionId, scope.tenantId, scope.workspaceId).first();
 	const outcomeId = `${root}-outcome`;
-	await c.env.db.prepare(`INSERT INTO mission_runtime_outcomes(id,mission_id,tenant_id,workspace_id,state,verification_id,claim_key,action_id,policy_id,policy_version) SELECT ?1,?2,?3,?4,'verified',?5,'capability:search_email',?6,'capability_contract_v1',1 WHERE EXISTS (SELECT 1 FROM mission_runtime_verifications WHERE id=?5 AND evidence_id=?7 AND state='verified' AND integrity_state='valid')`).bind(outcomeId, missionId, scope.tenantId, scope.workspaceId, output.verification.verification_id, actionId, output.evidence.evidence_id).run();
+	const existingOutcome = await c.env.db.prepare(`SELECT o.verification_id,v.evidence_id,e.summary_json FROM mission_runtime_outcomes o JOIN mission_runtime_verifications v ON v.id=o.verification_id AND v.mission_id=o.mission_id AND v.tenant_id=o.tenant_id AND v.workspace_id=o.workspace_id AND v.state='verified' AND v.integrity_state='valid' JOIN mission_runtime_evidence e ON e.id=v.evidence_id AND e.mission_id=o.mission_id AND e.tenant_id=o.tenant_id AND e.workspace_id=o.workspace_id AND e.status='supported' WHERE o.id=?1 AND o.mission_id=?2 AND o.tenant_id=?3 AND o.workspace_id=?4 AND o.action_id=?5 AND o.state='verified' AND o.claim_key='capability:search_email'`).bind(outcomeId, missionId, scope.tenantId, scope.workspaceId, actionId).first();
+	if (existingOutcome) {
+		const mission = await c.env.db.prepare(`SELECT state,version FROM mission_runtime_missions WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3`).bind(missionId, scope.tenantId, scope.workspaceId).first();
+		const actionStep = await c.env.db.prepare(`SELECT a.state AS action_state,s.state AS step_state FROM mission_runtime_actions a JOIN mission_runtime_steps s ON s.id=a.step_id AND s.run_id=a.run_id AND s.tenant_id=a.tenant_id AND s.workspace_id=a.workspace_id WHERE a.id=?1 AND a.run_id=?2 AND a.tenant_id=?3 AND a.workspace_id=?4`).bind(actionId, runId, scope.tenantId, scope.workspaceId).first();
+		if (mission?.state !== 'verification_pending' || !Number.isSafeInteger(Number(mission.version)) || actionStep?.action_state !== 'completed' || actionStep?.step_state !== 'completed') throw new Error('scheduled_capability_recovery_state_invalid');
+		let priorSummary;
+		try { priorSummary = JSON.parse(existingOutcome.summary_json); } catch { throw new Error('scheduled_capability_recovery_evidence_invalid'); }
+		if (!Array.isArray(priorSummary.message_refs) || priorSummary.message_refs.some(ref => !/^msg_[0-9a-f]{64}$/.test(ref))) throw new Error('scheduled_capability_recovery_evidence_invalid');
+		await durableMissionRuntime.complete(c, scope, { missionId, runId, outcomeId, expectedVersion: mission.version, fencingToken: run.fencing_token });
+		return { missionId, runId, invocationId: priorSummary.invocation_id, evidenceId: existingOutcome.evidence_id, verificationId: existingOutcome.verification_id, resultCount: priorSummary.message_refs.length, recovered: true };
+	}
+	const authority = { invocation_id: crypto.randomUUID(), capability_id: CAPABILITY, tenant_id: scope.tenantId, workspace_id: scope.workspaceId, actor_user_id: Number(input.actor_user_id), account_id: Number(input.account_id), authority_generation: Number(input.authority_generation), lease_generation: run.fencing_token, mission_id: missionId, run_id: runId, step_id: stepId, action_id: actionId, idempotency_key: `job:${job.id}:search`, timestamp: new Date().toISOString() };
+	const output = await invokeCapability(c, { authority, provider_id: 'gmail', request }, { timeoutMs: Math.min(2000, Math.max(250, Number(input.timeout_ms || 1500))) });
+	const actionWrite = await c.env.db.prepare(`UPDATE mission_runtime_actions SET state='completed',updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND state='dispatch_pending'`).bind(actionId, scope.tenantId, scope.workspaceId).run();
+	if (Number(actionWrite?.meta?.changes) !== 1) throw new Error('scheduled_capability_action_completion_conflict');
+	const stepWrite = await c.env.db.prepare(`UPDATE mission_runtime_steps SET state='completed',version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND run_id=?2 AND tenant_id=?3 AND workspace_id=?4 AND state='running'`).bind(stepId, runId, scope.tenantId, scope.workspaceId).run();
+	if (Number(stepWrite?.meta?.changes) !== 1) throw new Error('scheduled_capability_step_completion_conflict');
+	const missionWrite = await c.env.db.prepare(`UPDATE mission_runtime_missions SET state='verification_pending',version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND state='running'`).bind(missionId, scope.tenantId, scope.workspaceId).run();
+	if (Number(missionWrite?.meta?.changes) !== 1) throw new Error('scheduled_capability_mission_transition_conflict');
+	const pending = await c.env.db.prepare(`SELECT version FROM mission_runtime_missions WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3`).bind(missionId, scope.tenantId, scope.workspaceId).first();
+	if (!Number.isSafeInteger(Number(pending?.version))) throw new Error('scheduled_capability_mission_version_invalid');
+	const outcomeWrite = await c.env.db.prepare(`INSERT OR IGNORE INTO mission_runtime_outcomes(id,mission_id,tenant_id,workspace_id,state,verification_id,claim_key,action_id,policy_id,policy_version) SELECT ?1,?2,?3,?4,'verified',?5,'capability:search_email',?6,'capability_contract_v1',1 WHERE EXISTS (SELECT 1 FROM mission_runtime_verifications WHERE id=?5 AND evidence_id=?7 AND mission_id=?2 AND tenant_id=?3 AND workspace_id=?4 AND state='verified' AND integrity_state='valid')`).bind(outcomeId, missionId, scope.tenantId, scope.workspaceId, output.verification.verification_id, actionId, output.evidence.evidence_id).run();
+	if (Number(outcomeWrite?.meta?.changes) !== 1) {
+		const exact = await c.env.db.prepare(`SELECT 1 AS ok FROM mission_runtime_outcomes WHERE id=?1 AND mission_id=?2 AND tenant_id=?3 AND workspace_id=?4 AND state='verified' AND verification_id=?5 AND claim_key='capability:search_email' AND action_id=?6 AND policy_id='capability_contract_v1' AND policy_version=1`).bind(outcomeId, missionId, scope.tenantId, scope.workspaceId, output.verification.verification_id, actionId).first();
+		if (!exact) throw new Error('scheduled_capability_verified_outcome_missing');
+	}
 	await durableMissionRuntime.complete(c, scope, { missionId, runId, outcomeId, expectedVersion: pending.version, fencingToken: run.fencing_token });
 	await c.env.db.prepare(`INSERT INTO mission_runtime_events(id,mission_id,run_id,step_id,action_id,tenant_id,workspace_id,event_type,fencing_token,detail_json) VALUES(?1,?2,?3,?4,?5,?6,?7,'SCHEDULED_CAPABILITY_INVOKED',?8,?9)`).bind(crypto.randomUUID(), missionId, runId, stepId, actionId, scope.tenantId, scope.workspaceId, run.fencing_token, JSON.stringify({ capability: CAPABILITY, evidence_id: output.evidence.evidence_id, verification_id: output.verification.verification_id, provider_network_called: false, credential_accessed: false, mailbox_mutated: false })).run();
-	return { missionId, runId, invocationId: context.invocation_id, evidenceId: output.evidence.evidence_id, verificationId: output.verification.verification_id, resultCount: output.result.response.message_refs.length };
+	return { missionId, runId, invocationId: authority.invocation_id, evidenceId: output.evidence.evidence_id, verificationId: output.verification.verification_id, resultCount: output.result.response.message_refs.length };
 }
 
 async function monitorScheduled({ env }) {

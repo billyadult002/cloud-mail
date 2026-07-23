@@ -160,11 +160,55 @@ async function verifiedTransition(c, scope, connection, operation, toState, resu
 	const responseDigest = await hash({ classification: result.classification, status: result.providerHttpStatus || null, network: Boolean(result.providerNetworkCalled), mailboxMutated: false });
 	const eventId = crypto.randomUUID();
 	const abortOnZero = () => c.env.db.prepare(`INSERT INTO nexora_connection_events(id,connection_id,operation_id,tenant_id,workspace_id,event_type,from_state,to_state,connection_generation,fencing_token,detail_json) SELECT NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL WHERE changes()=0`);
+	const liveCallbackAuthorityGuard = operation.type === 'CALLBACK'
+		? ` AND EXISTS(
+		     SELECT 1
+		     FROM nexora_connection_operations callback_op
+		     JOIN nexora_oauth_exchange_attempts ea
+		       ON ea.callback_correlation_id=callback_op.callback_correlation_id
+		      AND ea.connection_id=nexora_connections.id
+		      AND ea.state='CONNECTION_COMMITTED_VERIFICATION_PENDING'
+		      AND ea.provider_connection_id=?5
+		      AND ea.provider_connection_generation=?6
+		      AND ea.credential_reference_id=?7
+		     JOIN nexora_oauth_authorization_session_bindings b
+		       ON b.authorization_session_id=ea.authorization_session_id
+		      AND b.connection_id=nexora_connections.id
+		      AND b.tenant_id=nexora_connections.tenant_id
+		      AND b.workspace_id=nexora_connections.workspace_id
+		      AND b.connection_generation=nexora_connections.connection_generation
+		      AND b.authority_generation=nexora_connections.authority_generation
+		     JOIN nexora_oauth_live_authorization_bindings la
+		       ON la.authorization_session_id=b.authorization_session_id
+		     WHERE callback_op.id=?14
+		       AND callback_op.connection_id=nexora_connections.id
+		       AND callback_op.operation_type='CALLBACK'
+		       AND callback_op.callback_correlation_id IS NOT NULL
+		       AND EXISTS(
+		        SELECT 1 FROM nexora_callback_verified_results vr
+		        WHERE vr.authorization_session_id=ea.authorization_session_id
+		          AND vr.callback_correlation_id=ea.callback_correlation_id
+		          AND vr.tenant_id=nexora_connections.tenant_id
+		          AND vr.workspace_id=nexora_connections.workspace_id
+		          AND vr.mission_id=b.onboarding_mission_id
+		          AND vr.provider=b.provider
+		          AND vr.result_status='VERIFIED'
+		          AND vr.provider_connection_id=ea.provider_connection_id
+		          AND vr.provider_connection_generation=ea.provider_connection_generation
+		          AND vr.token_generation=?8
+		       )
+		    )`
+		: '';
+	const connectionTransition = c.env.db.prepare(
+		`UPDATE nexora_connections SET state=?2,connection_generation=connection_generation+1,last_transition_event_id=?3,last_verified_health_at=CASE WHEN ?2='HEALTHY' THEN CURRENT_TIMESTAMP ELSE last_verified_health_at END,next_eligible_retry_at=CASE WHEN ?2='RETRY_WAIT' THEN datetime('now','+30 seconds') ELSE NULL END,consecutive_failure_count=CASE WHEN ?2='HEALTHY' THEN 0 WHEN ?2 IN ('DEGRADED','RETRY_WAIT','REAUTHORIZATION_REQUIRED','FAILED_TERMINAL') THEN consecutive_failure_count+1 ELSE consecutive_failure_count END,reauthorization_required=CASE WHEN ?2='REAUTHORIZATION_REQUIRED' THEN 1 WHEN ?2 IN ('CONNECTED','HEALTHY') THEN 0 ELSE reauthorization_required END,onboarding_mission_id=COALESCE(?4,onboarding_mission_id),provider_connection_id=COALESCE(?5,provider_connection_id),provider_connection_generation=CASE WHEN ?6 IS NULL THEN provider_connection_generation ELSE ?6 END,credential_reference_id=COALESCE(?7,credential_reference_id),credential_generation=CASE WHEN ?8 IS NULL THEN credential_generation ELSE ?8 END,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND tenant_id=?9 AND workspace_id=?10 AND connection_generation=?11 AND fencing_token=?12 AND lease_owner=?13 AND lease_expires_at>CURRENT_TIMESTAMP${liveCallbackAuthorityGuard}`
+	);
+	const connectionTransitionBindings = [connection.id, toState, eventId, updates.onboardingMissionId || null, updates.providerConnectionId || null, updates.providerConnectionGeneration ?? null, updates.credentialReferenceId || null, updates.credentialGeneration ?? null, scope.tenantId, scope.workspaceId, connection.connection_generation, connection.fencing_token, connection.lease_owner];
+	if (operation.type === 'CALLBACK') connectionTransitionBindings.push(operation.id);
 	await c.env.db.batch([
 		c.env.db.prepare(`UPDATE nexora_connection_operations SET state='VERIFIED',transition_from_state=?2,transition_to_state=?3,provider_response_classification=?4,provider_http_status=?5,provider_network_called=?6,response_digest=?7,evidence_id=?8,verification_id=?9,claim_id=?10,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND connection_id=?11 AND tenant_id=?12 AND workspace_id=?13 AND state IN ('LEASED','PROVIDER_RESPONSE_OBSERVED') AND lease_owner=?14 AND fencing_token=?15 AND lease_expires_at>CURRENT_TIMESTAMP`).bind(operation.id, connection.state, toState, result.classification, result.providerHttpStatus || null, result.providerNetworkCalled ? 1 : 0, responseDigest, refs.evidenceId, refs.verificationId, refs.claimId, connection.id, scope.tenantId, scope.workspaceId, connection.lease_owner, connection.fencing_token),
 		abortOnZero(),
 		c.env.db.prepare(`INSERT INTO nexora_connection_events(id,connection_id,operation_id,tenant_id,workspace_id,event_type,from_state,to_state,connection_generation,fencing_token,detail_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)`).bind(eventId, connection.id, operation.id, scope.tenantId, scope.workspaceId, `CONNECTION_${result.classification}`, connection.state, toState, Number(connection.connection_generation) + 1, connection.fencing_token, JSON.stringify({ evidence_id: refs.evidenceId, verification_id: refs.verificationId, claim_id: refs.claimId, provider_network_called: Boolean(result.providerNetworkCalled), mailbox_mutated: false })),
-		c.env.db.prepare(`UPDATE nexora_connections SET state=?2,connection_generation=connection_generation+1,last_transition_event_id=?3,last_verified_health_at=CASE WHEN ?2='HEALTHY' THEN CURRENT_TIMESTAMP ELSE last_verified_health_at END,next_eligible_retry_at=CASE WHEN ?2='RETRY_WAIT' THEN datetime('now','+30 seconds') ELSE NULL END,consecutive_failure_count=CASE WHEN ?2='HEALTHY' THEN 0 WHEN ?2 IN ('DEGRADED','RETRY_WAIT','REAUTHORIZATION_REQUIRED','FAILED_TERMINAL') THEN consecutive_failure_count+1 ELSE consecutive_failure_count END,reauthorization_required=CASE WHEN ?2='REAUTHORIZATION_REQUIRED' THEN 1 WHEN ?2 IN ('CONNECTED','HEALTHY') THEN 0 ELSE reauthorization_required END,onboarding_mission_id=COALESCE(?4,onboarding_mission_id),provider_connection_id=COALESCE(?5,provider_connection_id),provider_connection_generation=CASE WHEN ?6 IS NULL THEN provider_connection_generation ELSE ?6 END,credential_reference_id=COALESCE(?7,credential_reference_id),credential_generation=CASE WHEN ?8 IS NULL THEN credential_generation ELSE ?8 END,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND tenant_id=?9 AND workspace_id=?10 AND connection_generation=?11 AND fencing_token=?12 AND lease_owner=?13 AND lease_expires_at>CURRENT_TIMESTAMP`).bind(connection.id, toState, eventId, updates.onboardingMissionId || null, updates.providerConnectionId || null, updates.providerConnectionGeneration ?? null, updates.credentialReferenceId || null, updates.credentialGeneration ?? null, scope.tenantId, scope.workspaceId, connection.connection_generation, connection.fencing_token, connection.lease_owner),
+		connectionTransition.bind(...connectionTransitionBindings),
 		abortOnZero(),
 		c.env.db.prepare(`UPDATE nexora_connections SET lease_owner=NULL,lease_expires_at=NULL WHERE id=?1 AND tenant_id=?2 AND workspace_id=?3 AND connection_generation=?4 AND fencing_token=?5 AND lease_owner=?6`).bind(connection.id, scope.tenantId, scope.workspaceId, Number(connection.connection_generation) + 1, connection.fencing_token, connection.lease_owner),
 		abortOnZero(),

@@ -13,6 +13,7 @@
 // block logic-complete implementation and verification.
 import { decide as decideProviderAction } from './provider-capability-contract-service';
 import callbackRecovery from './nexora-onboarding-callback-recovery-service.js';
+import scopeManifest from './nexora-oauth-scope-manifest-service.js';
 
 const uuid = () => crypto.randomUUID();
 const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -147,6 +148,8 @@ async function createAuthorizationSession(env, { onboardingMissionId, tenantId, 
 		return { ok: false, reason: 'PROVIDER_APPLICATION_MISSING', provider, requiredEnv: !clientId ? PROVIDERS[provider].clientIdEnv : PROVIDERS[provider].redirectUriEnv };
 	}
 	const { scopes, justification } = planScopes(provider, capabilities);
+	const scopeApproval = await scopeManifest.verifyRequestedScopes({ provider, capabilities, requestedScopes: scopes });
+	if (!scopeApproval.approved) return { ok: false, reason: scopeApproval.reason, scopeManifestVersion: scopeApproval.manifestVersion };
 	const { additionalScopes } = existingGrantedScopes.length ? planIncrementalScopes(provider, existingGrantedScopes, capabilities) : { additionalScopes: scopes };
 	const material = await sessionMaterial(env, sessionSeed);
 	const { verifier, state, nonce, id } = material;
@@ -158,8 +161,10 @@ async function createAuthorizationSession(env, { onboardingMissionId, tenantId, 
 		state_hash: await hexHash(state), nonce_hash: nonce ? await hexHash(nonce) : null, pkce_challenge: challenge, pkce_challenge_method: 'S256',
 		pkce_verifier_hash: await hexHash(verifier), tenant_hint: tenantHint, login_hint_hash: loginHint ? await hexHash(String(loginHint).trim().toLowerCase()) : null, expires_at: expiresAt,
 		redirect_uri_hash: await hexHash(redirectUri), requested_capabilities_json: JSON.stringify([...capabilities].sort()), scope_plan_reference: `scope-plan:${await hexHash(scopes.join(' '))}`,
+		oauth_client_fingerprint: await hexHash(clientId), scope_manifest_version: scopeApproval.manifestVersion, scope_manifest_digest: scopeApproval.manifestDigest,
+		issued_at: new Date().toISOString(),
 	};
-	return { ok: true, row, verifier, state, nonce, scopeJustification: justification, authorizationUrl: buildAuthorizationUrl(provider, { clientId, redirectUri, state, nonce, challenge, scopes, tenantHint, loginHint }) };
+	return { ok: true, row, verifier, state, nonce, scopeJustification: justification, scopeSummary: scopeApproval.summary, scopeManifestVersion: scopeApproval.manifestVersion, authorizationUrl: buildAuthorizationUrl(provider, { clientId, redirectUri, state, nonce, challenge, scopes, tenantHint, loginHint }) };
 }
 
 function buildAuthorizationUrl(provider, { clientId, redirectUri, state, nonce, challenge, scopes, tenantHint, loginHint }) {
@@ -200,6 +205,30 @@ async function insertAuthorizationSession(c, row) {
 		.prepare(`INSERT OR IGNORE INTO nexora_onboarding_callback_correlations(id,state_hash,authorization_session_id,onboarding_mission_id,tenant_id,workspace_id,provider,redirect_uri_id,redirect_uri_hash,requested_scopes_json,requested_capabilities_json,scope_plan_reference,pkce_challenge,pkce_challenge_reference,expires_at,resume_checkpoint) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)`)
 		.bind(correlationId, row.state_hash, row.id, row.onboarding_mission_id, row.tenant_id, row.workspace_id, row.provider, row.redirect_uri_id, row.redirect_uri_hash, row.scopes_json, row.requested_capabilities_json, row.scope_plan_reference, row.pkce_challenge, `pkce:${row.id}`, row.expires_at, `resume:${row.onboarding_mission_id}`);
 	await c.env.db.batch([sessionStatement, correlationStatement]);
+	const preBindingSession = await c.env.db.prepare(`SELECT created_at,expires_at FROM nexora_onboarding_authorization_sessions WHERE id=?1`).bind(row.id).first();
+	if (!preBindingSession || Date.parse(preBindingSession.expires_at) <= Date.now()) throw new Error('nexora_onboarding_authorization_session_expired');
+	const bindingTable = await c.env.db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='nexora_oauth_authorization_session_bindings'`).first().catch(() => null);
+	if (bindingTable) {
+		await c.env.db.prepare(
+			`INSERT OR IGNORE INTO nexora_oauth_authorization_session_bindings(
+			 authorization_session_id,onboarding_mission_id,tenant_id,workspace_id,provider,
+			 redirect_uri_hash,oauth_client_fingerprint,scope_manifest_version,scope_manifest_digest,
+			 issued_at,expires_at
+			) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)`
+		).bind(row.id, row.onboarding_mission_id, row.tenant_id, row.workspace_id, row.provider, row.redirect_uri_hash, row.oauth_client_fingerprint, row.scope_manifest_version, row.scope_manifest_digest, preBindingSession.created_at, preBindingSession.expires_at).run();
+		const binding = await c.env.db.prepare(`SELECT * FROM nexora_oauth_authorization_session_bindings WHERE authorization_session_id=?1`).bind(row.id).first();
+		if (!binding
+			|| binding.onboarding_mission_id !== row.onboarding_mission_id
+			|| Number(binding.tenant_id) !== Number(row.tenant_id)
+			|| Number(binding.workspace_id) !== Number(row.workspace_id)
+			|| binding.provider !== row.provider
+			|| binding.redirect_uri_hash !== row.redirect_uri_hash
+			|| binding.oauth_client_fingerprint !== row.oauth_client_fingerprint
+			|| binding.scope_manifest_version !== row.scope_manifest_version
+			|| binding.scope_manifest_digest !== row.scope_manifest_digest
+			|| binding.issued_at !== preBindingSession.created_at
+			|| binding.expires_at !== preBindingSession.expires_at) throw new Error('nexora_oauth_authorization_session_binding_conflict');
+	}
 	const canonical = await c.env.db.prepare(
 		`SELECT onboarding_mission_id,tenant_id,workspace_id,provider,client_registration_mode,redirect_uri_id,
 		        scopes_json,incremental_scopes_json,state_hash,nonce_hash,pkce_challenge,pkce_challenge_method,

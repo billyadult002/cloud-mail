@@ -84,10 +84,28 @@ async function resolveAccountAuthority(c,{workspaceId,actingUserId,accountId,cap
 	const workspace=await c.env.db.prepare('SELECT tenant_key FROM workspaces WHERE id=?1').bind(workspaceId).first(), account=await c.env.db.prepare('SELECT user_id FROM account WHERE account_id=?1 AND is_del=0').bind(accountId).first(); if(!workspace||!account) return{allowed:false,reason:'authority_subject_not_found'};
 	if(!await sameTenant(c,workspace.tenant_key,actingUserId)||!await sameTenant(c,workspace.tenant_key,account.user_id)) return{allowed:false,reason:'cross_tenant_authority_denied'};
 	const legacy=await c.env.db.prepare('SELECT role FROM workspace_members WHERE workspace_id=?1 AND user_id=?2').bind(workspaceId,actingUserId).first(); if(!legacy) return{allowed:false,reason:'workspace_membership_missing'};
-	if(Number(account.user_id)===Number(actingUserId)) return{allowed:true,reason:'account_owner',ownerUserId:account.user_id,authorityGeneration:0};
-	const membership=await c.env.db.prepare(`SELECT state,expires_at,authority_generation FROM workspace_membership_authorities WHERE workspace_id=?1 AND subject_user_id=?2 AND tenant_key=?3 ORDER BY authority_generation DESC LIMIT 1`).bind(workspaceId,actingUserId,workspace.tenant_key).first(); if(!membership) return{allowed:false,reason:'authoritative_membership_missing'};
+	if(Number(account.user_id)===Number(actingUserId)) return{
+		allowed:true,
+		reason:'account_owner',
+		ownerUserId:account.user_id,
+		authorityGeneration:0,
+		authorityKind:'ACCOUNT_OWNER',
+		membershipAuthorityId:null,
+		membershipAuthorityGeneration:null,
+		delegationAuthorityId:null,
+		delegationAuthorityGeneration:null,
+	};
+	const membership=await c.env.db.prepare(`SELECT id,state,expires_at,authority_generation FROM workspace_membership_authorities WHERE workspace_id=?1 AND subject_user_id=?2 AND tenant_key=?3 ORDER BY authority_generation DESC LIMIT 1`).bind(workspaceId,actingUserId,workspace.tenant_key).first(); if(!membership) return{allowed:false,reason:'authoritative_membership_missing'};
 	const delegation=await c.env.db.prepare(`SELECT * FROM workspace_account_delegations WHERE workspace_id=?1 AND account_id=?2 AND subject_user_id=?3 AND owner_user_id=?4 AND tenant_key=?5 ORDER BY authority_generation DESC LIMIT 1`).bind(workspaceId,accountId,actingUserId,account.user_id,workspace.tenant_key).first();
-	return { ...evaluateRuntimeAuthority({ membership, ownerUserId:account.user_id, actingUserId, delegation, capability }), ownerUserId:account.user_id };
+	return {
+		...evaluateRuntimeAuthority({ membership, ownerUserId:account.user_id, actingUserId, delegation, capability }),
+		ownerUserId: account.user_id,
+		authorityKind: 'ACCOUNT_DELEGATION',
+		membershipAuthorityId: membership.id,
+		membershipAuthorityGeneration: Number(membership.authority_generation),
+		delegationAuthorityId: delegation?.id || null,
+		delegationAuthorityGeneration: delegation ? Number(delegation.authority_generation) : null,
+	};
 }
 async function list(c,workspaceId){const ctx=await context(c,workspaceId); const invitations=await c.env.db.prepare('SELECT id,subject_user_id,role,scope_json,state,expires_at,created_at FROM workspace_membership_invitations WHERE workspace_id=?1 ORDER BY created_at DESC').bind(workspaceId).all(), delegations=await c.env.db.prepare('SELECT id,account_id,owner_user_id,subject_user_id,scope_json,state,authority_generation,expires_at,created_at FROM workspace_account_delegations WHERE workspace_id=?1 ORDER BY created_at DESC').bind(workspaceId).all(), events=await c.env.db.prepare('SELECT id,actor_user_id,subject_user_id,account_id,relationship_type,event_type,state,authority_generation,reason_code,request_id,created_at FROM workspace_authority_events WHERE workspace_id=?1 ORDER BY created_at DESC LIMIT 100').bind(workspaceId).all(); return{workspace_id:ctx.workspace.id,invitations:invitations.results||[],delegations:delegations.results||[],audit:events.results||[]};}
 

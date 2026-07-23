@@ -9,6 +9,23 @@ async function classifyRecovery(c, correlationId) {
 	const state = new Map((rows.results || []).map((row) => [row.step, row.status]));
 	if (state.get('CALLBACK_OUTCOME_VERIFIED') === 'VERIFIED') return 'TERMINAL';
 	if (state.get('TOKEN_AUTHORITY_PERSISTED') === 'PERSISTED') return 'SAFE_TO_RESUME';
+	const sealed = await c.env.db.prepare(
+		`SELECT state,receipt_expires_at FROM nexora_oauth_exchange_attempts
+		 WHERE callback_correlation_id=?1`
+	).bind(correlationId).first().catch(() => null);
+	if (sealed && ['EXCHANGE_SUCCEEDED_COMMIT_PENDING','CREDENTIAL_STORED_CONNECTION_PENDING','CONNECTION_COMMITTED_VERIFICATION_PENDING'].includes(sealed.state)) {
+		return sealed.receipt_expires_at && Date.parse(sealed.receipt_expires_at) > Date.now() ? 'SAFE_TO_RESUME' : 'REAUTHORIZATION_REQUIRED';
+	}
+	if (sealed?.state === 'RECOVERY_REQUIRED') return 'RECONCILIATION_REQUIRED';
+	if (sealed?.state === 'REAUTHORIZATION_REQUIRED') return 'REAUTHORIZATION_REQUIRED';
+	const intake = await c.env.db.prepare(
+		`SELECT state,payload_expires_at FROM nexora_oauth_callback_intakes
+		 WHERE callback_correlation_id=?1`
+	).bind(correlationId).first().catch(() => null);
+	if (intake && ['QUEUED','PROCESSING','RECOVERY_REQUIRED'].includes(intake.state)) {
+		const expiresAt = Date.parse(intake.payload_expires_at);
+		return Number.isFinite(expiresAt) && expiresAt > Date.now() ? 'SAFE_TO_RESUME' : 'REAUTHORIZATION_REQUIRED';
+	}
 	if (state.has('TOKEN_EXCHANGE_RESPONSE_OBSERVED')) return 'RECONCILIATION_REQUIRED';
 	if (state.has('TOKEN_EXCHANGE_REQUEST_STARTED')) return 'REAUTHORIZATION_REQUIRED';
 	// Once the authorization session has been consumed, absence of an exchange record is
@@ -51,6 +68,19 @@ async function acquireClaim(c, correlation, { owner = uuid(), leaseSeconds = 120
 	const result = await c.env.db.prepare(`UPDATE nexora_onboarding_callback_claims SET claim_status='CLAIMED',recovery_mode=?2,lease_owner=?3,lease_acquired_at=CURRENT_TIMESTAMP,lease_expires_at=datetime('now',?4),fencing_token=fencing_token+1,attempt=attempt+1,takeover_count=takeover_count+CASE WHEN lease_expires_at IS NULL THEN 0 ELSE 1 END,last_heartbeat_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND (claim_status='AVAILABLE' OR (claim_status IN ('CLAIMED','PROCESSING','RECOVERABLE') AND lease_expires_at<CURRENT_TIMESTAMP))`).bind(claim.id, mode, owner, `+${Math.max(30, Math.min(300, leaseSeconds))} seconds`).run();
 	if (!result.meta?.changes) return { acquired: false, reason: 'RACE_LOST', claim: await c.env.db.prepare(`SELECT * FROM nexora_onboarding_callback_claims WHERE id=?1`).bind(claim.id).first() };
 	const acquired = await c.env.db.prepare(`SELECT * FROM nexora_onboarding_callback_claims WHERE id=?1`).bind(claim.id).first();
+	// A takeover creates a new fencing lineage. Transfer the correlation's execution
+	// authority to that exact lineage before returning it to the worker; otherwise the
+	// later verified-consumption gate would (correctly) reject the recovered worker as
+	// stale. The monotonic generation predicate prevents an older worker from retaking it.
+	if (correlation.status === 'claimed') {
+		const transferred = await c.env.db.prepare(
+			`UPDATE nexora_onboarding_callback_correlations
+			 SET claim_token=?2,claimed_by=?2,claim_generation=?3,claim_expires_at=?4
+			 WHERE id=?1 AND status='claimed' AND consumed_at IS NULL
+			   AND claim_generation<?3`
+		).bind(correlation.id, acquired.lease_owner, acquired.fencing_token, acquired.lease_expires_at).run();
+		if (!transferred.meta?.changes) return { acquired: false, reason: 'CORRELATION_FENCE_TRANSFER_FAILED', claim: acquired };
+	}
 	return { acquired: true, claim: acquired, recovery: recovery || 'SAFE_TO_RESUME' };
 }
 

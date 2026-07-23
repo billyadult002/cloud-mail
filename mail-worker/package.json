@@ -10,6 +10,8 @@
 		"test:rc": "vitest run scripts/reliability-tests",
 		"test:provider-coupling": "node scripts/provider-coupling-guard.mjs",
 		"test:connection-coupling": "node scripts/connection-runtime-coupling-guard.mjs",
+		"test:oauth-artifacts": "node scripts/oauth-sensitive-artifact-guard.mjs",
+		"test:oauth-sqlite": "node scripts/oauth-remediation-sqlite-integrity-check.mjs",
 		"deploy": "wrangler deploy",
 		"start": "wrangler dev"
 	},

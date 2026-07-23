@@ -4,7 +4,10 @@ compatibility_date = "2025-09-01"
 keep_vars = true
 
 [observability]
-enabled = true
+# OAuth provider callbacks arrive with unavoidable query parameters. Worker invocation
+# logging is disabled so the platform log surface cannot retain authorization codes/state.
+# Application-level evidence remains the redacted canonical Mission/Connection ledger.
+enabled = false
 
 [version_metadata]
 binding = "CF_VERSION_METADATA"
@@ -59,7 +62,7 @@ command = "CI=true npx --yes pnpm@10.34.5 --dir ../mail-vue install --frozen-loc
 name = "cloud-mail-staging"
 
 [env.staging.observability]
-enabled = true
+enabled = false
 
 [[env.staging.d1_databases]]
 binding = "db"

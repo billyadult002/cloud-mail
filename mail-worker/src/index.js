@@ -8,6 +8,9 @@ import oauthService from "./service/oauth-service";
 import scheduledCapabilityRuntime from './service/scheduled-capability-runtime-service.js';
 import connectionRuntime from './service/connection-runtime-service.js';
 import refreshScheduler from './service/nexora-onboarding-refresh-scheduler-service.js';
+import callbackIntake from './service/nexora-oauth-callback-intake-service.js';
+import onboardingOrchestrator from './service/nexora-onboarding-orchestrator-service.js';
+import exchangeReceipt from './service/nexora-oauth-exchange-receipt-service.js';
 export default {
 	 async fetch(req, env, ctx) {
 
@@ -37,6 +40,11 @@ export default {
 		await oauthService.clearNoBindOathUser({ env })
 		await scheduledCapabilityRuntime.monitorScheduled({ env })
 		await connectionRuntime.monitorScheduled({ env })
+		await callbackIntake.purgeExpired({ env })
+		await exchangeReceipt.purgeExpired({ env })
+		if (String(env.NEXORA_OAUTH_CALLBACK_PROCESSING_ENABLED || 'false').toLowerCase() === 'true') {
+			await callbackIntake.processPending({ env }, (workerContext, row, payload) => onboardingOrchestrator.processConsumedCallbackIntake(workerContext, row, payload), { limit: 5 });
+		}
 		if (String(env.NEXORA_CONNECTION_REFRESH_ENABLED || 'false').toLowerCase() === 'true' && String(env.NEXORA_CONNECTION_RUNTIME_ENABLED || 'false').toLowerCase() === 'true' && String(env.NEXORA_CONNECTION_RUNTIME_EMERGENCY_DISABLED || 'true').toLowerCase() === 'false') {
 			const one = (value) => { const items=String(value||'').split(',').map((v)=>v.trim()).filter(Boolean); return items.length===1 ? items[0] : null; };
 			const selection={ tenant_id:Number(one(env.NEXORA_CONNECTION_TENANT_ALLOWLIST)),workspace_id:Number(one(env.NEXORA_CONNECTION_WORKSPACE_ALLOWLIST)),actor_user_id:Number(one(env.NEXORA_CONNECTION_TENANT_ALLOWLIST)),account_id:Number(one(env.NEXORA_CONNECTION_ACCOUNT_ALLOWLIST)),provider:one(env.NEXORA_CONNECTION_PROVIDER_ALLOWLIST) };

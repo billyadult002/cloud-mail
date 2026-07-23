@@ -74,3 +74,14 @@ Maximum five iterations. Each Maker change must be followed by executable Checke
 - Re-run frontend and Worker verification, inspect the diff adversarially, deploy the reviewed source, and continue only through visible Google consent.
 - Treat an OAuth replay envelope and a verified Connection Runtime authorization receipt as separate authorities; retry incomplete expiry recovery instead of poisoning an idempotency key.
 - Rebind replacement Missions only within the claimed/fenced verified transition.
+
+## Checkpoint 5R OAuth confidentiality and exchange recovery
+
+1. [complete] Preserve and re-read the production STOP state without creating a session or invoking Google.
+2. [complete] Inspect authorized Comail revision and record evidence-backed no-reuse decision.
+3. [complete] Write ADR-015 through ADR-018 and revised callback/session/receipt/recovery contracts.
+4. [complete] Implement migration 0084, encrypted callback intake/clean redirect, durable scheduled consumer, manifest gate, sealed exchange receipt, exact-once fenced recovery, and plugin isolation guards.
+5. [complete] Focused crash/tamper/browser/scope tests, real-migration repeatability, full Worker regression, audits, scans, production dry-run bundle, and coupling guards pass.
+6. [complete] Independent checker and OAuth security reviewer both report PASS with no remaining P0/P1/P2 after six adversarial rounds.
+7. [in progress] Update evidence, commit, push, and PR 10 without deployment, production migration, or live OAuth.
+8. [complete] Document the bounded one-session retry proposal and retain a separate explicit human approval gate.

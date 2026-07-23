@@ -11,7 +11,7 @@ function assertScope(row, scope) {
 }
 const tokenCrypto = (scope, onboardingMissionId, provider, credentialReferenceId, generation, tokenKind) => ({ purpose: 'provider-token', aad: `nexora-provider-token|${scope.tenantId}|${scope.workspaceId}|${provider}|${onboardingMissionId}|${credentialReferenceId}|${generation}|${tokenKind}` });
 
-async function storeTokens(c, scope, { onboardingMissionId, provider, providerAccountHash, refreshToken, accessToken = null, accessTokenExpiresAt = null, grantedScopes, callbackClaim = null }) {
+async function storeTokens(c, scope, { onboardingMissionId, provider, providerAccountHash, refreshToken, accessToken = null, accessTokenExpiresAt = null, grantedScopes, callbackClaim = null, exchangeAttempt = null }) {
 	const existing = await c.env.db.prepare(`SELECT id,rotation_generation,provider_account_hash,refresh_token_ciphertext FROM nexora_onboarding_tokens WHERE onboarding_mission_id=?1 AND tenant_id=?2 AND workspace_id=?3 AND provider=?4`).bind(onboardingMissionId, scope.tenantId, scope.workspaceId, provider).first();
 	if (existing && existing.provider_account_hash !== providerAccountHash) throw new Error('nexora_onboarding_token_identity_conflict');
 	if (!existing && !refreshToken) throw new Error('nexora_onboarding_refresh_token_required');
@@ -20,6 +20,44 @@ async function storeTokens(c, scope, { onboardingMissionId, provider, providerAc
 	const effectiveRefreshToken = refreshToken || (existing ? await decryptSecret(c, existing.refresh_token_ciphertext, tokenCrypto(scope, onboardingMissionId, provider, existing.id, existing.rotation_generation, 'refresh')) : null);
 	const refreshTokenCiphertext = await encryptSecret(c, effectiveRefreshToken, tokenCrypto(scope, onboardingMissionId, provider, insertId, nextGeneration, 'refresh'));
 	const accessTokenCiphertext = accessToken ? await encryptSecret(c, accessToken, tokenCrypto(scope, onboardingMissionId, provider, insertId, nextGeneration, 'access')) : null;
+	const runtimeEnabled = String(c.env.NEXORA_CONNECTION_RUNTIME_ENABLED || 'false').toLowerCase() === 'true';
+	const connectionAuthorityGuard = runtimeEnabled
+		? ` AND EXISTS(
+		     SELECT 1
+		     FROM nexora_oauth_authorization_session_bindings b
+		     JOIN nexora_oauth_live_authorization_bindings la
+		       ON la.authorization_session_id=b.authorization_session_id
+		     JOIN nexora_connections cn
+		       ON cn.id=b.connection_id
+		      AND cn.tenant_id=b.tenant_id AND cn.workspace_id=b.workspace_id
+		     WHERE b.authorization_session_id=?3
+		       AND b.tenant_id=?5 AND b.workspace_id=?6 AND b.provider=?7
+		       AND b.connection_id=nexora_oauth_exchange_attempts.connection_id
+		       AND b.connection_generation=nexora_oauth_exchange_attempts.expected_connection_generation
+		       AND b.authority_generation=nexora_oauth_exchange_attempts.expected_authority_generation
+		       AND cn.connection_generation=b.connection_generation
+		       AND cn.authority_generation=b.authority_generation
+		       AND cn.account_id=b.account_id
+		       AND cn.domain_authority_id=b.domain_authority_id
+		       AND cn.state='AUTHORIZATION_PENDING'
+		    )`
+		: '';
+	const exchangePromotion = exchangeAttempt && callbackClaim
+			? c.env.db.prepare(
+				`UPDATE nexora_oauth_exchange_attempts
+			 SET state='CREDENTIAL_STORED_CONNECTION_PENDING',credential_reference_id=?2,updated_at=CURRENT_TIMESTAMP
+			 WHERE id=?1 AND authorization_session_id=?3 AND callback_correlation_id=?4
+			   AND tenant_id=?5 AND workspace_id=?6 AND provider=?7
+			   AND state='EXCHANGE_SUCCEEDED_COMMIT_PENDING'
+			   AND EXISTS(
+			    SELECT 1 FROM nexora_onboarding_callback_claims cc
+			    WHERE cc.id=?8 AND cc.correlation_id=?4 AND cc.authorization_session_id=?3
+			      AND cc.lease_owner=?9 AND cc.fencing_token=?10
+			      AND cc.lease_expires_at>CURRENT_TIMESTAMP
+			      AND cc.claim_status IN ('CLAIMED','PROCESSING') AND cc.recovery_mode='EXECUTION'
+			   )${connectionAuthorityGuard}`
+			).bind(exchangeAttempt.id, insertId, exchangeAttempt.authorization_session_id, exchangeAttempt.callback_correlation_id, scope.tenantId, scope.workspaceId, provider, callbackClaim.id, callbackClaim.lease_owner, callbackClaim.fencing_token)
+			: null;
 	if (existing) {
 		const claimGuard = callbackClaim ? ` AND EXISTS(SELECT 1 FROM nexora_onboarding_callback_claims WHERE id=?11 AND onboarding_mission_id=?1 AND tenant_id=?2 AND workspace_id=?3 AND provider=?4 AND lease_owner=?12 AND fencing_token=?13 AND lease_expires_at>CURRENT_TIMESTAMP AND claim_status IN ('CLAIMED','PROCESSING') AND recovery_mode='EXECUTION')` : '';
 		const statement = c.env.db.prepare(`UPDATE nexora_onboarding_tokens SET refresh_token_ciphertext=?5,access_token_ciphertext=?6,access_token_expires_at=?7,granted_scopes_json=?8,rotation_generation=rotation_generation+1,connection_health='healthy',revoked_at=NULL,revoked_reason=NULL,refresh_failure_count=0,updated_at=CURRENT_TIMESTAMP WHERE onboarding_mission_id=?1 AND tenant_id=?2 AND workspace_id=?3 AND provider=?4 AND provider_account_hash=?9 AND rotation_generation=?10${claimGuard}`);
@@ -27,14 +65,21 @@ async function storeTokens(c, scope, { onboardingMissionId, provider, providerAc
 		const abortOnZero=()=>c.env.db.prepare(`INSERT INTO nexora_onboarding_tokens(id,onboarding_mission_id,tenant_id,workspace_id,provider,provider_account_hash,refresh_token_ciphertext,granted_scopes_json) SELECT NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL WHERE changes()=0`);
 		const statements=[tokenUpdate,abortOnZero(),c.env.db.prepare(`UPDATE nexora_onboarding_token_connection_bindings SET token_generation=?2 WHERE token_id=?1 AND tenant_id=?3 AND workspace_id=?4 AND provider=?5 AND token_generation=?6`).bind(existing.id, nextGeneration, scope.tenantId, scope.workspaceId, provider, existing.rotation_generation),abortOnZero()];
 		if(String(c.env.NEXORA_CONNECTION_RUNTIME_ENABLED||'false').toLowerCase()==='true') statements.push(c.env.db.prepare(`UPDATE nexora_connections SET credential_generation=?2,updated_at=CURRENT_TIMESTAMP WHERE credential_reference_id=?1 AND tenant_id=?3 AND workspace_id=?4 AND provider=?5 AND credential_generation=?6`).bind(existing.id,nextGeneration,scope.tenantId,scope.workspaceId,provider,existing.rotation_generation),abortOnZero());
+		if (exchangePromotion) statements.push(exchangePromotion, abortOnZero());
 		try { await c.env.db.batch(statements); } catch { throw new Error('nexora_onboarding_token_rotation_fence_rejected'); }
-		return { rotated: true, rotationGeneration: existing.rotation_generation + 1 };
+		return { rotated: true, rotationGeneration: existing.rotation_generation + 1, credentialReferenceId: existing.id, exchangeStateCommitted: Boolean(exchangePromotion) };
 	}
-	const insert = callbackClaim
-		? await c.env.db.prepare(`INSERT INTO nexora_onboarding_tokens(id,onboarding_mission_id,tenant_id,workspace_id,provider,provider_account_hash,refresh_token_ciphertext,access_token_ciphertext,access_token_expires_at,granted_scopes_json) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10 WHERE EXISTS(SELECT 1 FROM nexora_onboarding_callback_claims WHERE id=?11 AND onboarding_mission_id=?2 AND tenant_id=?3 AND workspace_id=?4 AND provider=?5 AND lease_owner=?12 AND fencing_token=?13 AND lease_expires_at>CURRENT_TIMESTAMP AND claim_status IN ('CLAIMED','PROCESSING') AND recovery_mode='EXECUTION')`).bind(insertId, onboardingMissionId, scope.tenantId, scope.workspaceId, provider, providerAccountHash, refreshTokenCiphertext, accessTokenCiphertext, accessTokenExpiresAt, JSON.stringify(grantedScopes), callbackClaim.id, callbackClaim.lease_owner, callbackClaim.fencing_token).run()
-		: await c.env.db.prepare(`INSERT INTO nexora_onboarding_tokens(id,onboarding_mission_id,tenant_id,workspace_id,provider,provider_account_hash,refresh_token_ciphertext,access_token_ciphertext,access_token_expires_at,granted_scopes_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)`).bind(insertId, onboardingMissionId, scope.tenantId, scope.workspaceId, provider, providerAccountHash, refreshTokenCiphertext, accessTokenCiphertext, accessTokenExpiresAt, JSON.stringify(grantedScopes)).run();
-	if (!insert.meta?.changes) throw new Error('nexora_onboarding_token_callback_fence_rejected');
-	return { rotated: false, rotationGeneration: 1 };
+	const insertStatement = callbackClaim
+		? c.env.db.prepare(`INSERT INTO nexora_onboarding_tokens(id,onboarding_mission_id,tenant_id,workspace_id,provider,provider_account_hash,refresh_token_ciphertext,access_token_ciphertext,access_token_expires_at,granted_scopes_json) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10 WHERE EXISTS(SELECT 1 FROM nexora_onboarding_callback_claims WHERE id=?11 AND onboarding_mission_id=?2 AND tenant_id=?3 AND workspace_id=?4 AND provider=?5 AND lease_owner=?12 AND fencing_token=?13 AND lease_expires_at>CURRENT_TIMESTAMP AND claim_status IN ('CLAIMED','PROCESSING') AND recovery_mode='EXECUTION')`).bind(insertId, onboardingMissionId, scope.tenantId, scope.workspaceId, provider, providerAccountHash, refreshTokenCiphertext, accessTokenCiphertext, accessTokenExpiresAt, JSON.stringify(grantedScopes), callbackClaim.id, callbackClaim.lease_owner, callbackClaim.fencing_token)
+		: c.env.db.prepare(`INSERT INTO nexora_onboarding_tokens(id,onboarding_mission_id,tenant_id,workspace_id,provider,provider_account_hash,refresh_token_ciphertext,access_token_ciphertext,access_token_expires_at,granted_scopes_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)`).bind(insertId, onboardingMissionId, scope.tenantId, scope.workspaceId, provider, providerAccountHash, refreshTokenCiphertext, accessTokenCiphertext, accessTokenExpiresAt, JSON.stringify(grantedScopes));
+	if (exchangePromotion) {
+		const abortOnZero = () => c.env.db.prepare(`INSERT INTO nexora_onboarding_tokens(id,onboarding_mission_id,tenant_id,workspace_id,provider,provider_account_hash,refresh_token_ciphertext,granted_scopes_json) SELECT NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL WHERE changes()=0`);
+		try { await c.env.db.batch([insertStatement, abortOnZero(), exchangePromotion, abortOnZero()]); } catch (error) { throw new Error('nexora_onboarding_token_exchange_atomic_commit_rejected', { cause: error }); }
+	} else {
+		const insert = await insertStatement.run();
+		if (!insert.meta?.changes) throw new Error('nexora_onboarding_token_callback_fence_rejected');
+	}
+	return { rotated: false, rotationGeneration: 1, credentialReferenceId: insertId, exchangeStateCommitted: Boolean(exchangePromotion) };
 }
 
 // Refresh workers must use this instead of storeTokens().  The expected generation is read

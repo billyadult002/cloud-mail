@@ -6,6 +6,7 @@ import {
 	AUTHORIZATION_SESSION_LIVE_SQL,
 	AUTHORIZATION_SESSION_QUALIFIED_EXPIRED_SQL,
 	createConnectionOperation,
+	expiredAuthorizationOperation,
 	persistConnectionEvidence,
 } from '../../src/service/connection-runtime-service.js';
 
@@ -93,6 +94,13 @@ const schema = [
 		updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		UNIQUE(connection_id,operation_type,idempotency_key)
 	)`,
+	`CREATE UNIQUE INDEX uq_nexora_connection_operation_auth_session
+		ON nexora_connection_operations(authorization_session_id)
+		WHERE authorization_session_id IS NOT NULL`,
+	`CREATE TRIGGER trg_nexora_connection_operation_authority_immutable
+		BEFORE UPDATE ON nexora_connection_operations
+		WHEN COALESCE(NEW.authorization_session_id,'')<>COALESCE(OLD.authorization_session_id,'')
+		BEGIN SELECT RAISE(ABORT,'nexora_connection_operation_authority_immutable'); END`,
 	`CREATE TABLE nexora_onboarding_authorization_sessions (
 		id TEXT PRIMARY KEY, onboarding_mission_id TEXT NOT NULL, tenant_id INTEGER NOT NULL,
 		workspace_id INTEGER NOT NULL, provider TEXT NOT NULL, status TEXT NOT NULL,
@@ -185,8 +193,8 @@ describe('Connection evidence uses the production Mission Claim contract', () =>
 		expect((await env.db.prepare(`SELECT COUNT(*) AS count FROM mission_runtime_verifications`).first()).count).toBe(1);
 	});
 
-	it('retires an expired partial operation and creates one newly fenced retry attempt', async () => {
-		await env.db.prepare(`INSERT INTO nexora_connection_operations(id,connection_id,tenant_id,workspace_id,operation_type,idempotency_key,authorization_session_id,expected_authority_generation,expected_connection_generation,expected_credential_generation,lease_owner,lease_expires_at,fencing_token,state,request_digest,authority_tuple_digest,attempt) VALUES('expired-op','connection-prod',?1,?2,'REAUTHORIZE','authorization:session-prod','session-prod',0,4,0,'old-owner',datetime('now','-1 minute'),9,'LEASED',?3,?4,1)`).bind(scope.tenantId, scope.workspaceId, 'a'.repeat(64), 'b'.repeat(64)).run();
+	it('retires an expired sessionless partial operation and creates one newly fenced retry attempt', async () => {
+		await env.db.prepare(`INSERT INTO nexora_connection_operations(id,connection_id,tenant_id,workspace_id,operation_type,idempotency_key,authorization_session_id,expected_authority_generation,expected_connection_generation,expected_credential_generation,lease_owner,lease_expires_at,fencing_token,state,request_digest,authority_tuple_digest,attempt) VALUES('expired-op','connection-prod',?1,?2,'REAUTHORIZE','authorization:session-prod',NULL,0,4,0,'old-owner',datetime('now','-1 minute'),9,'LEASED',?3,?4,1)`).bind(scope.tenantId, scope.workspaceId, 'a'.repeat(64), 'b'.repeat(64)).run();
 		const operation = await createConnectionOperation(
 			{ env: { db: env.db } },
 			scope,
@@ -199,12 +207,39 @@ describe('Connection evidence uses the production Mission Claim contract', () =>
 				lease_expires_at: '2099-01-01 00:00:00',
 				fencing_token: 10,
 			},
-			{ type: 'REAUTHORIZE', idempotencyKey: 'authorization:session-prod', authorizationSessionId: 'session-prod' },
+			{ type: 'REAUTHORIZE', idempotencyKey: 'authorization:session-prod', authorizationSessionId: null },
 		);
-		const retired = await env.db.prepare(`SELECT state,lease_owner,lease_expires_at,fencing_token,error_code FROM nexora_connection_operations WHERE id='expired-op'`).first();
-		const retry = await env.db.prepare(`SELECT idempotency_key,state,lease_owner,fencing_token FROM nexora_connection_operations WHERE id=?1`).bind(operation.id).first();
-		expect(retired).toMatchObject({ state: 'FAILED', lease_owner: null, lease_expires_at: null, fencing_token: null, error_code: 'INCOMPLETE_ATTEMPT_EXPIRED' });
-		expect(retry).toMatchObject({ idempotency_key: 'authorization:session-prod:retry:10', state: 'LEASED', lease_owner: 'new-owner', fencing_token: 10 });
+		const retired = await env.db.prepare(`SELECT state,authorization_session_id,lease_owner,lease_expires_at,fencing_token,error_code FROM nexora_connection_operations WHERE id='expired-op'`).first();
+		const retry = await env.db.prepare(`SELECT idempotency_key,authorization_session_id,state,lease_owner,fencing_token FROM nexora_connection_operations WHERE id=?1`).bind(operation.id).first();
+		expect(retired).toMatchObject({ state: 'FAILED', authorization_session_id: null, lease_owner: null, lease_expires_at: null, fencing_token: null, error_code: 'INCOMPLETE_ATTEMPT_EXPIRED' });
+		expect(retry).toMatchObject({ idempotency_key: 'authorization:session-prod:retry:10', authorization_session_id: null, state: 'LEASED', lease_owner: 'new-owner', fencing_token: 10 });
+	});
+
+	it('retires an expired authorization-bound operation but requires a new session', async () => {
+		await env.db.prepare(`INSERT INTO nexora_connection_operations(id,connection_id,tenant_id,workspace_id,operation_type,idempotency_key,authorization_session_id,expected_authority_generation,expected_connection_generation,expected_credential_generation,lease_owner,lease_expires_at,fencing_token,state,request_digest,authority_tuple_digest,attempt) VALUES('expired-auth-op','connection-prod',?1,?2,'REAUTHORIZE','authorization:bound-session','bound-session',0,4,0,'old-owner',datetime('now','-1 minute'),9,'LEASED',?3,?4,1)`).bind(scope.tenantId, scope.workspaceId, 'a'.repeat(64), 'b'.repeat(64)).run();
+		await expect(createConnectionOperation(
+			{ env: { db: env.db } },
+			scope,
+			{
+				id: 'connection-prod',
+				authority_generation: 0,
+				connection_generation: 4,
+				credential_generation: 0,
+				lease_owner: 'new-owner',
+				lease_expires_at: '2099-01-01 00:00:00',
+				fencing_token: 10,
+			},
+			{ type: 'REAUTHORIZE', idempotencyKey: 'authorization:bound-session', authorizationSessionId: 'bound-session' },
+		)).rejects.toThrow('connection_authorization_operation_retry_requires_new_session');
+		const retired = await env.db.prepare(`SELECT state,authorization_session_id,lease_owner,lease_expires_at,fencing_token,error_code FROM nexora_connection_operations WHERE id='expired-auth-op'`).first();
+		expect(retired).toMatchObject({
+			state: 'FAILED',
+			authorization_session_id: 'bound-session',
+			lease_owner: null,
+			lease_expires_at: null,
+			fencing_token: null,
+			error_code: 'INCOMPLETE_ATTEMPT_EXPIRED',
+		});
 	});
 
 	it('rebinds only a credential-free DISCOVERED Connection whose prior ISO session is expired', async () => {
@@ -251,5 +286,37 @@ describe('Connection evidence uses the production Mission Claim contract', () =>
 			malformed_live: null,
 			bare_past_comparison: 0,
 		});
+	});
+
+	it('reserves the replacement session binding for begin authorization, not recovery evidence', async () => {
+		const connection = {
+			id: 'connection-prod',
+			authority_generation: 0,
+			connection_generation: 4,
+			credential_generation: 0,
+			lease_owner: 'recovery-owner',
+			lease_expires_at: '2099-01-01 00:00:00',
+			fencing_token: 10,
+		};
+		const recoveryDescriptor = expiredAuthorizationOperation('prior-session', 'replacement-session');
+		expect(recoveryDescriptor).toMatchObject({
+			type: 'REAUTHORIZE',
+			idempotencyKey: 'expired-authorization:prior-session:replacement-session',
+			authorizationSessionId: null,
+		});
+		const recovery = await createConnectionOperation({ env: { db: env.db } }, scope, connection, recoveryDescriptor);
+		const begin = await createConnectionOperation(
+			{ env: { db: env.db } },
+			scope,
+			connection,
+			{ type: 'REAUTHORIZE', idempotencyKey: 'authorization:replacement-session', authorizationSessionId: 'replacement-session' },
+		);
+		const rows = await env.db.prepare(
+			`SELECT id,authorization_session_id FROM nexora_connection_operations
+			 WHERE id IN (?1,?2) ORDER BY authorization_session_id`
+		).bind(recovery.id, begin.id).all();
+		expect(rows.results).toHaveLength(2);
+		expect(rows.results.filter((row) => row.authorization_session_id === 'replacement-session')).toHaveLength(1);
+		expect(rows.results.filter((row) => row.authorization_session_id === null)).toHaveLength(1);
 	});
 });

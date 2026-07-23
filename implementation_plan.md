@@ -43,6 +43,7 @@ Maximum five iterations. Each Maker change must be followed by executable Checke
 3. [complete] Normalize all five authorization-session binding/recovery/replay comparisons with millisecond-safe SQLite `julianday(...)`; add production-shaped semantic regressions for same-day ISO expiry, live sessions, expired replacements, and malformed timestamps.
 4. [complete] Focused regression 4/4, full Worker reliability 21 files / 240 tests, syntax, SQLite integrity, Connection/provider coupling, and both audits pass. Independent re-review reports no remaining P0/P1/P2.
 5. [in progress] Deploy the exact reviewed source with bindings preserved and refresh disabled, rotate only the expired authorization session, and resume the single read-only OAuth flow.
+6. [complete] Correct the post-recovery exact-once binding: recovery does not consume the replacement session's unique operation reference before `beginAuthorization`; an expired authorization-bound operation retains immutable lineage, retires, and requires a new session, while only sessionless operations may retry. The real partial unique index plus authority-immutability trigger, focused 6/6, full 242/242, guards/audits, and independent re-review pass with no P0/P1/P2.
 
 ## Stop conditions
 

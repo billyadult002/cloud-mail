@@ -7,6 +7,11 @@ const JOB_TYPE = 'CONNECTION_RUNTIME_EVALUATE';
 const AUTHORIZATION_SESSION_EXPIRED_SQL = "julianday(expires_at)<=julianday('now')";
 const AUTHORIZATION_SESSION_QUALIFIED_EXPIRED_SQL = "julianday(s.expires_at)<=julianday('now')";
 const AUTHORIZATION_SESSION_LIVE_SQL = "julianday(expires_at)>julianday('now')";
+const expiredAuthorizationOperation = (priorAuthorizationSessionId, replacementAuthorizationSessionId) => ({
+	type: 'REAUTHORIZE',
+	idempotencyKey: `expired-authorization:${priorAuthorizationSessionId}:${replacementAuthorizationSessionId}`,
+	authorizationSessionId: null,
+});
 const allowlist = (value) => new Set(String(value || '').split(',').map((item) => item.trim()).filter(Boolean));
 const enabled = (env) => String(env.NEXORA_CONNECTION_RUNTIME_ENABLED || 'false').toLowerCase() === 'true';
 const emergencyDisabled = (env) => String(env.NEXORA_CONNECTION_RUNTIME_EMERGENCY_DISABLED || 'true').toLowerCase() !== 'false';
@@ -182,6 +187,7 @@ export async function createConnectionOperation(c, scope, connection, { type, id
 			const retired = await c.env.db.prepare(`UPDATE nexora_connection_operations SET state='FAILED',lease_owner=NULL,lease_expires_at=NULL,fencing_token=NULL,error_code='INCOMPLETE_ATTEMPT_EXPIRED',updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND connection_id=?2 AND tenant_id=?3 AND workspace_id=?4 AND state IN ('LEASED','PROVIDER_RESPONSE_OBSERVED','EVIDENCE_WRITTEN','RETRY_WAIT') AND (lease_expires_at IS NULL OR lease_expires_at<=CURRENT_TIMESTAMP)`).bind(existing.id, connection.id, scope.tenantId, scope.workspaceId).run();
 			if (!retired.meta?.changes) throw new Error('connection_operation_recovery_conflict');
 		}
+		if (existing.authorization_session_id) throw new Error('connection_authorization_operation_retry_requires_new_session');
 		effectiveIdempotencyKey = `${idempotencyKey}:retry:${connection.fencing_token}`;
 		requestDigest = await requestDigestFor(effectiveIdempotencyKey);
 		existing = await c.env.db.prepare(`SELECT * FROM nexora_connection_operations WHERE connection_id=?1 AND operation_type=?2 AND idempotency_key=?3`).bind(connection.id, type, effectiveIdempotencyKey).first();
@@ -292,11 +298,7 @@ async function recoverExpiredAuthorization(c, input, { replacementAuthorizationS
 		c.env.db.prepare(`UPDATE nexora_onboarding_callback_correlations SET status='expired' WHERE authorization_session_id=?1 AND status='pending'`).bind(prior.authorization_session_id),
 	]);
 	connection = await claim(c, scope, { connectionId: connection.id, expectedGeneration: connection.connection_generation, owner: `connection-expired-authorization:${crypto.randomUUID()}` });
-	const operation = await createConnectionOperation(c, scope, connection, {
-		type: 'REAUTHORIZE',
-		idempotencyKey: `expired-authorization:${prior.authorization_session_id}:${replacementAuthorizationSessionId}`,
-		authorizationSessionId: replacementAuthorizationSessionId,
-	});
+	const operation = await createConnectionOperation(c, scope, connection, expiredAuthorizationOperation(prior.authorization_session_id, replacementAuthorizationSessionId));
 	return verifiedTransition(c, scope, connection, operation, 'REAUTHORIZATION_REQUIRED', {
 		classification: 'AUTHORIZATION_SESSION_EXPIRED',
 		providerNetworkCalled: false,
@@ -375,5 +377,5 @@ async function monitorScheduled({ env }) {
 	return { disabled: false, claimed };
 }
 
-export { JOB_TYPE, AUTHORIZATION_SESSION_EXPIRED_SQL, AUTHORIZATION_SESSION_QUALIFIED_EXPIRED_SQL, AUTHORIZATION_SESSION_LIVE_SQL, assertRollout, discoverConnection, beginAuthorization, findAuthorizationReplay, replayAuthorization, recoverExpiredAuthorization, evaluateConnection, requireReauthorization, bindVerifiedCallback, monitorScheduled, claim };
+export { JOB_TYPE, AUTHORIZATION_SESSION_EXPIRED_SQL, AUTHORIZATION_SESSION_QUALIFIED_EXPIRED_SQL, AUTHORIZATION_SESSION_LIVE_SQL, expiredAuthorizationOperation, assertRollout, discoverConnection, beginAuthorization, findAuthorizationReplay, replayAuthorization, recoverExpiredAuthorization, evaluateConnection, requireReauthorization, bindVerifiedCallback, monitorScheduled, claim };
 export default { JOB_TYPE, assertRollout, discoverConnection, beginAuthorization, findAuthorizationReplay, replayAuthorization, recoverExpiredAuthorization, evaluateConnection, requireReauthorization, bindVerifiedCallback, monitorScheduled, claim };

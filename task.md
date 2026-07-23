@@ -1,50 +1,48 @@
-# NEXORA Checkpoint 4 Task State
+# NEXORA Checkpoint 5 Task State
 
-- Mission: dependency closure and scheduled read-only capability runtime
-- Branch: `codex/nexora-checkpoint4-production`
-- Base: `066ffb2515187b56ceb9fa2e3015c8ff594aefc1`
-- Worktree: `/Users/billtin/Documents/cloudmail/.worktrees/nexora-checkpoint4-production`
-- Iteration cap: 5 Maker–Checker cycles
-- Iterations used: 2
-- Final reviewed source commit: `32eb8fbd74455ba5fdcdf6e64de2392360ffbc99`
-- Deployed Worker version: `8ad4bcf4-41e9-4471-b305-332e1c3a1df6`
-- Final rollback configuration version: `f5e489d0-9e76-4234-80f9-63b7e5951438`
-- Pull request: `https://github.com/billyadult002/cloud-mail/pull/9`
-- Production provider writes: 0
-- Provider network calls from migrated adapter: 0
-- Credential accesses from migrated adapter: 0
+- Mission: Provider-Agnostic Durable Connection Runtime and Gmail linking recovery
+- Branch: `codex/nexora-checkpoint5-connection-runtime`
+- Canonical base: `cafe44eca4359911cfd773f0f262f3b4c37b9720`
+- Worktree: `/Users/billtin/Documents/cloudmail/.worktrees/nexora-checkpoint5-connection-runtime`
+- Checkpoint 4 PR: merged as `cafe44eca4359911cfd773f0f262f3b4c37b9720`
+- Maker-Checker iteration cap: 5
+- Current iteration: 5
+- Current phase: local closure complete; production authorization pending
+- Reviewed implementation commit: `e4747dc80c1265d07a8fbef017257071aa6a3347`
+- Production changes in Checkpoint 5: 0
+- Provider writes: 0
 - Mailbox mutations: 0
-- DNS changes: 0
-- Final state: `CHECKPOINT_4_PRODUCTION_PASS`
+- Secret disclosures: 0
 
-## Dependency and build gates
+## Hard boundaries
 
-- Initial five high advisory nodes reproduced from a clean install.
-- Unused Vite plugin removed; sharp fixed at 0.35.3 through the tested override.
-- Clean `npm audit`: 0 vulnerabilities.
-- Exact-SHA Wrangler dry-run: PASS.
-- Production bundle scan: no sharp, libvips, Miniflare, or Wrangler runtime marker.
+- Root checkout remains frozen and dirty; all implementation occurs in this worktree.
+- Connection Runtime owns connection lifecycle only, not Mission authority, Evidence authority, credentials, or synchronization.
+- Credentials remain opaque outside the short-lived Provider Session boundary.
+- No send, draft, Gmail watch, get_delta, mailbox mutation, or real-time sync claim.
+- No migration or deployment before exact-source local verification and independent review.
 
-## Runtime and verification gates
+## Current gates
 
-- Exactly one scheduled capability: `search_email`.
-- Default-off, emergency-disable, exact tenant/workspace/capability allowlists, rate limit, circuit breaker, lease, fence, authority generation, Evidence, Verification, and verified-only completion: PASS.
-- Focused real-D1 tests: 10/10 PASS.
-- Complete Worker reliability suite: 18 files / 192 tests PASS.
-- Worker unit/syntax: PASS.
-- Provider-coupling guard: PASS.
-- Independent Checker: no remaining P0/P1/P2 in the final remediation or evidence surfaces.
+1. [complete] Quantitative architecture inventory.
+2. [complete] Comail provenance and concepts-only reuse decision.
+3. [complete] ADR-010 through ADR-014 and executable contract.
+4. [complete] Additive D1 persistence and schema-preserving rollback artifact.
+5. [complete] Runtime implementation; migration applies twice; 232/232 Worker reliability tests pass.
+6. [complete] Independent security, migration, and provider-boundary re-review; no remaining P0/P1/P2.
+7. [pending] Reviewed commit, PR, migration, deployment, production acceptance, negative probes, and rollback.
 
-## Production acceptance and rollback
+## Local verification evidence
 
-- One bounded scheduled `search_email` Mission succeeded with correlated authority, Evidence, Verification, and verified Outcome.
-- Production-discovered run-lease completion defect was contained, fixed atomically, regression-tested, independently re-reviewed, and accepted on the remediated exact commit.
-- Negative production verification covered allowlist exclusion, stale authority, malformed request, missing membership, stale lease, incorrect fence, unverified promotion, and emergency-disable behavior.
-- Rollback restored `enabled=false` and `emergency_disabled=true`; a valid probe remained unclaimed and created no Mission.
-- Post-rollback Worker HTTP health: 200.
-- Post-rollback cron: healthy.
-- Production migrations: none pending.
-
-## Scope boundary
-
-This checkpoint proves the Capability-Native scheduled production execution foundation over canonical Gmail-sourced D1 rows. It does not prove live Google Provider API access, OAuth continuity, real-time synchronization, continuous linking, Microsoft live-provider behavior, or provider-write capabilities.
+- Clean `npm ci`: pass.
+- Unit/syntax suite: pass.
+- Cloudflare/Vitest reliability: 20 files, 232 tests, all pass.
+- New Connection contract and Provider Session suites: 39 tests, all pass.
+- Final adversarial focused matrix: 78 tests, all pass; no remaining P0/P1/P2.
+- Provider coupling guard: pass; Connection coupling guard: pass.
+- `npm audit` and production-only audit: zero vulnerabilities.
+- Migration 0081 apply twice: pass; direct HEALTHY, self-asserted Verification, illegal transition, and cross-tenant child probes rejected.
+- Wrangler dry-run bundle: pass after supplying immutable local build identity; no deploy occurred.
+- Migration SHA-256: `3dbc5a0338667c296f9616bf0a5c6a5e70a66bf62446715c242711e18da85c6f`.
+- Dry-run Worker `index.js` SHA-256: `b664de0e8b6ccbdc73323946eae3bcf6273e34c132882502a49ba00d2a62141b`.
+- Changed-file credential-pattern scan: no matches.

@@ -1,5 +1,28 @@
 # NEXORA Checkpoint 5 Task State
 
+## Capability convergence remediation — PR #10 canonical authority
+
+- Mission: Canonical Capability convergence remediation for `search_email`.
+- Implementation authority: this existing PR #10 worktree only.
+- Initial HEAD: `61f04874b661f2c4cd72204c7ed5fc5a7a1af2af`.
+- Canonical base: `cafe44eca4359911cfd773f0f262f3b4c37b9720`.
+- Reference-only commits: `2a8f7c9`, `cae0c23`; neither may be merged or cherry-picked wholesale.
+- Frozen root: preserved; the mandatory `repository_check.log` append is forensic evidence and is excluded from this worktree, staging, and commits.
+- Maker-Checker iteration cap: 5.
+- Current iteration: 2.
+- Current phase: final publication after clean independent re-review.
+- Authorized integrated caller: the existing scheduled read-only `search_email` caller only.
+- Staging OAuth, Provider calls, mailbox operations, deployment, and remote database mutation: prohibited.
+
+### Capability remediation gates
+
+1. [complete] Establish unambiguous PR #10 worktree, branch, base, upstream, remote, and initial HEAD.
+2. [complete] Classify the five-verb reference seam as non-canonical; retain mapping concepts only.
+3. [complete] Harden canonical Authority, Evidence, independent Verification, production construction, adapter validation, replay, and caller completion.
+4. [complete] Run focused and full canonical verification, audits, scans, dry-run bundle, migration checks, and diff checks.
+5. [complete] Obtain an isolated adversarial Checker adjudication and resolve every P0/P1/P2; final verdict CLEAN.
+6. [pending] Commit and push only this worktree's reviewed changes to PR #10.
+
 - Mission: Provider-Agnostic Durable Connection Runtime and Gmail linking recovery
 - Branch: `codex/nexora-checkpoint5-connection-runtime`
 - Canonical base: `cafe44eca4359911cfd773f0f262f3b4c37b9720`

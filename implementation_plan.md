@@ -85,3 +85,18 @@ Maximum five iterations. Each Maker change must be followed by executable Checke
 6. [complete] Independent checker and OAuth security reviewer both report PASS with no remaining P0/P1/P2 after six adversarial rounds.
 7. [complete] Evidence committed and pushed to PR 10 without deployment, production migration, or live OAuth.
 8. [complete] Document the bounded one-session retry proposal and retain a separate explicit human approval gate.
+# NEXORA Capability Convergence Remediation Plan
+
+Authority is limited to `/Users/billtin/Documents/cloudmail/.worktrees/nexora-checkpoint5-connection-runtime`, branch `codex/nexora-checkpoint5-connection-runtime`, PR #10. The dirty root remains frozen. Maximum Maker-Checker iterations: 5.
+
+1. Reuse the accepted Capability-Native ADRs and canonical `search_email` descriptor. Do not import the five-verb contract, its invocation envelope, Google service adapter, best-effort authority-event evidence, or self-declared result states.
+2. Make the canonical Evidence writer own Evidence identity and reject exceptions, zero-row writes, malformed persistence results, and integrity mismatches.
+3. Separate Verification into its own canonical service. It must independently validate durable Evidence, scope, request/result digests, safety flags, canonical source identity, adapter identity, and write exactly one checked Verification row; rejected or failed verification cannot return caller success.
+4. Add an immutable production construction path that supplies the canonical Registry, Authority, Evidence writer, verifier, and Gmail synchronized-D1 adapter. Keep dependency injection available only to explicitly named test construction.
+5. Harden the Gmail adapter so D1 result envelopes, rows, account/actor scope, source identity, opaque message identifiers, cardinality, and safety metadata fail closed when malformed or substituted.
+6. Keep exactly one integrated caller: `scheduled-capability-runtime-service.js`. Require checked state transitions and a durable verified outcome before returning success. Do not migrate any other caller or enable `get_delta`, watch, send, OAuth, or Provider execution.
+7. Extend the provider-coupling guard across every production module in the path; permit provider-specific identifiers only in the adapter and reject direct Provider/token/credential/email-service access, fabricated Evidence, and constructed verified state in caller/invocation layers.
+8. Verify with focused Cloudflare/Vitest tests, the exact full PR #10 Worker suite, syntax and coupling guards, dependency audits, a changed-file secret scan, migration integrity, Wrangler dry-run bundle, and `git diff --check`.
+9. Submit the final diff and executable evidence to one isolated Checker with no write ownership. Resolve every P0/P1/P2 before commit and push.
+
+Human checkpoint: the attached Mission already explicitly authorizes this bounded plan, commit, and PR #10 push. No staging or production authorization is inferred.

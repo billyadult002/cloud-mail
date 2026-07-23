@@ -17,9 +17,54 @@ CREATE TABLE nexora_onboarding_authorization_sessions(
  status TEXT,created_at TEXT,expires_at TEXT,consumed_at TEXT,callback_fingerprint TEXT,
  resume_checkpoint TEXT
 );`);
-const migration = readFileSync(new URL('../migrations/0081_nexora_durable_connection_runtime.sql', import.meta.url), 'utf8');
-db.exec(migration);
-db.exec(migration);
+const migration0081 = readFileSync(new URL('../migrations/0081_nexora_durable_connection_runtime.sql', import.meta.url), 'utf8');
+const migration0082 = readFileSync(new URL('../migrations/0082_nexora_connection_owner_authority.sql', import.meta.url), 'utf8');
+db.exec(migration0081);
+db.exec(migration0081);
+
+db.exec(`INSERT INTO nexora_connections(id,tenant_id,workspace_id,normalized_domain,domain_authority_id,domain_authority_generation,provider,account_id,onboarding_mission_id,state,authority_generation,lease_owner,lease_expires_at,fencing_token) VALUES('rebuild-preserved',7,8,'preserved.example','da-preserved',3,'google',9,'mission-preserved','DISCOVERED',4,'rebuild-owner','2999-01-01 00:00:00',2);
+INSERT INTO mission_runtime_evidence VALUES('rebuild-evidence',7,8,'supported','{"operation_id":"rebuild-operation"}');
+INSERT INTO mission_runtime_verifications VALUES('rebuild-verification','rebuild-evidence','connection-claim:rebuild-operation',7,8,'verified','valid','canonical_connection_policy_v1');
+INSERT INTO nexora_connection_operations(id,connection_id,tenant_id,workspace_id,operation_type,idempotency_key,expected_authority_generation,expected_connection_generation,expected_credential_generation,lease_owner,lease_expires_at,fencing_token,transition_from_state,transition_to_state,state,request_digest,authority_tuple_digest,evidence_id,verification_id,claim_id) VALUES('rebuild-operation','rebuild-preserved',7,8,'REAUTHORIZE','rebuild-preserved',4,1,0,'rebuild-owner','2999-01-01 00:00:00',2,'DISCOVERED','REAUTHORIZATION_REQUIRED','VERIFIED','${'6'.repeat(64)}','${'7'.repeat(64)}','rebuild-evidence','rebuild-verification','connection-claim:rebuild-operation');
+INSERT INTO nexora_connection_events(id,connection_id,operation_id,tenant_id,workspace_id,event_type,from_state,to_state,connection_generation,fencing_token,detail_json) VALUES('rebuild-event','rebuild-preserved','rebuild-operation',7,8,'CONNECTION_REBUILD_PROOF','DISCOVERED','REAUTHORIZATION_REQUIRED',2,2,'{"preserved":true}');`);
+
+const schemaRows = () => db.prepare(`SELECT type,name,sql FROM sqlite_master WHERE tbl_name IN ('nexora_connections','nexora_connection_operations','nexora_connection_events') AND type IN ('index','trigger') AND sql IS NOT NULL ORDER BY type,name`).all();
+const normalizeSchema = (sql) => String(sql).replace(/\bIF NOT EXISTS\b/gi, '').replace(/\s+/g, ' ').trim();
+const schemaBefore0082 = schemaRows();
+db.exec(migration0082);
+const preservedAfterFirstRebuild = {
+	connection: db.prepare(`SELECT * FROM nexora_connections WHERE id='rebuild-preserved'`).get(),
+	operation: db.prepare(`SELECT * FROM nexora_connection_operations WHERE id='rebuild-operation'`).get(),
+	event: db.prepare(`SELECT * FROM nexora_connection_events WHERE id='rebuild-event'`).get(),
+};
+if (preservedAfterFirstRebuild.connection?.onboarding_mission_id !== 'mission-preserved'
+	|| preservedAfterFirstRebuild.connection?.authority_generation !== 4
+	|| preservedAfterFirstRebuild.operation?.evidence_id !== 'rebuild-evidence'
+	|| preservedAfterFirstRebuild.event?.detail_json !== '{"preserved":true}') throw new Error('connection_owner_authority_populated_rebuild_failed');
+if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('connection_owner_authority_foreign_key_rebuild_failed');
+
+const schemaAfter0082 = schemaRows();
+if (JSON.stringify(schemaAfter0082.map(({ type, name }) => ({ type, name }))) !== JSON.stringify(schemaBefore0082.map(({ type, name }) => ({ type, name })))) {
+	throw new Error('connection_owner_authority_schema_object_set_changed');
+}
+const beforeByName = new Map(schemaBefore0082.map((row) => [row.name, normalizeSchema(row.sql)]));
+for (const row of schemaAfter0082) {
+	if (row.name === 'trg_nexora_connection_mission_association_guarded') continue;
+	if (normalizeSchema(row.sql) !== beforeByName.get(row.name)) throw new Error(`connection_owner_authority_schema_drift:${row.name}`);
+}
+const connectionSql = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='nexora_connections'`).get().sql;
+const operationSql = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='nexora_connection_operations'`).get().sql;
+const missionTriggerSql = db.prepare(`SELECT sql FROM sqlite_master WHERE type='trigger' AND name='trg_nexora_connection_mission_association_guarded'`).get().sql;
+if (!/authority_generation\s*>=\s*0/.test(connectionSql)
+	|| !/expected_authority_generation\s*>=\s*0/.test(operationSql)
+	|| !/OLD\.state='REAUTHORIZATION_REQUIRED'/.test(missionTriggerSql)
+	|| !/NEW\.state='AUTHORIZATION_PENDING'/.test(missionTriggerSql)) throw new Error('connection_owner_authority_schema_contract_missing');
+
+db.exec(migration0082);
+if (!db.prepare(`SELECT 1 AS ok FROM nexora_connections WHERE id='rebuild-preserved'`).get()?.ok
+	|| !db.prepare(`SELECT 1 AS ok FROM nexora_connection_operations WHERE id='rebuild-operation'`).get()?.ok
+	|| !db.prepare(`SELECT 1 AS ok FROM nexora_connection_events WHERE id='rebuild-event'`).get()?.ok) throw new Error('connection_owner_authority_repeated_rebuild_failed');
+if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('connection_owner_authority_foreign_key_rebuild_failed');
 
 function mustReject(name, action, expected) {
 	try { action(); throw new Error(`${name}:accepted`); }
@@ -27,6 +72,16 @@ function mustReject(name, action, expected) {
 }
 
 mustReject('initial healthy', () => db.exec(`INSERT INTO nexora_connections(id,tenant_id,workspace_id,normalized_domain,domain_authority_id,domain_authority_generation,provider,account_id,state,authority_generation) VALUES('bad',1,1,'example.com','da',1,'google',1,'HEALTHY',1)`), 'initial_state_must_be_discovered');
+
+db.exec(`INSERT INTO nexora_connections(id,tenant_id,workspace_id,normalized_domain,domain_authority_id,domain_authority_generation,provider,account_id,state,authority_generation,lease_owner,lease_expires_at,fencing_token) VALUES('connection-owner',1,1,'example.com','da-owner',1,'google',1,'DISCOVERED',0,'owner-zero','2999-01-01 00:00:00',1);
+INSERT INTO mission_runtime_evidence VALUES('evidence-owner',1,1,'supported','{"operation_id":"operation-owner"}');
+INSERT INTO mission_runtime_verifications VALUES('verification-owner','evidence-owner','connection-claim:operation-owner',1,1,'verified','valid','canonical_connection_policy_v1');
+INSERT INTO nexora_connection_operations(id,connection_id,tenant_id,workspace_id,operation_type,idempotency_key,authorization_session_id,expected_authority_generation,expected_connection_generation,expected_credential_generation,lease_owner,lease_expires_at,fencing_token,transition_from_state,transition_to_state,state,request_digest,authority_tuple_digest,evidence_id,verification_id,claim_id) VALUES('operation-owner','connection-owner',1,1,'REAUTHORIZE','owner-zero','session-owner',0,1,0,'owner-zero','2999-01-01 00:00:00',1,'DISCOVERED','AUTHORIZATION_PENDING','VERIFIED','${'4'.repeat(64)}','${'5'.repeat(64)}','evidence-owner','verification-owner','connection-claim:operation-owner');
+INSERT INTO nexora_connection_events(id,connection_id,operation_id,tenant_id,workspace_id,event_type,from_state,to_state,connection_generation,fencing_token) VALUES('event-owner','connection-owner','operation-owner',1,1,'CONNECTION_AUTHORIZATION_SESSION_BOUND','DISCOVERED','AUTHORIZATION_PENDING',2,1);
+UPDATE nexora_connections SET state='AUTHORIZATION_PENDING',onboarding_mission_id='mission-owner',connection_generation=2,last_transition_event_id='event-owner' WHERE id='connection-owner';`);
+const ownerConnection = db.prepare(`SELECT state,authority_generation,onboarding_mission_id FROM nexora_connections WHERE id='connection-owner'`).get();
+if (ownerConnection.state !== 'AUTHORIZATION_PENDING' || ownerConnection.authority_generation !== 0 || ownerConnection.onboarding_mission_id !== 'mission-owner') throw new Error('canonical_owner_generation_zero_transition_failed');
+mustReject('unfenced owner mission rebind', () => db.exec(`UPDATE nexora_connections SET onboarding_mission_id='mission-owner-other' WHERE id='connection-owner'`), 'mission_association_invalid');
 
 db.exec(`INSERT INTO nexora_connections(id,tenant_id,workspace_id,normalized_domain,domain_authority_id,domain_authority_generation,provider,account_id,state,authority_generation,lease_owner,lease_expires_at,fencing_token) VALUES('connection-untrusted',1,2,'example.com','da-2',1,'google',4,'DISCOVERED',4,'owner-u','2999-01-01 00:00:00',6);
 INSERT INTO mission_runtime_evidence VALUES('evidence-untrusted',1,2,'supported','{"operation_id":"operation-untrusted"}');

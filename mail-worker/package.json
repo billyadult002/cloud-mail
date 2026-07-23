@@ -8,6 +8,7 @@
 		"test": "npm run test:unit",
 		"test:unit": "node scripts/send-contract-check.mjs && node scripts/classification-contract-check.mjs && node scripts/classification-authority-provenance-contract-check.mjs && node scripts/classification-atomic-writer-sqlite.test.mjs && node scripts/domain-authority-bootstrap-contract-check.mjs && node scripts/evidence-ledger-contract-check.mjs && node scripts/evidence-ledger-sqlite-integrity-check.mjs && npm run check && find src -name '*.mjs' -print0 | xargs -0 -n1 node --check",
 		"test:rc": "vitest run scripts/reliability-tests",
+		"test:provider-coupling": "node scripts/provider-coupling-guard.mjs",
 		"deploy": "wrangler deploy",
 		"start": "wrangler dev"
 	},
@@ -18,7 +19,6 @@
 	},
 	"dependencies": {
 		"@aws-sdk/client-s3": "^3.882.0",
-		"@cloudflare/vite-plugin": "1.44.0",
 		"dayjs": "^1.11.13",
 		"drizzle-orm": "0.45.2",
 		"hono": "4.12.29",
@@ -28,5 +28,8 @@
 		"resend": "^6.4.1",
 		"ua-parser-js": "^2.0.3",
 		"uuid": "^11.1.0"
+	},
+	"overrides": {
+		"sharp": "0.35.3"
 	}
 }

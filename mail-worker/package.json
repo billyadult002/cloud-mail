@@ -12,6 +12,7 @@
 		"test:connection-coupling": "node scripts/connection-runtime-coupling-guard.mjs",
 		"test:oauth-artifacts": "node scripts/oauth-sensitive-artifact-guard.mjs",
 		"test:oauth-sqlite": "node scripts/oauth-remediation-sqlite-integrity-check.mjs",
+		"test:staging-schema-remediation": "node scripts/staging-email-unread-remediation-sqlite.test.mjs",
 		"deploy": "wrangler deploy",
 		"start": "wrangler dev"
 	},

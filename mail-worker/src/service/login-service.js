@@ -20,6 +20,7 @@ import { toUtc } from '../utils/date-uitil';
 import { t } from '../i18n/i18n.js';
 import verifyRecordService from './verify-record-service';
 import { removeExactAuthToken } from './auth-token-set-service.mjs';
+import secureStagingBootstrapService from './nexora-secure-staging-bootstrap-service';
 
 const loginService = {
 
@@ -69,10 +70,12 @@ const loginService = {
 		let type = null;
 		let regKeyId = 0
 
+		let firstStagingAuthority = false
 		if (regKey === settingConst.regKey.OPEN) {
 			const result = await this.handleOpenRegKey(c, regKey, code)
 			type = result?.type
 			regKeyId = result?.regKeyId
+			firstStagingAuthority = result?.firstStagingAuthority === true
 		}
 
 		if (regKey === settingConst.regKey.OPTIONAL) {
@@ -131,7 +134,9 @@ const loginService = {
 
 		const userId = await userService.insert(c, { email, regKeyId,password: hash, salt, type: type || defType });
 
-		await accountService.insert(c, { userId: userId, email, name: emailUtils.getName(email) });
+		if (!firstStagingAuthority) {
+			await accountService.insert(c, { userId: userId, email, name: emailUtils.getName(email) });
+		}
 
 		await userService.updateUserInfo(c, userId, true);
 
@@ -156,6 +161,13 @@ const loginService = {
 
 		if (!code) {
 			throw new BizError(t('emptyRegKey'));
+		}
+
+		if (await secureStagingBootstrapService.authorizeFirstAuthority(c, code)) {
+			return { type: null, regKeyId: 0, firstStagingAuthority: true };
+		}
+		if (await secureStagingBootstrapService.requiresFirstAuthority(c)) {
+			throw new BizError(t('notExistRegKey'));
 		}
 
 		const regKeyRow = await regKeyService.selectByCode(c, code);

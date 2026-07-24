@@ -100,3 +100,68 @@ Authority is limited to `/Users/billtin/Documents/cloudmail/.worktrees/nexora-ch
 9. Submit the final diff and executable evidence to one isolated Checker with no write ownership. Resolve every P0/P1/P2 before commit and push.
 
 Human checkpoint: the attached Mission already explicitly authorizes this bounded plan, commit, and PR #10 push. No staging or production authorization is inferred.
+# NEXORA Secure Staging Authority Bootstrap — Implementation Plan
+
+## Decision
+
+Add a narrow staging-only bootstrap capability that creates only the missing canonical configuration baseline. It will not create users, workspaces, accounts, provider grants, connections, credentials, or OAuth sessions.
+
+## Planned changes
+
+1. Add staging-only migration `staging-migrations/0085_nexora_secure_staging_bootstrap.sql`, applied only with an explicit staging migration directory.
+   - Create the final canonical `setting` table shape when absent.
+   - Add a guarded bootstrap-operation ledger for single-winner, replay-safe state.
+   - Add constraints/triggers needed to prevent deletion or invalid terminal-state rewrites.
+   - Do not seed authority records in the migration.
+
+2. Add a dedicated secure bootstrap service.
+   - Require staging environment plus an explicit enable flag.
+   - Authenticate with a dedicated `NEXORA_STAGING_BOOTSTRAP_SECRET` binding.
+   - Accept the credential only in a `POST` body; return `no-store`/`no-referrer` responses.
+   - Compare credential digests without echoing or logging input.
+   - Enforce zero-user, zero-account, zero-workspace, zero-setting, and uncompleted-operation predicates in the committing D1 batch.
+   - Insert the single canonical setting row and database receipt exactly once.
+   - Refresh settings into KV after D1 commit.
+   - If KV refresh fails, retain a redacted recoverable `DB_COMMITTED` state; an authenticated retry may finish KV and mark `COMPLETE` without reinserting the setting.
+   - Deny all mutation after `COMPLETE`.
+
+3. Harden initialization routing.
+   - In staging, deny legacy `GET /init/:secret` before reading or comparing its parameter.
+   - Add a minimal staging-only secure form and `POST /init/secure` handler.
+   - Preserve legacy behavior outside staging to avoid unrelated compatibility changes.
+
+4. Add focused verification.
+   - Missing/wrong secret and production denial.
+   - Legacy URL-secret denial in staging.
+   - Exact precondition failures with zero writes.
+   - One successful bootstrap with exactly one setting row.
+   - Concurrent invocation with one winner.
+   - Replay denial.
+   - KV failure and authenticated recovery.
+   - No credential exposure in response, logs, receipts, or durable rows.
+   - Foreign-key and ledger guard integrity.
+
+5. Add an ADR documenting:
+   - why URL-secret initialization is prohibited;
+   - the one-shot staging credential boundary;
+   - D1/KV commit and recovery semantics;
+   - post-success disablement and secret deletion;
+   - why canonical authority must still be created via normal UI flows.
+
+## Verification and release sequence
+
+1. Maker implements the smallest patch in the isolated worktree.
+2. Checker runs focused Cloudflare/Vitest tests, applicable regression tests, lint/static checks, migration checks, and reviews the complete diff adversarially.
+3. Iterate at most five times until all gates pass or report the exact blocker.
+4. Apply migration `0085` to the exact staging D1 through the staging binding's `migrations_dir = "staging-migrations"` and verify schema with SELECT-only evidence; it is excluded from the shared production migration chain.
+5. Deploy the reviewed exact source to staging only, preserving existing variables and recording the observed Worker version.
+6. Human locally creates and enters the dedicated bootstrap secret into the masked Cloudflare binding and secure form; Codex does not read or transcribe it.
+7. Verify one `READY_FOR_FIRST_AUTHORITY` bootstrap receipt, one setting row, KV readiness, zero authority rows, and zero OAuth sessions.
+8. Human uses the same locally held secret as the first normal registration code; verify the exact single user/account checkpoint.
+9. Because no existing workspace-create API exists, use the credentialed completion form to atomically create the sole canonical workspace/OWNER membership and prove the relational user→account→membership→workspace tuple.
+10. Only after `COMPLETE`, disable the bootstrap and remove the dedicated secret, then prove replay denial.
+11. Independently verify the canonical authority tuple before starting one Google OAuth read acceptance.
+
+## Human checkpoint
+
+Implementation, migration, deployment, and secret-entry steps remain paused until this plan is explicitly approved.

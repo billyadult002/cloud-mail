@@ -130,3 +130,37 @@
 - Final local verification passes: focused security/orchestrator 48/48; full Worker release 22 files / 267 tests; unit/syntax checks; production-migration SQLite repeatability and runtime-mode compatibility; OAuth artifact, Provider coupling, and Connection coupling guards; clean-install evidence; dependency audit with zero vulnerabilities; changed-diff sensitive credential scan; and exact-source production dry-run bundle at 2430.93 KiB / gzip 520.12 KiB for source commit `bf416af9850c45a5d756d93319aaa9f302078d78`.
 - Independent Checker and OAuth security reviewer both report PASS with no remaining P0/P1/P2 after the sixth review round.
 - Pre-production remediation gates are complete. Production remains stopped: migration 0084 was not applied, no Worker was deployed, no OAuth session/retry/provider call was created, and platform-log cleanliness is not claimed. Any exact one-session retry still requires a separate explicit human approval.
+# NEXORA Secure Staging Authority Bootstrap — Modification Authorization
+
+## Authorization and boundary
+
+- Human authorization received on 2026-07-23: modify the narrowly scoped staging authorization/bootstrap implementation.
+- Target: establish the missing canonical legacy `setting` baseline securely so the existing UI can create the first real user/workspace/provider authority through normal flows.
+- Staging only. Production, existing authority semantics, OAuth client inventory, and unrelated runtime behavior remain frozen.
+- Never place a credential in a URL, repository, chat, logs, screenshots, receipts, or committed configuration.
+
+## Verified starting state
+
+- Staging D1 contains the canonical user/account/workspace/role/permission tables, with zero users, accounts, workspaces, connections, and OAuth sessions.
+- The `setting` table is absent; the UI consequently reports `Database not initialized`.
+- The only existing initializer is `GET /init/:secret`, which compares a URL path value with `jwt_secret`. It is prohibited for this mission and has not been invoked.
+- Checkpoint status remains:
+  `STAGING_OAUTH_BLOCKED — SECURE_DATABASE_BOOTSTRAP_REQUIRED`
+
+## Acceptance gates
+
+- A staging-only, explicitly enabled, one-shot `POST` bootstrap path uses a dedicated secret binding and never a URL credential.
+- The legacy URL-secret initializer is denied in staging before credential access or comparison.
+- Exact zero-authority and uninitialized predicates are enforced at commit time.
+- Concurrent calls yield exactly one database commit; replay cannot mutate state.
+- The final `setting` schema is canonical and seeded exactly once.
+- D1 commit followed by KV refresh is recoverable without repeating the database mutation.
+- Missing/wrong credentials, production invocation, replay, concurrency, partial KV failure, and evidence-redaction tests pass.
+- The bootstrap is disabled and its dedicated staging secret removed after verified completion.
+- The human user is created only through normal registration. The credentialed completion ceremony may create the sole canonical workspace/OWNER membership bound to that exact user; it never creates provider connections, credentials, grants, or OAuth sessions.
+
+## Loop stop conditions
+
+- Maximum five Maker–Checker iterations.
+- No staging migration or Worker deployment before focused tests, regression tests, lint/static checks, diff review, and adversarial review pass.
+- No OAuth session creation until the canonical authority tuple has been created through the normal UI and independently verified.

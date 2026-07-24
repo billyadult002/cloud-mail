@@ -64,10 +64,14 @@ name = "cloud-mail-staging"
 [env.staging.observability]
 enabled = false
 
+[env.staging.version_metadata]
+binding = "CF_VERSION_METADATA"
+
 [[env.staging.d1_databases]]
 binding = "db"
 database_name = "cloud-mail-staging"
 database_id = "acf160ae-4efd-48d0-9d1b-7500f4cd0f41"
+migrations_dir = "staging-migrations"
 
 [[env.staging.kv_namespaces]]
 binding = "kv"
@@ -100,3 +104,4 @@ CLOUDMAIL_STAGING_SMOKE_SAFE_SKIP_AUTHORIZED = "true"
 CLOUDMAIL_STAGING_OAUTH_SAFE_SKIP_AUTHORIZED = "true"
 CLOUDMAIL_STAGING_ROLLBACK_REF = "cloud-mail-staging worker rollback requires separate approval"
 CLOUDMAIL_STAGING_NAMESPACE_SEPARATION_EVIDENCE_REF = "wrangler-env-staging-cloud-mail-staging-bindings"
+NEXORA_STAGING_SECURE_BOOTSTRAP_ENABLED = "false"

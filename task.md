@@ -238,3 +238,40 @@ No OAuth session, Google consent, token exchange, Provider call, mailbox read, s
 - Google Console read-only inspection currently blocks exact Web-client provenance: project `nexora-503322` is visible to one authenticated account but lists only an iOS client, while direct inspection of the expected Web client requires additional project access under the other authenticated account.
 - No migration, Secret, deployment, OAuth session, provider call, or mailbox operation has been performed.
 - Fifth independent Checker review: PASS with no remaining P0/P1/P2 in the implementation diff.
+
+---
+
+# NEXORA Google Authority Boundary Investigation and OAuth Provenance Resolution
+
+## Mission state — 2026-07-24
+
+- Repository check: PASS.
+- Current phase: read-only provenance closure.
+- Isolated worktree: `/Users/billtin/Documents/cloudmail/.worktrees/nexora-checkpoint5-connection-runtime`.
+- Branch/commit: `codex/nexora-staging-ucs-trigger-remediation` at `2038fdd8f84f4c1e467c4aa1e64709fc8c34e70b`.
+- External mutation status: none in this investigation; no Google, OAuth, Gmail, Provider, D1 write, Secret mutation, staging deployment, or production mutation was performed.
+
+## Evidence inventory
+
+- Google Console read-only evidence under authenticated project authority now shows project `nexora-503322` and a single Web application OAuth client: `151318451585-6lfu68126phbtudkg773eu0bmtv1t549.apps.googleusercontent.com`.
+- The same Google Console read-only evidence shows the exact staging redirect registered on that Web client: `https://cloud-mail-staging.fastonegroup.workers.dev/v3/onboarding/providers/google/callback`.
+- The Google Console usage signal shows the Web client was last used on 2026-07-23.
+- Cloudflare Worker secret inventory confirms the canonical staging bindings exist and are `secret_text`: `NEXORA_GOOGLE_OAUTH_CLIENT_ID`, `NEXORA_GOOGLE_OAUTH_CLIENT_SECRET`, and `NEXORA_GOOGLE_OAUTH_REDIRECT_URI`. No secret value was read.
+- Staging Worker latest observed version remains `83c0b7a8-cc21-4324-91ff-b4640ca9bd39`; commit `2038fdd8f84f4c1e467c4aa1e64709fc8c34e70b` is not yet deployed.
+- Staging D1 migration list still has pending `0086_nexora_staging_authority_tuple.sql`; the authority tuple tables are not yet present remotely.
+- Staging D1 SELECT-only checks show all first-authority, OAuth, callback, exchange, Provider credential, and Provider connection rows remain zero; the Cloudflare D1 responses reported `rows_written=0` and `changed_db=false`.
+
+## Correlation findings
+
+- Repository configuration consumes the canonical Google OAuth binding names only; it does not hardcode OAuth client IDs, redirect URIs, or client secrets.
+- The reviewed `oauthProvenance()` diagnostic in commit `2038fdd8f84f4c1e467c4aa1e64709fc8c34e70b` can hash the live Worker client ID and redirect URI inside the Worker boundary and report only fingerprints plus redirect origin/path.
+- The current live staging Worker cannot yet execute that diagnostic because the reviewed commit is not deployed and the verifier flag/secret are not active.
+- Therefore the remaining proof is not a Google-project permission blocker. It is the normal next-stage redacted runtime-fingerprint correlation after staging deployment.
+
+## Authority-boundary determination
+
+`VERIFIED_PROVENANCE_READY`
+
+Google-side OAuth Client provenance is established: project visibility, Web-client type, exact client ID, exact staging redirect registration, and usage signal are available under authenticated Google authority. Cloudflare-side binding existence and type are established without disclosing values. Exact live binding equality remains intentionally deferred to the already-reviewed redacted Worker diagnostic because Worker secrets are opaque by design and must not be read.
+
+No further Google authority expansion is required before the canonical staging deployment/provenance-hash step.

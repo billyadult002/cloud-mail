@@ -303,3 +303,11 @@ Implementation, migration, DNS, Cloudflare configuration, staging deployment, an
 - Local stop conditions are green: focused authority plus scheduled runtime 36/36, RC 24/302, unit/syntax, coupling guards, OAuth artifact guard, dependency audit, migration repeatability, and diff check.
 - Fifth independent Checker review passes with no remaining P0/P1/P2 in the implementation diff.
 - External mutation remains gated on final independent Checker approval and exact Google Web-client provenance. Current read-only Console evidence does not establish the expected Web client under the available project view; therefore migration/deploy/tuple creation remains intentionally unstarted.
+
+## Google authority boundary closure — 2026-07-24
+
+- Google Console read-only access now establishes project `nexora-503322`, Web application OAuth client `151318451585-6lfu68126phbtudkg773eu0bmtv1t549.apps.googleusercontent.com`, and exact registered staging redirect `https://cloud-mail-staging.fastonegroup.workers.dev/v3/onboarding/providers/google/callback`.
+- Cloudflare read-only inventory establishes the canonical OAuth binding names and `secret_text` type without secret disclosure.
+- Repository and Worker configuration establish that the OAuth launch/token path consumes only those canonical binding names and that the reviewed provenance route reports redacted fingerprints only.
+- Live staging still runs version `83c0b7a8-cc21-4324-91ff-b4640ca9bd39`, so the next non-Google proof step is to deploy reviewed commit `2038fdd8f84f4c1e467c4aa1e64709fc8c34e70b`, enable the verifier path under a temporary verifier secret, call `/init/authority-tuple/oauth-provenance`, and compare redacted fingerprints/origin/path to the Google Console evidence.
+- No Google expansion remains required. The active verdict for this checkpoint is `VERIFIED_PROVENANCE_READY`.

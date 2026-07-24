@@ -164,3 +164,77 @@
 - Maximum five Maker–Checker iterations.
 - No staging migration or Worker deployment before focused tests, regression tests, lint/static checks, diff review, and adversarial review pass.
 - No OAuth session creation until the canonical authority tuple has been created through the normal UI and independently verified.
+
+---
+
+# NEXORA Brokered Delegated Authority and Zero-Touch Credential Convergence
+
+## Mission state
+
+- Repository check: PASS.
+- Source boundary: isolated worktree only; dirty root remains untouched.
+- Current phase: discovery and implementation-plan checkpoint.
+- Iteration cap after approval: five Maker/Checker loops.
+- External mutation status: none for this mission.
+
+## Discovery findings
+
+- The canonical OAuth token store already encrypts refresh and access tokens with AES-GCM and tuple/generation-bound AAD. Runtime consumers receive an opaque `credentialReferenceId`.
+- The canonical Connection Runtime already enforces tenant/workspace scope, connection generation, lease ownership, and fencing for health and refresh.
+- The current Provider Session is incomplete: production issuance is health-only and lacks a complete explicit expiry, capability, account/domain, and Mission-bound contract.
+- Capability Invocation and Verified Action Boundary are separate from credential delivery, but canonical `search_email` reads synchronized D1 data and does not acquire a brokered Provider Session.
+- Scheduled token refresh has leased work and a generation-fenced commit. Autonomous sync recovery, Watch/Subscription renewal, and automatic Mission continuation are not proven end to end.
+- iOS stores the application auth token through Keychain, but has no AuthenticationServices, Passkey assertion, Password AutoFill Associated Domains, or trusted-device broker implementation.
+- Worker Secrets protect platform secrets, but no least-privilege, expiring, environment-scoped Machine Service Identity contract is implemented.
+- Proton Bridge, device-local decryption, and content-inaccessible providers need explicit unavailable/device-bound capability modeling and metadata-only evidence.
+- Xcode Beta sees `Bill’s iPhone 17` as `available (paired)` and physical. No device acceptance result is claimed.
+
+## Stop conditions
+
+- Never read, log, persist, or replay any raw credential or authentication artifact.
+- Fail closed on stale, expired, revoked, or cross-scope authority and credential-bearing Evidence.
+- No staging deployment until the plan is approved and automated verification is green.
+- No final PASS without staged lifecycle evidence, independent review, and physical-device acceptance.
+
+## Current truthful status
+
+`ZERO_TOUCH_BLOCKED — BROKERED_PROVIDER_SESSION_AND_TRUSTED_DEVICE_BOUNDARIES_INCOMPLETE`
+
+---
+
+# NEXORA Autonomous Staging Authority Tuple and Google OAuth Client Provenance
+
+## Mission state
+
+- Repository check: PASS.
+- Current phase: read-only discovery and mandatory implementation-plan checkpoint.
+- Root checkout: frozen; all proposed changes remain in the isolated worktree.
+- External mutations for this mission: none.
+- Staging Worker observed: `83c0b7a8-cc21-4324-91ff-b4640ca9bd39`.
+- Staging D1 observed: `acf160ae-4efd-48d0-9d1b-7500f4cd0f41`.
+- Remote D1 proof: User, Tenant, Workspace, Membership, Domain Authority, Account, Delegation, OAuth Session, Credential Reference, Provider Connection, and Connection counts are all zero; `setting=1`; bootstrap state is `READY_FOR_FIRST_AUTHORITY`; foreign-key check is empty; all reads reported `rows_written=0`.
+- Secret-name-only inventory confirms the Google Client ID, Client Secret, and redirect bindings exist. No value was accessed.
+
+## Canonical-model findings
+
+- The retired secure bootstrap is disabled and its Secret is absent. Reusing it would violate this Mission.
+- There is no currently callable canonical path that can create the first User/Tenant/Workspace tuple without that retired Secret.
+- `workspace_account_delegations` supports lifecycle, consent, generation, audit, and cross-tenant checks, but its service allowlist cannot express `mail_read`.
+- Domain Authority correctly requires server-derived ownership evidence; it cannot be inferred or self-asserted.
+- Account creation exists, but must be fenced to the exact first User/Workspace/verified Domain and must not create credentials or Provider state.
+
+## Current truthful status
+
+`STAGING_AUTHORITY_BLOCKED — CANONICAL_MODEL_INCOMPLETE`
+
+No OAuth session, Google consent, token exchange, Provider call, mailbox read, synchronization, watch, send, draft, refresh, Credential Reference, Provider Connection, or production mutation has occurred.
+
+## Approved implementation checkpoint — 2026-07-24
+
+- Maker implementation is complete in the isolated worktree; staging and production remain unchanged.
+- Focused authority-tuple plus scheduled runtime: 36/36 pass. Final full RC: 24 files / 302 tests pass.
+- Unit/syntax, Provider coupling, Connection coupling, OAuth artifact guard, dependency audit, migration repeatability, diff check, and staging dry-run bundle passed in the Checker loop.
+- Cloudflare read-only inventory confirms the existing Google Client ID, Client Secret, and redirect URI bindings are `secret_text`; no binding value was read.
+- Google Console read-only inspection currently blocks exact Web-client provenance: project `nexora-503322` is visible to one authenticated account but lists only an iOS client, while direct inspection of the expected Web client requires additional project access under the other authenticated account.
+- No migration, Secret, deployment, OAuth session, provider call, or mailbox operation has been performed.
+- Fifth independent Checker review: PASS with no remaining P0/P1/P2 in the implementation diff.

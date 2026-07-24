@@ -165,3 +165,141 @@ Add a narrow staging-only bootstrap capability that creates only the missing can
 ## Human checkpoint
 
 Implementation, migration, deployment, and secret-entry steps remain paused until this plan is explicitly approved.
+
+---
+
+# Implementation Plan — Brokered Delegated Authority Convergence
+
+## Canonical decision
+
+Amend the existing credential and Provider Session ADRs with one canonical Brokered Delegated Authority ADR. Reuse Connection Runtime, Credential Reference, Provider Session, Capability Invocation, Verified Action Boundary, Provider Adapter, Evidence Ledger, and Verification. Do not create a second runtime, registry, evidence system, or authority owner.
+
+## Checkpoint 1 — contracts and classification
+
+1. Add the canonical ADR and classify human, device, provider, platform-secret, machine, Bridge, and workload credentials.
+2. Define policy decision versus credential delivery, trusted-device broker, OAuth delegation, managed secret, machine identity, Proton/Bridge, human escalation, revocation, recovery, and metadata-only evidence.
+3. Add a provider capability constraint matrix. Unsupported capabilities fail closed as `UNAVAILABLE`, `HUMAN_PRESENCE_REQUIRED`, or `TRUSTED_DEVICE_UNAVAILABLE`.
+
+## Checkpoint 2 — brokered Provider Session
+
+1. Extend the existing Provider Session service as the only credential-delivery boundary.
+2. Require canonical authority and exact tenant, workspace, domain, account, Mission/run/step/action, capability, connection generation, operation lease/fence, and credential/provider generations.
+3. Issue a non-serializable single-capability session with explicit issuance, expiry, digest identity, maximum lifetime, call limit, close, and revocation checks.
+4. Deliver credentials only inside adapter closures. Mission, request, evidence, verification, and logs receive references/digests only.
+5. Preserve AES-GCM storage and generation-fenced refresh; add exposure, cross-scope, replay, expiry, and revocation tests.
+
+## Checkpoint 3 — trusted device broker
+
+1. Add a narrow iOS AuthenticationServices broker for Passkey and Password AutoFill ceremonies; private material remains Apple-managed.
+2. Add Associated Domains only for the exact staging relying-party domain and verify its server association artifact.
+3. Store only application session/reference material in Keychain with an explicit accessibility policy.
+4. Add WebAuthn challenge/assertion verification with RP ID, origin, challenge, credential, sign counter, actor/workspace binding, expiry, and replay protection. Persist only public credential material and redacted evidence.
+5. Return a resumable human-presence checkpoint and automatically continue the exact Mission after assertion.
+
+## Checkpoint 4 — autonomous lifecycle
+
+1. Converge scheduled refresh, Connection health/recovery, sync recovery, and Mission continuation under the same Connection and Provider Session fences.
+2. Add Watch/Subscription lifecycle as typed provider state. Implement only where provider contract and granted scopes support it; otherwise expose explicit unavailable/permission-expansion state.
+3. Add a least-privilege staging Machine Service Identity boundary for scheduled/internal operations. Keep secret values only in Cloudflare Secrets/Secrets Store with environment scope, rotation, expiry, revocation, and audit metadata.
+4. Prove refresh, failure classification, backoff, lease recovery, sync restart, renewal, continuation, and revocation without human participation.
+
+## Checkpoint 5 — Proton and constrained providers
+
+1. Model Proton Bridge as device/Bridge-bound and content-inaccessible without its trusted runtime.
+2. Never upload Proton passwords, Bridge credentials, keys, or decrypted content.
+3. Emit metadata-only evidence and fail safely when the trusted device or Bridge is unavailable.
+
+## Verification and release
+
+1. Maker adds focused tests before each bounded change.
+2. Checker runs Cloudflare/Vitest, iOS tests, schema/migration proofs, syntax/lint, exposure scans, and dependency/security audits.
+3. An independent adversarial reviewer reports every P0/P1/P2; findings loop back to Maker, up to five iterations.
+4. Deploy only the reviewed exact commit to staging and record migration IDs, Worker version, bindings, secret names only, and SELECT-only redacted state.
+5. Run staged lifecycle tests with synthetic metadata and an existing authorized connection only when canonical authority exists. Never imply consent or expand scope.
+6. Use Xcode Beta to build, install, launch, and run the acceptance harness on the paired physical iPhone. User presence remains local.
+
+## Rollback
+
+- Disable new session issuance server-authoritatively.
+- Revoke new Machine Identity and Provider Sessions while preserving append-only Evidence.
+- Roll back Worker to the prior observed version.
+- Remove only newly introduced staging secrets/bindings after confirming no active dependency.
+
+## Approval boundary
+
+Code, migration, Cloudflare, Google, and device mutations remain paused pending explicit approval. Expected human actions are limited to irreducible local Passkey/biometric/Provider consent or permission expansion. Final PASS remains blocked until every checkpoint has direct evidence.
+
+---
+
+# Implementation Plan — Autonomous Staging Authority Tuple and OAuth Client Provenance
+
+## Narrow canonical amendment
+
+The existing models cannot complete this Mission unchanged. Add one staging-only, one-shot Authority Tuple ceremony and amend the existing account-delegation scope allowlist to represent `mail_read`. Reuse all existing authority, audit, Evidence, and Verification tables and services. Do not reactivate or reuse the retired secure bootstrap.
+
+## 1. Authority Tuple ceremony
+
+1. Add a staging-only service guarded by environment identity, exact bootstrap state `READY_FOR_FIRST_AUTHORITY`, exact zero-count predicates, version/generation fences, and a dedicated short-lived authority-operation credential.
+2. Generate that credential with OS entropy, keep it in process memory, write it to a new Cloudflare staging Secret through stdin, invoke the one-shot POST once, then delete the Secret and disable the ceremony.
+3. Use one immutable operation with two fenced, individually atomic phases. Phase A creates the identity/Workspace authority required to issue a canonical DNS challenge. After DNS verification, Phase B creates:
+   - one synthetic non-sensitive User and legacy account identity;
+   - one Tenant with a deterministic tenant key;
+   - one Workspace;
+   - one OWNER Membership plus canonical Membership Authority;
+   - one verified Domain binding derived from canonical DNS ownership evidence;
+   - one Google Gmail Account onboarding row and Workspace binding, with no password, token, credential reference, OAuth state, or provider connection;
+   - one active `mail_read` Delegation Authority bound to the same owner/subject, account, tenant, workspace, domain, and current authority generation;
+   - Authority Audit, redacted Evidence, separate Verification, operation receipt, tuple digest, and rollback metadata.
+4. Require every phase to commit atomically, and never mark the operation `COMPLETE` until the full tuple exists and verifies. Any zero-row, duplicate, cross-scope, stale-generation, or overbroad-capability condition aborts the active phase.
+5. Replays return the same completed tuple digest without writes; concurrent requests have exactly one winner.
+
+## 2. Domain ownership
+
+1. Use the existing DNS challenge and Domain Authority path.
+2. Select a staging-only subdomain under an already controlled test zone; create only the exact temporary TXT challenge through scoped Cloudflare authority if permission exists.
+3. Verify DNS through the canonical server path and derive Domain Authority from the resulting verification event.
+4. Do not infer verification, use a reserved fake TLD, or treat an Account row as ownership evidence.
+5. Preserve the verification record; remove only the temporary TXT record after verification if the canonical contract permits it and record rollback evidence.
+
+## 3. Least-privilege delegation amendment
+
+1. Add `mail_read` to the existing Delegation Authority contract only.
+2. Reject send, delete, write, watch, delta, refresh, draft, administrative, wildcard, and unknown scopes.
+3. Bind the delegation to the exact Account and current Membership/Domain authority generations.
+4. Add missing-membership, wrong-tenant/workspace/domain/account, stale-generation, expiry, revoke, replay, and concurrency tests.
+
+## 4. Google OAuth client provenance — read only
+
+1. Inspect the authenticated Google Cloud console without changing configuration.
+2. Record only project fingerprint, client ID fingerprint, client type, registered staging redirect URI status, client usage/sharing assessment, and access result.
+3. Correlate the visible Client ID fingerprint with the staging binding through a purpose-built redacted runtime diagnostic that hashes the binding inside the Worker boundary; never output the Client ID or Secret.
+4. Confirm the Client Secret only by binding name/type presence. Never read, reset, copy, or replace it.
+5. Do not create an OAuth URL/session or call Google/Gmail APIs.
+
+## 5. Verification and release
+
+1. Maker writes focused tests first and implements the smallest patch.
+2. Checker runs Cloudflare/Vitest suites, migration repeat-apply and rollback proofs, schema/foreign-key checks, syntax/lint, secret-pattern scan, and security audits.
+3. Independent adversarial review reports every P0/P1/P2; iterate at most five times.
+4. Deploy only the reviewed exact commit to staging and record the Worker version.
+5. Execute the one-shot ceremony, disable it, delete its temporary Secret, and prove replay denial with SELECT-only D1 evidence.
+6. Verify production Worker/version and production state remain unchanged.
+7. Stop with `HUMAN_AUTHENTICATION_CHALLENGE_REQUIRED — MINIMUM_LOCAL_INTERACTION_ONLY` only if Google Console requires an irreducible local challenge.
+
+## Rollback
+
+- Before execution: remove the new Secret/binding and deploy the prior staging Worker.
+- After an incomplete transaction: D1 must have zero tuple writes; remove the challenge TXT and restore the prior Worker.
+- After completed tuple creation: use the recorded canonical revocation/rollback operation, never destructive ad-hoc deletes, and preserve Audit/Evidence/Verification.
+- Production is never a rollback target.
+
+## Approval boundary
+
+Implementation, migration, DNS, Cloudflare configuration, staging deployment, and tuple creation remain paused until this plan is explicitly approved. Google inspection remains read-only and no OAuth session is authorized.
+
+## Checker loop checkpoint — 2026-07-24
+
+- The first three Checker rounds drove remediation of domain validation/HMAC provenance, expiry, separate verification, exact authority bindings, staged completion/revocation, minimum brokered scope, runtime Secret non-access, independent digest recomputation, canonical-row verification, revocation Evidence/Verification, runtime enforcement of brokered `mail_read`, and tamper/atomic-failure coverage.
+- Local stop conditions are green: focused authority plus scheduled runtime 36/36, RC 24/302, unit/syntax, coupling guards, OAuth artifact guard, dependency audit, migration repeatability, and diff check.
+- Fifth independent Checker review passes with no remaining P0/P1/P2 in the implementation diff.
+- External mutation remains gated on final independent Checker approval and exact Google Web-client provenance. Current read-only Console evidence does not establish the expected Web client under the available project view; therefore migration/deploy/tuple creation remains intentionally unstarted.

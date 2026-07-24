@@ -1,6 +1,7 @@
 import app from '../hono/hono';
 import { dbInit } from '../init/init';
 import secureStagingBootstrapService from '../service/nexora-secure-staging-bootstrap-service';
+import stagingAuthorityTupleService from '../service/nexora-staging-authority-tuple-service';
 
 const securityHeaders = {
 	'Cache-Control': 'private, no-store, max-age=0',
@@ -41,6 +42,64 @@ app.post('/init/secure', async (c) => {
 		return c.json({ error: 'INVALID_REQUEST' }, 400, securityHeaders);
 	}
 	const outcome = await secureStagingBootstrapService.execute(c, secret);
+	return c.json(outcome.body, outcome.status, securityHeaders);
+});
+
+async function authorityTupleInput(c) {
+	try {
+		if (!(c.req.header('content-type') || '').includes('application/json')) return null;
+		return await c.req.json();
+	} catch {
+		return null;
+	}
+}
+
+app.post('/init/authority-tuple/prepare', async (c) => {
+	const input = await authorityTupleInput(c);
+	if (!input) return c.json({ error: 'INVALID_REQUEST' }, 400, securityHeaders);
+	const outcome = await stagingAuthorityTupleService.prepare(c, input);
+	return c.json(outcome.body, outcome.status, securityHeaders);
+});
+
+app.post('/init/authority-tuple/finalize', async (c) => {
+	const input = await authorityTupleInput(c);
+	if (!input) return c.json({ error: 'INVALID_REQUEST' }, 400, securityHeaders);
+	const outcome = await stagingAuthorityTupleService.finalize(c, input);
+	return c.json(outcome.body, outcome.status, securityHeaders);
+});
+
+app.post('/init/authority-tuple/verify', async (c) => {
+	const input = await authorityTupleInput(c);
+	if (!input) return c.json({ error: 'INVALID_REQUEST' }, 400, securityHeaders);
+	const outcome = await stagingAuthorityTupleService.verify(c, input);
+	return c.json(outcome.body, outcome.status, securityHeaders);
+});
+
+app.post('/init/authority-tuple/oauth-provenance', async (c) => {
+	const input = await authorityTupleInput(c);
+	if (!input) return c.json({ error: 'INVALID_REQUEST' }, 400, securityHeaders);
+	const outcome = await stagingAuthorityTupleService.oauthProvenance(c, input);
+	return c.json(outcome.body, outcome.status, securityHeaders);
+});
+
+app.post('/init/authority-tuple/revoke', async (c) => {
+	const input = await authorityTupleInput(c);
+	if (!input) return c.json({ error: 'INVALID_REQUEST' }, 400, securityHeaders);
+	const outcome = await stagingAuthorityTupleService.revoke(c, input);
+	return c.json(outcome.body, outcome.status, securityHeaders);
+});
+
+app.post('/init/authority-tuple/verify-revocation', async (c) => {
+	const input = await authorityTupleInput(c);
+	if (!input) return c.json({ error: 'INVALID_REQUEST' }, 400, securityHeaders);
+	const outcome = await stagingAuthorityTupleService.verifyRevocation(c, input);
+	return c.json(outcome.body, outcome.status, securityHeaders);
+});
+
+app.post('/init/authority-tuple/rollback', async (c) => {
+	const input = await authorityTupleInput(c);
+	if (!input) return c.json({ error: 'INVALID_REQUEST' }, 400, securityHeaders);
+	const outcome = await stagingAuthorityTupleService.rollback(c, input);
 	return c.json(outcome.body, outcome.status, securityHeaders);
 });
 

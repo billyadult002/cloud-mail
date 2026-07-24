@@ -2,6 +2,7 @@ import BizError from '../error/biz-error.js';
 
 const MEMBERSHIP_SCOPES = new Set(['workspace_visibility','account_state_visibility']);
 const DELEGATION_SCOPES = new Set(['account_state_visibility','metadata_read']);
+const BROKERED_DELEGATION_SCOPES = new Set([...DELEGATION_SCOPES,'mail_read']);
 const ADMIN_ROLES = new Set(['OWNER','ADMIN']);
 const uuid = () => crypto.randomUUID();
 const stable = value => Array.isArray(value) ? `[${value.map(stable).join(',')}]` : value && typeof value === 'object' ? `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${stable(value[k])}`).join(',')}}` : JSON.stringify(value);
@@ -71,9 +72,9 @@ async function transition(c,type,id,action) {
 	if(type==='membership'&&state==='revoked') await c.env.db.prepare('DELETE FROM workspace_members WHERE workspace_id=?1 AND user_id=?2').bind(row.workspace_id,row.subject_user_id).run();
 	await event(c,ctx,{subjectId:row.subject_user_id,accountId:row.account_id,type,id,event:action,state,scopeHash:await digest(JSON.parse(row.scope_json)),generation,reason:`authority_${action}`}); return{id,state,authority_generation:generation};
 }
-function evaluateRuntimeAuthority({ membership, ownerUserId, actingUserId, delegation, capability, now = Date.now() }) {
+function evaluateRuntimeAuthority({ membership, ownerUserId, actingUserId, delegation, capability, now = Date.now(), requireDelegation = false }) {
 	if (!membership) return { allowed:false, reason:'workspace_membership_missing' };
-	if (Number(ownerUserId)===Number(actingUserId)) return { allowed:true, reason:'account_owner', authorityGeneration:0 };
+	if (!requireDelegation && Number(ownerUserId)===Number(actingUserId)) return { allowed:true, reason:'account_owner', authorityGeneration:0 };
 	if (membership.state!=='active' || (membership.expires_at && Date.parse(membership.expires_at)<=now)) return { allowed:false, reason:'authoritative_membership_inactive' };
 	if (!delegation) return { allowed:false, reason:'account_delegation_missing' };
 	if (delegation.state!=='active' || !delegation.owner_consent_at || !delegation.approved_at || Date.parse(delegation.expires_at)<=now) return { allowed:false, reason:'account_delegation_inactive' };
@@ -84,7 +85,10 @@ async function resolveAccountAuthority(c,{workspaceId,actingUserId,accountId,cap
 	const workspace=await c.env.db.prepare('SELECT tenant_key FROM workspaces WHERE id=?1').bind(workspaceId).first(), account=await c.env.db.prepare('SELECT user_id FROM account WHERE account_id=?1 AND is_del=0').bind(accountId).first(); if(!workspace||!account) return{allowed:false,reason:'authority_subject_not_found'};
 	if(!await sameTenant(c,workspace.tenant_key,actingUserId)||!await sameTenant(c,workspace.tenant_key,account.user_id)) return{allowed:false,reason:'cross_tenant_authority_denied'};
 	const legacy=await c.env.db.prepare('SELECT role FROM workspace_members WHERE workspace_id=?1 AND user_id=?2').bind(workspaceId,actingUserId).first(); if(!legacy) return{allowed:false,reason:'workspace_membership_missing'};
-	if(Number(account.user_id)===Number(actingUserId)) return{
+	const brokeredCandidate = capability==='mail_read'
+		? await c.env.db.prepare(`SELECT * FROM workspace_account_delegations WHERE workspace_id=?1 AND account_id=?2 AND subject_user_id=?3 AND owner_user_id=?4 AND tenant_key=?5 AND scope_json='["mail_read"]' ORDER BY authority_generation DESC LIMIT 1`).bind(workspaceId,accountId,actingUserId,account.user_id,workspace.tenant_key).first()
+		: null;
+	if(Number(account.user_id)===Number(actingUserId) && !brokeredCandidate) return{
 		allowed:true,
 		reason:'account_owner',
 		ownerUserId:account.user_id,
@@ -96,7 +100,31 @@ async function resolveAccountAuthority(c,{workspaceId,actingUserId,accountId,cap
 		delegationAuthorityGeneration:null,
 	};
 	const membership=await c.env.db.prepare(`SELECT id,state,expires_at,authority_generation FROM workspace_membership_authorities WHERE workspace_id=?1 AND subject_user_id=?2 AND tenant_key=?3 ORDER BY authority_generation DESC LIMIT 1`).bind(workspaceId,actingUserId,workspace.tenant_key).first(); if(!membership) return{allowed:false,reason:'authoritative_membership_missing'};
-	const delegation=await c.env.db.prepare(`SELECT * FROM workspace_account_delegations WHERE workspace_id=?1 AND account_id=?2 AND subject_user_id=?3 AND owner_user_id=?4 AND tenant_key=?5 ORDER BY authority_generation DESC LIMIT 1`).bind(workspaceId,accountId,actingUserId,account.user_id,workspace.tenant_key).first();
+	const delegation=brokeredCandidate || await c.env.db.prepare(`SELECT * FROM workspace_account_delegations WHERE workspace_id=?1 AND account_id=?2 AND subject_user_id=?3 AND owner_user_id=?4 AND tenant_key=?5 ORDER BY authority_generation DESC LIMIT 1`).bind(workspaceId,accountId,actingUserId,account.user_id,workspace.tenant_key).first();
+	if (capability === 'mail_read') {
+		const brokered = delegation ? await c.env.db.prepare(`
+			SELECT b.domain_authority_id,b.domain_authority_generation
+			FROM workspace_account_delegation_authority_bindings b
+			JOIN nexora_domain_authorities da
+			  ON da.id=b.domain_authority_id
+			 AND da.workspace_id=b.workspace_id
+			JOIN account a ON a.account_id=b.account_id AND a.is_del=0
+			 AND da.normalized_domain=lower(COALESCE(NULLIF(a.domain,''),substr(a.email,instr(a.email,'@')+1)))
+			 AND da.generation=b.domain_authority_generation
+			 AND da.verification_status='verified'
+			 AND da.revoked_at IS NULL
+			WHERE b.delegation_id=?1 AND b.tenant_key=?2 AND b.workspace_id=?3 AND b.account_id=?4
+			  AND b.membership_authority_id=?5 AND b.membership_authority_generation=?6
+		`).bind(delegation.id,workspace.tenant_key,workspaceId,accountId,membership.id,membership.authority_generation).first() : null;
+		if (!BROKERED_DELEGATION_SCOPES.has(capability) || !brokered) return { allowed:false, reason:'brokered_authority_binding_invalid' };
+		const evaluated = evaluateRuntimeAuthority({ membership, ownerUserId:account.user_id, actingUserId, delegation, capability, requireDelegation:true });
+		return {
+			...evaluated, ownerUserId:account.user_id, authorityKind:'BROKERED_ACCOUNT_DELEGATION',
+			membershipAuthorityId:membership.id, membershipAuthorityGeneration:Number(membership.authority_generation),
+			domainAuthorityId:brokered.domain_authority_id, domainAuthorityGeneration:Number(brokered.domain_authority_generation),
+			delegationAuthorityId:delegation.id, delegationAuthorityGeneration:Number(delegation.authority_generation),
+		};
+	}
 	return {
 		...evaluateRuntimeAuthority({ membership, ownerUserId:account.user_id, actingUserId, delegation, capability }),
 		ownerUserId: account.user_id,
@@ -109,5 +137,5 @@ async function resolveAccountAuthority(c,{workspaceId,actingUserId,accountId,cap
 }
 async function list(c,workspaceId){const ctx=await context(c,workspaceId); const invitations=await c.env.db.prepare('SELECT id,subject_user_id,role,scope_json,state,expires_at,created_at FROM workspace_membership_invitations WHERE workspace_id=?1 ORDER BY created_at DESC').bind(workspaceId).all(), delegations=await c.env.db.prepare('SELECT id,account_id,owner_user_id,subject_user_id,scope_json,state,authority_generation,expires_at,created_at FROM workspace_account_delegations WHERE workspace_id=?1 ORDER BY created_at DESC').bind(workspaceId).all(), events=await c.env.db.prepare('SELECT id,actor_user_id,subject_user_id,account_id,relationship_type,event_type,state,authority_generation,reason_code,request_id,created_at FROM workspace_authority_events WHERE workspace_id=?1 ORDER BY created_at DESC LIMIT 100').bind(workspaceId).all(); return{workspace_id:ctx.workspace.id,invitations:invitations.results||[],delegations:delegations.results||[],audit:events.results||[]};}
 
-export { MEMBERSHIP_SCOPES, DELEGATION_SCOPES, digest, evaluateRuntimeAuthority };
+export { MEMBERSHIP_SCOPES, DELEGATION_SCOPES, BROKERED_DELEGATION_SCOPES, digest, evaluateRuntimeAuthority };
 export default { createInvitation,reviewInvitation,acceptInvitation,createDelegation,ownerConsent,approveDelegation,transition,resolveAccountAuthority,list };
